@@ -1,14 +1,24 @@
-# TUIKit_iOS
+# kikivoice
+
+kiki语聊房
+
+基于 [Tencent TUIKit_iOS](https://github.com/Tencent-RTC/TUIKit_iOS) 的 iOS 项目。
+
+- [项目架构完整拆解（中文）](docs/ARCHITECTURE.zh-CN.md)
+
+---
+
+## TUIKit_iOS
 
 English | [简体中文](README.cn.md)
 
-## Overview
+### Overview
 
 TUIKit_iOS is a powerful UI component library built on top of Tencent Cloud's `AtomicXCore` SDK. `AtomicXCore` integrates the core capabilities of Tencent Cloud Real-Time Communication (TRTC), Instant Messaging (IM), Audio/Video Calling (TUICallEngine), and Room Management (TUIRoomEngine), providing a state-driven API design.
 
 TUIKit_iOS provides a set of pre-built user interfaces (UI) on top of the core capabilities offered by `AtomicXCore`, enabling you to quickly integrate video live streaming, voice chat rooms, audio/video calling, and other features into your iOS applications without worrying about complex backend logic and state management.
 
-## Features
+### Features
 
 TUIKit_iOS provides complete UI implementations for the following core business scenarios based on `AtomicXCore`:
 
@@ -46,21 +56,21 @@ TUIKit_iOS provides complete UI implementations for the following core business 
     * **Cloud Recording:** Enables users to record in scenarios such as video conferencing, online education, and live interactive broadcasting, meeting diverse needs like archiving and auditing important content.
     * **Barrage:** Supports sending and receiving barrage messages in Webinar rooms to enhance interactive experiences.
 
-## Quick Start
+### Quick Start
 
-### 1. Environment Setup
+#### 1. Environment Setup
 
 * Xcode 14.0 or higher
 * iOS 14.0 or higher
 * CocoaPods (ensure it's installed)
 
-### 2. Clone Repository
+#### 2. Clone Repository
 
 ```bash
 git clone https://github.com/Tencent-RTC/TUIKit_iOS.git
 ```
 
-### 3. Install Dependencies
+#### 3. Install Dependencies
 
 `TUIKit_iOS` depends on `AtomicXCore`, which in turn depends on `RTCRoomEngine`. You need to use CocoaPods to install these dependencies.
 
@@ -69,11 +79,11 @@ cd TUIKit_iOS/application
 pod install
 ```
 
-### 4. Run Project
+#### 4. Run Project
 
 Open the generated `.xcworkspace` file with Xcode, configure your Tencent Cloud SDKAppID, UserID, and UserSig (usually configured in the `GenerateTestUserSig` file), then compile and run.
 
-## Architecture
+### Architecture
 
 The architecture design of `TUIKit_iOS` follows layered principles:
 
@@ -95,18 +105,18 @@ The architecture design of `TUIKit_iOS` follows layered principles:
     * `RTCRoomEngine` & `TUICallEngine`: Provide underlying real-time audio/video capabilities.
     * `IMSDK`: Provides instant messaging capabilities.
 
-## Documentation
+### Documentation
 
 * [AtomicXCore Documentation](https://tencent-rtc.github.io/TUIKit_iOS/documentation/atomicxcore)
 * [Official Documentation - Quick Integration Guide](https://trtc.io/document/60455?product=live&menulabel=uikit&platform=ios)
 
-## License
+### License
 
 This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-## Project Structure
+### Project Structure
 
 ```
 TUIKit_iOS/
@@ -124,9 +134,9 @@ TUIKit_iOS/
 └── devops/              # Build and deployment scripts
 ```
 
-## Getting Started with Development
+### Getting Started with Development
 
-### Prerequisites
+#### Prerequisites
 
 Before you begin development, ensure you have:
 
@@ -139,7 +149,7 @@ Before you begin development, ensure you have:
    - SDKAppID from Tencent Cloud Console
    - Valid UserSig for testing
 
-### Building from Source
+#### Building from Source
 
 1. **Clone and Setup:**
    ```bash
@@ -157,7 +167,7 @@ Before you begin development, ensure you have:
    - Select your target device or simulator
    - Press Cmd+R to build and run
 
-### Integration Guide
+#### Integration Guide
 
 To integrate TUIKit_iOS into your existing project:
 
@@ -190,11 +200,11 @@ To integrate TUIKit_iOS into your existing project:
    view.addSubview(callView)
    ```
 
-## Contributing
+### Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on how to submit pull requests, report issues, and contribute to the project.
 
-### Development Workflow
+#### Development Workflow
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -205,18 +215,18 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 7. Push to the branch (`git push origin feature/amazing-feature`)
 8. Open a Pull Request
 
-## Support
+### Support
 
 - **Documentation:** [Official Documentation](https://tencent-rtc.github.io/TUIKit_iOS/)
 - **API Reference:** [AtomicXCore API](https://tencent-rtc.github.io/TUIKit_iOS/documentation/atomicxcore)
 - **Issues:** [GitHub Issues](https://github.com/Tencent-RTC/TUIKit_iOS/issues)
 - **Community:** [Tencent Cloud Developer Community](https://cloud.tencent.com/developer)
 
-## Changelog
+### Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes to this project.
 
-## Acknowledgments
+### Acknowledgments
 
 - Built with [Tencent Cloud TRTC](https://cloud.tencent.com/product/trtc)
 - UI framework powered by [SnapKit](https://github.com/SnapKit/SnapKit)
