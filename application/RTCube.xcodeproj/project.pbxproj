@@ -39,6 +39,7 @@
 		A97D40E9BF989536D7E67EFD /* KikiSDKAvatarTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDC7C4D6B36F7392AEC4F01C /* KikiSDKAvatarTrust.swift */; };
 		AB8A4D0731C63040DAD9690B /* KikiDemoRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7ED23089D0DDFD83E22C26 /* KikiDemoRootView.swift */; };
 		ACC8B082055E87747518C91D /* KikiDemoRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7ED23089D0DDFD83E22C26 /* KikiDemoRootView.swift */; };
+		ADF16338E8461FCD89632C98 /* KikiLaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 2EA976C6751A3BE0CB8AD5AD /* KikiLaunchScreen.storyboard */; };
 		BEDD6E1014E6B7D4A02848CD /* KikiProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7D6536860014019A14E989 /* KikiProfileView.swift */; };
 		C657EE552F61698F00D01990 /* EntranceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657EE3D2F61698F00D01990 /* EntranceStore.swift */; };
 		C657EE562F61698F00D01990 /* EntranceState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657EE3C2F61698F00D01990 /* EntranceState.swift */; };
@@ -141,6 +142,7 @@
 		1F4D2BC5D0DEB9091B19082F /* KikiTalk.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KikiTalk.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		222468891BB2144371D09557 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		2231184EB1D346815C4601A6 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		2EA976C6751A3BE0CB8AD5AD /* KikiLaunchScreen.storyboard */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file.storyboard; path = KikiLaunchScreen.storyboard; sourceTree = "<group>"; };
 		2F46C58F911A2981D01067C6 /* en */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		30442ADCE3A3C4DDB29CEDCF /* KikiDemoApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiDemoApp.swift; sourceTree = "<group>"; };
 		37E86C4063B886D07A199A55 /* KikiRTCService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiRTCService.swift; sourceTree = "<group>"; };
@@ -313,6 +315,7 @@
 				A82ACFB226B4EFDFB112ABDE /* KikiInfo.plist */,
 				8F8E93C5B3749360CD7C39D8 /* KikiTalk.entitlements */,
 				CDC7C4D6B36F7392AEC4F01C /* KikiSDKAvatarTrust.swift */,
+				2EA976C6751A3BE0CB8AD5AD /* KikiLaunchScreen.storyboard */,
 			);
 			path = Demo;
 			sourceTree = "<group>";
@@ -843,6 +846,7 @@
 			files = (
 				EEE3B91D8CF54397B18132BD /* Assets.xcassets in Resources */,
 				A5257DAFDAB343C89CC4AB4B /* KikiServerCertificate.cer in Resources */,
+				ADF16338E8461FCD89632C98 /* KikiLaunchScreen.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1200,7 +1204,6 @@
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "用于选择直播封面或个人头像。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
@@ -1413,7 +1416,6 @@
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "用于选择直播封面或个人头像。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;

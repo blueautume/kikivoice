@@ -4,6 +4,8 @@
 <dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>zh-Hans</string>
+    <key>UILaunchStoryboardName</key>
+    <string>KikiLaunchScreen</string>
     <key>CFBundleLocalizations</key>
     <array>
         <string>zh-Hans</string>

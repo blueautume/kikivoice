@@ -29,6 +29,22 @@
 
 当前 SDK 固定为 AtomicXCore / RTCRoomEngine 4.3.10，以支持 Apple Silicon 模拟器。原 RTCubeLab target 和 SDK 参考代码保留；KikiTalk target 只连接语聊/直播所需模块。
 
+## 图标与启动页
+
+![App 图标与启动页预览](images/kiki-brand-preview.png)
+
+品牌标识由紫色渐变、对话气泡和五段声波组成，提供默认、深色和系统着色三套 App 图标。源图均为 1024×1024、不含透明通道的 sRGB PNG，由 Xcode 生成各设备所需尺寸。
+
+原生启动页使用相同的向量标识、深色背景、品牌名及「听见，同频的你」标语，并适配安全区。恢复账号时沿用同一布局，仅在实际等待期间显示进度，不额外延长启动时间。启动页源文件为 `application/Demo/KikiLaunchScreen.storyboard`。
+
+已通过模拟器与真机构建，并在 iPhone 17 Pro 模拟器检查桌面图标和冷启动。上图右侧来自实际原生启动页截图，单独预览见 [启动页截图](images/kiki-launch-screen.png)。
+
+图形源路径保存在 `tools/generate_kiki_brand.swift`，可在仓库根目录重新生成资源：
+
+```bash
+swift tools/generate_kiki_brand.swift
+```
+
 ## 使用流程
 
 新版语聊房实机尺寸预览（模拟器实际运行截图，头像和消息来自专用测试账号）：

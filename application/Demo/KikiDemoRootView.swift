@@ -11,11 +11,7 @@ struct KikiDemoRootView: View {
         ZStack {
             KikiPalette.background.ignoresSafeArea()
             if !store.startupFinished {
-                VStack(spacing: 20) {
-                    Image(systemName: "waveform").font(.system(size: 48)).foregroundStyle(KikiPalette.lavender)
-                    Text("Kiki语聊").font(.system(size: 24, weight: .bold))
-                    ProgressView().tint(KikiPalette.lavender)
-                }
+                KikiStartupView()
             } else if store.isAuthenticated && store.needsNickname {
                 KikiNicknameOnboardingView()
             } else if store.isAuthenticated {
@@ -76,6 +72,43 @@ struct KikiDemoRootView: View {
                 .frame(maxWidth: .infinity).frame(height: 43).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityIdentifier(index == 0 ? "discoverTab" : "profileTab")
             .accessibilityAddTraits(selectedTab == index ? .isSelected : [])
+    }
+}
+
+@available(iOS 16.0, *)
+private struct KikiStartupView: View {
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color("KikiLaunchBackground").ignoresSafeArea()
+
+                // Match the native launch screen while the account restores.
+                VStack(spacing: 0) {
+                    Image("KikiLaunchMark")
+                        .resizable().scaledToFit().frame(width: 128, height: 128)
+                        .accessibilityHidden(true)
+                    Text("Kiki语聊")
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundStyle(KikiPalette.text).frame(height: 34)
+                        .padding(.top, 24)
+                    Text("听见，同频的你")
+                        .font(.system(size: 13))
+                        .foregroundStyle(KikiPalette.secondary).frame(height: 16)
+                        .padding(.top, 10)
+                }
+                .position(x: geometry.size.width / 2, y: geometry.size.height / 2 - 28)
+
+                ProgressView()
+                    .tint(KikiPalette.lavender)
+                    .accessibilityLabel("正在恢复账号")
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 120)
+
+                Text("让每一种声音，都有回响")
+                    .font(.system(size: 11)).foregroundStyle(KikiPalette.muted)
+                    .position(x: geometry.size.width / 2, y: geometry.size.height - 24)
+            }
+            .dynamicTypeSize(.medium)
+        }
     }
 }
 
