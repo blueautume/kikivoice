@@ -6,6 +6,7 @@
 import AtomicX
 import Login
 import SnapKit
+import SwiftUI
 import UIKit
 #if RTCUBE_OVERSEAS
 import TCMPPSDK
@@ -25,20 +26,29 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = (scene as? UIWindowScene) else { return }
         window = UIWindow(windowScene: windowScene)
 
-        #if RTCUBE_OVERSEAS
-        let rootVC = OverseasHomeViewController()
-        #else
-        let rootVC = EntranceViewController()
-        #endif
-        let navController = UINavigationController(rootViewController: rootVC)
-        window?.rootViewController = navController
+        let usesDemo: Bool
+        if #available(iOS 16.0, *) {
+            window?.rootViewController = UIHostingController(rootView: KikiDemoRootView())
+            window?.overrideUserInterfaceStyle = .dark
+            usesDemo = true
+        } else {
+            #if RTCUBE_OVERSEAS
+            let rootVC = OverseasHomeViewController()
+            #else
+            let rootVC = EntranceViewController()
+            #endif
+            window?.rootViewController = UINavigationController(rootViewController: rootVC)
+            usesDemo = false
+        }
 
         initializeLoginModule()
         prepareMiniProgramSDKIfNeeded()
 
         window?.makeKeyAndVisible()
 
-        showLogin(animated: false)
+        if !usesDemo {
+            showLogin(animated: false)
+        }
 
         handleOpenURLContexts(connectionOptions.urlContexts)
     }

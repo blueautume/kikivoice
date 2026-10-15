@@ -100,7 +100,7 @@ class SGSeatContainerCell: UICollectionViewCell {
                 if isDefaultSeatView, let seatView = self.contentContainerView.subviews.first as? SGSeatView {
                     seatView.isSpeaking = isSpeaking
                 } else if !isDefaultSeatView, let customView = self.contentContainerView.subviews.first {
-                    volumeClosure?(volume, customView)
+                    volumeClosure?(isSpeaking ? volume : 0, customView)
                 }
             }
             .store(in: &cancellableSet)

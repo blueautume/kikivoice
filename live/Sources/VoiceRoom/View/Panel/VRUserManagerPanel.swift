@@ -18,6 +18,10 @@ class VRUserManagerPanel: RTCBaseView {
     private let routerManager: VRRouterManager
     private var cancellableSet: Set<AnyCancellable> = []
     private var seatInfo: TUISeatInfo
+    private let isSeatUser: Bool
+    private var canManageSeat: Bool {
+        isOwner && isSeatUser && seatInfo.userId != TUIRoomEngine.getSelfInfo().userId
+    }
     private var isOwner: Bool {
         guard !currentLive.isEmpty else {
             return false
@@ -94,7 +98,7 @@ class VRUserManagerPanel: RTCBaseView {
             self.kickoffClick()
         }))
         let featureClickPanel = VRFeatureClickPanel(model: model)
-        featureClickPanel.isHidden = !isOwner
+        featureClickPanel.isHidden = !canManageSeat
         return featureClickPanel
     }()
     
@@ -102,12 +106,14 @@ class VRUserManagerPanel: RTCBaseView {
          imStore: VoiceRoomIMStore,
          toastService:VRToastService,
          routerManager: VRRouterManager,
-         seatInfo: TUISeatInfo) {
+         seatInfo: TUISeatInfo,
+         isSeatUser: Bool = true) {
         self.liveID = liveID
         self.imStore = imStore
         self.toastService = toastService
         self.routerManager = routerManager
         self.seatInfo = seatInfo
+        self.isSeatUser = isSeatUser
         super.init(frame: .zero)
         backgroundColor = .g2
         layer.cornerRadius = 16
@@ -128,7 +134,7 @@ class VRUserManagerPanel: RTCBaseView {
     override func activateConstraints() {
         avatarView.snp.makeConstraints { make in
             make.leading.top.equalToSuperview().offset(24.scale375())
-            if !isOwner {
+            if !canManageSeat {
                 make.bottom.equalTo(safeAreaLayoutGuide.snp.bottom).offset(-24.scale375())
             }
         }
@@ -161,7 +167,7 @@ class VRUserManagerPanel: RTCBaseView {
             make.trailing.lessThanOrEqualTo(followButton.snp.leading).offset(-12.scale375())
         }
         
-        if isOwner {
+        if canManageSeat {
             featureClickPanel.snp.makeConstraints { make in
                 make.top.equalTo(avatarView.snp.bottom).offset(30.scale375Height())
                 make.leading.equalTo(avatarView.snp.leading)
@@ -194,7 +200,7 @@ extension VRUserManagerPanel {
             .receive(on: RunLoop.main)
             .sink { [weak self] followUserList in
                 guard let self = self else { return }
-                self.followButton.isHidden = false
+                self.followButton.isHidden = self.seatInfo.userId == TUIRoomEngine.getSelfInfo().userId
                 if followUserList.map({ $0.userId }).contains(where: { [weak self] in
                     guard let self = self else { return false }
                     return $0 == self.seatInfo.userId
@@ -212,17 +218,19 @@ extension VRUserManagerPanel {
     }
     
     private func subscribeSeatInfoState() {
+        guard isSeatUser else { return }
+        let displayedUserID = seatInfo.userId
         seatStore.state
             .subscribe(StatePublisherSelector(keyPath: \LiveSeatState.seatList))
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] seatInfoList in
                 guard let self = self else { return }
-                guard seatInfo.index >= 0 && seatInfo.index < seatInfoList.count else {
+                guard let currentSeat = seatInfoList.first(where: { $0.userInfo.userID == displayedUserID }) else {
                     routerManager.router(action: .dismiss())
                     return
                 }
-                self.seatInfo = TUISeatInfo(from: seatInfoList[seatInfo.index])
+                self.seatInfo = TUISeatInfo(from: currentSeat)
                 if (seatInfo.userId ?? "").isEmpty {
                     routerManager.router(action: .dismiss())
                 }

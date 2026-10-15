@@ -21,6 +21,10 @@ class VRBottomMenuView: UIView {
     private let viewStore: VoiceRoomViewStore
     private let toastService: VRToastService
     private let isOwner: Bool
+    private let enableKaraoke: Bool
+    private let enableCrossRoomInteraction: Bool
+    private let enableGifts: Bool
+    private let usesKikiAppearance: Bool
     
     private let buttonSliceIndex: Int = 1
     
@@ -50,12 +54,20 @@ class VRBottomMenuView: UIView {
          routerManager: VRRouterManager,
          viewStore: VoiceRoomViewStore,
          toastService: VRToastService,
-         isOwner: Bool) {
+         isOwner: Bool,
+         enableKaraoke: Bool = true,
+         enableCrossRoomInteraction: Bool = true,
+         enableGifts: Bool = true,
+         usesKikiAppearance: Bool = false) {
         self.liveID = liveID
         self.routerManager = routerManager
         self.viewStore = viewStore
         self.toastService = toastService
         self.isOwner = isOwner
+        self.enableKaraoke = enableKaraoke
+        self.enableCrossRoomInteraction = enableCrossRoomInteraction
+        self.enableGifts = enableGifts
+        self.usesKikiAppearance = usesKikiAppearance
         super.init(frame: .zero)
     }
     
@@ -134,7 +146,12 @@ class VRBottomMenuView: UIView {
                 let button = self.createButtonFromMenuItem(index: index, item: item)
                 stackView.addArrangedSubview(button)
                 button.snp.makeConstraints { make in
-                    make.height.width.equalTo(32.scale375Height())
+                    if usesKikiAppearance {
+                        make.width.equalTo(44)
+                        make.height.equalTo(48)
+                    } else {
+                        make.height.width.equalTo(32.scale375Height())
+                    }
                 }
                 button.addTarget(self, action: #selector(menuTapAction(sender:)), for: .touchUpInside)
                 return button
@@ -142,9 +159,14 @@ class VRBottomMenuView: UIView {
         if !isOwner {
             stackView.addArrangedSubview(likeButton)
             likeButton.snp.makeConstraints { make in
-                make.width.equalTo(isOwner ? 34.scale375() : 32.scale375())
-                make.height.equalTo(isOwner ? 46.scale375() : 32.scale375())
+                make.width.equalTo(usesKikiAppearance ? 44 : (isOwner ? 34.scale375() : 32.scale375()))
+                make.height.equalTo(usesKikiAppearance ? 44 : (isOwner ? 46.scale375() : 32.scale375()))
                 make.centerY.equalToSuperview()
+            }
+            if usesKikiAppearance {
+                likeButton.backgroundColor = KikiVoicePalette.bubble
+                likeButton.layer.cornerRadius = 22
+                likeButton.accessibilityLabel = "点赞"
             }
             buttons.append(likeButton)
         }
@@ -158,6 +180,28 @@ class VRBottomMenuView: UIView {
         button.setTitle(item.selectTitle, for: .selected)
         button.imageEdgeInsets = .zero
         button.tag = index + 1_000
+        button.accessibilityIdentifier = "voice.menu.\(item.normalIcon)"
+        button.accessibilityLabel = [
+            "live_anchor_setting_icon": "房间设置",
+            "live_link_voice_room": "麦位管理",
+            "live_voice_room_link_icon": "申请上麦",
+            "live_gift_icon": "礼物",
+            "seat_battle": "跨房互动",
+            "ktv_songList": "点歌"
+        ][item.normalIcon] ?? item.normalTitle
+        if usesKikiAppearance {
+            button.usesKikiAppearance = true
+            button.backgroundColor = KikiVoicePalette.bubble
+            button.layer.cornerRadius = 20
+            button.tintColor = .white
+            button.setTitleColor(.white, for: .normal)
+            button.titleLabel?.font = .systemFont(ofSize: 9, weight: .medium)
+            let title = ["live_anchor_setting_icon": "音效", "live_link_voice_room": "管理", "live_voice_room_link_icon": "上麦"][item.normalIcon] ?? item.normalTitle
+            button.setTitle(title, for: .normal)
+            button.setTitle(title, for: .selected)
+            let symbol = ["live_anchor_setting_icon": "slider.horizontal.3", "live_link_voice_room": "person.2.fill", "live_voice_room_link_icon": "person.wave.2.fill"][item.normalIcon]
+            if let symbol { button.setImage(UIImage(systemName: symbol), for: .normal) }
+        }
         item.bindStateClosure?(button, &cancellableSet)
         return button
     }
@@ -176,6 +220,16 @@ class VRBottomMenuView: UIView {
 }
 
 class MenuButton: UIButton {
+    var usesKikiAppearance = false
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard usesKikiAppearance else { return }
+        imageView?.frame = CGRect(x: (bounds.width - 20) / 2, y: 6, width: 20, height: 20)
+        imageView?.contentMode = .scaleAspectFit
+        titleLabel?.frame = CGRect(x: 1, y: 30, width: bounds.width - 2, height: 13)
+        titleLabel?.textAlignment = .center
+    }
     
     let rotateAnimation: CABasicAnimation = {
         let animation = CABasicAnimation(keyPath: "transform.rotation.z")
@@ -289,7 +343,7 @@ extension VRBottomMenuView {
                 }
                 .store(in: &cancellableSet)
         }
-        menus.append(connectionControl)
+        if enableCrossRoomInteraction { menus.append(connectionControl) }
 
         var setting = VRButtonMenuInfo(normalIcon: "live_anchor_setting_icon")
         setting.tapAction = { [weak self] sender in
@@ -304,7 +358,7 @@ extension VRBottomMenuView {
             guard let self = self else { return }
             self.songListButtonAction?()
         }
-        if coHostStore.state.value.connected.count == 0 {
+        if enableKaraoke && coHostStore.state.value.connected.count == 0 {
             menus.append(songListButton)
         }
 
@@ -337,7 +391,7 @@ extension VRBottomMenuView {
         designConfig.cornerRadius = 10
         designConfig.titleFont = .customFont(ofSize: 12)
         designConfig.type = .imageAboveTitleBottom
-        model.items.append(VRFeatureItem(normalTitle: .backgroundText,
+        if !usesKikiAppearance { model.items.append(VRFeatureItem(normalTitle: .backgroundText,
                                        normalImage: internalImage("live_setting_background_icon"),
                                        designConfig: designConfig,
                                          actionClosure: { [weak self] _ in
@@ -350,7 +404,7 @@ extension VRBottomMenuView {
             }
             let routeItem = RouteItem(view: imagePanel, config: .bottomDefault())
             self.routerManager.router(action: .present(routeItem))
-        }))
+        })) }
         model.items.append(VRFeatureItem(normalTitle: .audioEffectsText,
                                        normalImage: internalImage("live_setting_audio_effects"),
                                        designConfig: designConfig,
@@ -376,7 +430,7 @@ extension VRBottomMenuView {
             let routeItem = RouteItem(view: giftPanel, config: .bottomDefault())
             self.routerManager.router(action: .present(routeItem))
         }
-        menus.append(gift)
+        if enableGifts { menus.append(gift) }
         
         var linkMic = VRButtonMenuInfo(normalIcon: "live_voice_room_link_icon", selectIcon: "live_voice_room_linking_icon")
         linkMic.tapAction = { [weak self] sender in
@@ -434,7 +488,13 @@ extension VRBottomMenuView {
                 .sink { isApplying in
                     DispatchQueue.main.async {
                         button.isSelected = isApplying
-                        button.isSelected ? button.startRotate() : button.endRotate()
+                        button.accessibilityValue = isApplying ? "等待房主同意" : nil
+                        if self.usesKikiAppearance {
+                            button.setTitle(isApplying ? "取消申请" : "上麦", for: .normal)
+                            button.setTitle("取消申请", for: .selected)
+                        } else {
+                            button.isSelected ? button.startRotate() : button.endRotate()
+                        }
                     }
                 }
                 .store(in: &cancellableSet)
@@ -445,7 +505,13 @@ extension VRBottomMenuView {
                     guard let self = self else { return }
                     let isOnSeat = seatInfoList.contains(where: { $0.userInfo.userID == self.selfId })
                     let imageName = isOnSeat ? "live_linked_icon" : "live_voice_room_link_icon"
-                    button.setImage(internalImage(imageName), for: .normal)
+                    if self.usesKikiAppearance {
+                        button.setImage(UIImage(systemName: isOnSeat ? "arrow.down.to.line" : "person.wave.2.fill"), for: .normal)
+                        button.setTitle(isOnSeat ? "下麦" : "上麦", for: .normal)
+                    } else {
+                        button.setImage(internalImage(imageName), for: .normal)
+                    }
+                    button.accessibilityLabel = isOnSeat ? "下麦" : "申请上麦"
                 }
                 .store(in: &cancellableSet)
         }
@@ -455,7 +521,7 @@ extension VRBottomMenuView {
             guard let self = self else { return }
             self.songListButtonAction?()
         }
-        if coHostStore.state.value.connected.count == 0 {
+        if enableKaraoke && coHostStore.state.value.connected.count == 0 {
             menus.append(songListButton)
         }
         return menus

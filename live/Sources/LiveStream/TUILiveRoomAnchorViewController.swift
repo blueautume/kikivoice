@@ -15,6 +15,7 @@ import AtomicX
 
 @objcMembers
 public class TUILiveRoomAnchorViewController: UIViewController {
+    @nonobjc public var onRoomPresentationChanged: ((Bool) -> Void)?
     
     // MARK: - private property.
     private var cancellableSet = Set<AnyCancellable>()
@@ -112,10 +113,18 @@ public class TUILiveRoomAnchorViewController: UIViewController {
         navigationController?.setNavigationBarHidden(true, animated: true)
     }
 
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        onRoomPresentationChanged?(true)
+    }
+
     public override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         UIApplication.shared.isIdleTimerDisabled = false
         navigationController?.setNavigationBarHidden(false, animated: true)
+        if isBeingDismissed || (presentingViewController == nil && parent == nil) {
+            onRoomPresentationChanged?(false)
+        }
     }
     
     public override var shouldAutorotate: Bool {

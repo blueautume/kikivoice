@@ -10,6 +10,10 @@ import AtomicX
 import RTCRoomEngine
 
 public class TUILiveRoomAudienceViewController: UIViewController {
+    public var onRoomPresentationChanged: ((Bool) -> Void)?
+    /// Applications with their own room directory can keep navigation inside it.
+    public var enableRoomSwiping = true
+    public var enableGifts = true
     
     private lazy var audienceView: AudienceView = {
         let view = AudienceView(roomId: roomId)
@@ -49,6 +53,7 @@ public class TUILiveRoomAudienceViewController: UIViewController {
         constructViewHierarchy()
         activateConstraints()
         registerApplicationObserver()
+        audienceView.disableSliding(!enableRoomSwiping)
     }
     
     public override func viewWillAppear(_ animated: Bool) {
@@ -56,11 +61,19 @@ public class TUILiveRoomAudienceViewController: UIViewController {
         navigationController?.setNavigationBarHidden(true, animated: true)
         UIApplication.shared.isIdleTimerDisabled = true
     }
+
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        onRoomPresentationChanged?(true)
+    }
     
     public override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         UIApplication.shared.isIdleTimerDisabled = false
         navigationController?.setNavigationBarHidden(false, animated: true)
+        if isBeingDismissed || (presentingViewController == nil && parent == nil) {
+            onRoomPresentationChanged?(false)
+        }
     }
     
     public override var shouldAutorotate: Bool {
@@ -164,6 +177,10 @@ extension TUILiveRoomAudienceViewController: AudienceEndStatisticsViewDelegate {
 }
 
 extension TUILiveRoomAudienceViewController: AudienceViewDelegate {
+    public func audienceView(_ audienceView: AudienceView, onCreateLiveView liveView: AudienceLiveView, for liveInfo: LiveInfo) {
+        if !enableGifts { liveView.bottomItems = [.coGuest, .like, .more] }
+    }
+
     public func onLiveEnded(roomId: String, ownerName userName: String, ownerAvatarUrl avatarUrl: String) {
         let audienceEndView = AudienceEndStatisticsView(roomId: roomId, avatarUrl: avatarUrl, userName: userName)
         audienceEndView.delegate = self

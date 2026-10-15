@@ -4,6 +4,9 @@ kiki语聊房
 
 基于 [Tencent TUIKit_iOS](https://github.com/Tencent-RTC/TUIKit_iOS) 的 iOS 项目。
 
+- **运行真实功能版：** 在 `application` 执行 `pod install`，用 Xcode 打开 `application/RTCube.xcworkspace`，选择 **KikiTalk** scheme。最低 iOS 17，模拟器使用正常本地签名，真机选择开发团队。
+- 中文双 Tab「语聊 / 直播」「我」，通过服务器完成 ID 登录、资料、收藏和历史记录，使用腾讯云 SDK 创建和加入真实房间；腾讯云签名密钥只在服务器保存。
+- [完整运行、方案与使用说明](docs/KIKI_DEMO.zh-CN.md) · [服务端部署与 API](backend/README.zh-CN.md)
 - [项目架构完整拆解（中文）](docs/ARCHITECTURE.zh-CN.md)
 
 ---

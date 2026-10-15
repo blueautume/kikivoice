@@ -16,6 +16,14 @@ let defaultMaxSeatCount = 10
 
 @objcMembers
 public class RoomParams: NSObject {
+    /// Optional initial room data supplied by the host application's creation form.
+    /// Supplying this keeps the SDK room and the application's room registry in sync.
+    @nonobjc public var initialLiveInfo: LiveInfo?
+    public var enableKaraoke: Bool = true
+    public var enableCrossRoomInteraction: Bool = true
+    public var enableGifts: Bool = true
+    /// Purple, eight-seat Kiki room appearance. The default SDK layout stays unchanged.
+    public var usesKikiAppearance: Bool = false
     public var maxSeatCount: Int = 0 //The default value is the maximum number of seat supported by the package
     public var seatMode: TUISeatMode = .applyToTake
     public init(maxSeatCount: Int, seatMode: TUISeatMode) {
@@ -32,12 +40,16 @@ public class TUIVoiceRoomViewController: UIViewController {
         case autoCreate
         case prepareCreate
         case join
+        /// Re-enter an existing room with host controls after reconnecting.
+        case resume
     }
     
     public typealias OnStartClosure = () -> Void
     
     // MARK: - Public property.
     public var behavior: RoomBehavior = .prepareCreate
+    /// Notifies an embedding application when the full-screen room is shown or dismissed.
+    @nonobjc public var onRoomPresentationChanged: ((Bool) -> Void)?
     
     // MARK: - Private property.
    
@@ -82,7 +94,8 @@ public class TUIVoiceRoomViewController: UIViewController {
                                      prepareStore: prepareStore,
                                      routerManager: routerManager,
                                      toastService: toastService,
-                                     isCreate: behavior != .join)
+                                     isCreate: behavior != .join,
+                                     isResuming: behavior == .resume)
         view.delegate = self
         return view
     }()
@@ -120,15 +133,23 @@ public class TUIVoiceRoomViewController: UIViewController {
         super.viewWillAppear(animated)
         hideNavigationBar()
     }
+
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        onRoomPresentationChanged?(true)
+    }
     
     public override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         restoreNavigationBar()
+        if isBeingDismissed || (presentingViewController == nil && parent == nil) {
+            onRoomPresentationChanged?(false)
+        }
     }
     
     private func handle(behavior: RoomBehavior) {
         switch behavior {
-            case .join, .autoCreate:
+            case .join, .autoCreate, .resume:
                 showVoiceRoot()
             case .prepareCreate:
                 showVoicePrepare()

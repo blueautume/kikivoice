@@ -40,6 +40,11 @@ class VoiceRoomPrepareStore {
     
     func prepareLiveIdBeforeEnterRoom(liveId: String, roomParams: RoomParams?) {
         update { state in
+            if var initialLiveInfo = roomParams?.initialLiveInfo {
+                if initialLiveInfo.coverURL.isEmpty { initialLiveInfo.coverURL = state.liveInfo.coverURL }
+                if initialLiveInfo.backgroundURL.isEmpty { initialLiveInfo.backgroundURL = state.liveInfo.backgroundURL }
+                state.liveInfo = initialLiveInfo
+            }
             state.liveInfo.liveID = liveId
         }
         if let param = roomParams {

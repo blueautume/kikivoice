@@ -2,3 +2,6 @@
 application/Pods
 application/App-UIKit.xcworkspace/xcuserdata
 *.sh
+**/xcuserdata/
+*.xcuserstate
+.DS_Store

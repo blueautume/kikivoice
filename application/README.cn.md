@@ -1,4 +1,12 @@
-# RTCube
+# Kiki语聊：真实功能版
+
+在本目录执行 `pod install` 后，使用 Xcode 打开 **RTCube.xcworkspace**，选择 **KikiTalk** scheme，在 iOS 17+ 模拟器或真机运行。模拟器需要正常本地签名以访问 Keychain；真机需选择自己的开发团队。
+
+提供中文的「语聊 / 直播」「我」两个模块。ID 登录、资料、收藏、足迹和房间登记使用已部署服务器，语聊和直播使用真实腾讯云 SDK。客户端不包含腾讯云 SecretKey，没有本地模拟房间和消息。
+
+详见 [方案与使用说明](../docs/KIKI_DEMO.zh-CN.md) 和 [服务端说明](../backend/README.zh-CN.md)。以下保留原腾讯 SDK 工程的参考说明，日常运行请选择 KikiTalk。
+
+# RTCube（SDK 原工程）
 
 [English](README.md) | 简体中文
 

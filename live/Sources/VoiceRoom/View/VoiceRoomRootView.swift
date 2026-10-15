@@ -37,6 +37,11 @@ class VoiceRoomRootView: RTCBaseView {
     private let summaryStore: LiveSummaryStore
     
     private var currentLiveOwner: LiveUserInfo?
+    private var usesKikiAppearance: Bool { prepareStore.roomParams.usesKikiAppearance }
+    private let kikiHeader = KikiVoiceHeaderView()
+    private let kikiAudienceStrip = KikiVoiceAudienceStrip()
+    private let kikiChatTitle = UILabel()
+    private let kikiRoomNotice = UILabel()
     
     @Published private var isLinked: Bool = false
     
@@ -72,7 +77,7 @@ class VoiceRoomRootView: RTCBaseView {
     }()
     
     private lazy var bottomMenu : VRBottomMenuView = {
-        let view = VRBottomMenuView(liveID: liveID, routerManager: routerManager, viewStore: viewStore, toastService: toastService, isOwner: isOwner)
+        let view = VRBottomMenuView(liveID: liveID, routerManager: routerManager, viewStore: viewStore, toastService: toastService, isOwner: isOwner, enableKaraoke: prepareStore.roomParams.enableKaraoke, enableCrossRoomInteraction: prepareStore.roomParams.enableCrossRoomInteraction, enableGifts: prepareStore.roomParams.enableGifts, usesKikiAppearance: usesKikiAppearance)
         view.songListButtonAction = { [weak self] in
             guard let self = self , let vc = WindowUtils.getCurrentWindowViewController() else { return }
             let songListView = SongListViewController(karaokeManager: self.karaokeManager,isOwner: isOwner,isKTV: self.isKTVMode)
@@ -88,6 +93,8 @@ class VoiceRoomRootView: RTCBaseView {
         button.layer.borderColor = UIColor.g3.withAlphaComponent(0.3).cgColor
         button.layer.borderWidth = 1
         button.layer.cornerRadius = 16.scale375Height()
+        button.accessibilityIdentifier = "voice.room.microphone"
+        button.accessibilityLabel = "麦克风"
         return button
     }()
     
@@ -123,7 +130,8 @@ class VoiceRoomRootView: RTCBaseView {
          prepareStore: VoiceRoomPrepareStore,
          routerManager: VRRouterManager,
          toastService: VRToastService,
-         isCreate: Bool) {
+         isCreate: Bool,
+         isResuming: Bool = false) {
         self.liveID = liveID
         self.prepareStore = prepareStore
         self.backgroundImageView.kf.setImage(with: URL(string: backgroundURL), placeholder: UIImage.placeholderImage)
@@ -134,7 +142,12 @@ class VoiceRoomRootView: RTCBaseView {
         self.summaryStore = LiveSummaryStore.create(liveID: liveID)
         super.init(frame: frame)
         self.seatGridView.sgDelegate = self
-        if isCreate {
+        if usesKikiAppearance {
+            self.seatGridView.setSeatViewDelegate(self)
+            let row = SGSeatViewLayoutRowConfig(count: 4, seatSpacing: 0, seatSize: CGSize(width: 70, height: 91), alignment: .spaceAround)
+            self.seatGridView.setLayoutMode(layoutMode: .free, layoutConfig: SGSeatViewLayoutConfig(rowConfigs: [row, row], rowSpacing: 8))
+        }
+        if isCreate && !isResuming {
             start(liveID: liveID)
         } else {
             join(roomId: liveID)
@@ -164,6 +177,38 @@ class VoiceRoomRootView: RTCBaseView {
         addSubview(bottomMenu)
         addSubview(barrageButton)
         addSubview(muteMicrophoneButton)
+        if usesKikiAppearance {
+            backgroundColor = KikiVoicePalette.background
+            backgroundImageView.isHidden = true
+            topView.isHidden = true
+            addSubview(kikiHeader)
+            addSubview(kikiAudienceStrip)
+            addSubview(kikiChatTitle)
+            addSubview(kikiRoomNotice)
+            kikiChatTitle.text = "房间聊天"
+            kikiChatTitle.textColor = .white.withAlphaComponent(0.9)
+            kikiChatTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+            kikiRoomNotice.text = "友善交流，尊重每一位正在说话的朋友"
+            kikiRoomNotice.font = .systemFont(ofSize: 11)
+            kikiRoomNotice.textColor = KikiVoicePalette.secondary
+            kikiRoomNotice.numberOfLines = 2
+            kikiRoomNotice.backgroundColor = .white.withAlphaComponent(0.06)
+            kikiRoomNotice.layer.cornerRadius = 12
+            kikiRoomNotice.clipsToBounds = true
+            kikiRoomNotice.textAlignment = .center
+            barrageButton.backgroundColor = KikiVoicePalette.bubble
+            barrageButton.layer.borderWidth = 0
+            barrageButton.layer.cornerRadius = 22
+            barrageButton.setText(text: "说点什么…")
+            barrageButton.accessibilityLabel = "发送房间消息"
+            barrageButton.accessibilityIdentifier = "voice.room.messageInput"
+            muteMicrophoneButton.backgroundColor = KikiVoicePalette.bubble
+            muteMicrophoneButton.layer.cornerRadius = 22
+            muteMicrophoneButton.layer.borderWidth = 0
+            muteMicrophoneButton.tintColor = .white
+            muteMicrophoneButton.setImage(UIImage(systemName: "mic.fill"), for: .normal)
+            muteMicrophoneButton.setImage(UIImage(systemName: "mic.slash.fill"), for: .selected)
+        }
     }
     
     override func activateConstraints() {
@@ -172,6 +217,10 @@ class VoiceRoomRootView: RTCBaseView {
         }
         backgroundGradientView.snp.makeConstraints { (make) in
             make.edges.equalToSuperview()
+        }
+        if usesKikiAppearance {
+            activateKikiConstraints()
+            return
         }
         topView.snp.makeConstraints { make in
             make.left.right.equalToSuperview()
@@ -214,10 +263,13 @@ class VoiceRoomRootView: RTCBaseView {
     override func bindInteraction() {
         // Top view interaction.
         topView.delegate = self
+        if usesKikiAppearance { bindKikiAppearance() }
         subscribeRoomState()
         subscribeUserState()
-        subscribeCoHostState()
-        subscribeBattleState()
+        if prepareStore.roomParams.enableCrossRoomInteraction {
+            subscribeCoHostState()
+            subscribeBattleState()
+        }
         subscribeGuestEvent()
         muteMicrophoneButton.addTarget(self, action: #selector(muteMicrophoneButtonClick(sender:)), for: .touchUpInside)
         setupliveEventListener()
@@ -342,8 +394,10 @@ extension VoiceRoomRootView {
             refreshLiveOwnerInfo()
         }
         initComponentView()
-        karaokeManager.synchronizeMetadata(isOwner: isOwner)
-        subscribeKaraokeState()
+        if prepareStore.roomParams.enableKaraoke {
+            karaokeManager.synchronizeMetadata(isOwner: isOwner)
+            subscribeKaraokeState()
+        }
         handleRoomLayoutType()
     }
 
@@ -352,6 +406,7 @@ extension VoiceRoomRootView {
     }
 
     private func setupKTVView(isOwner: Bool, isKTV: Bool) {
+        guard prepareStore.roomParams.enableKaraoke else { return }
         ktvView = KtvView(
             karaokeManager: karaokeManager,
             isOwner: isOwner,
@@ -428,7 +483,7 @@ extension VoiceRoomRootView {
             guard let self = self else { return }
             switch result {
             case .success(_):
-                karaokeManager.exit()
+                if prepareStore.roomParams.enableKaraoke { karaokeManager.exit() }
                 showAnchorEndView(liveEndedReason: .endedByHost)
             case .failure(let error):
                 let err = InternalError(errorInfo: error)
@@ -569,11 +624,20 @@ extension VoiceRoomRootView {
     
     private func updateButton(_ seatList: [SeatInfo]) {
         guard let seatInfo = seatList.first(where: { $0.userInfo.userID == selfInfo.userID }) else {
-            muteMicrophoneButton.isHidden = true
+            muteMicrophoneButton.isHidden = !usesKikiAppearance
+            muteMicrophoneButton.isEnabled = !usesKikiAppearance
+            muteMicrophoneButton.alpha = usesKikiAppearance ? 0.4 : 1
+            if usesKikiAppearance {
+                muteMicrophoneButton.accessibilityValue = "上麦后可用"
+            }
             return
         }
         muteMicrophoneButton.isHidden = false
+        muteMicrophoneButton.isEnabled = true
+        muteMicrophoneButton.alpha = 1
         muteMicrophoneButton.isSelected = seatInfo.userInfo.microphoneStatus == .off
+        muteMicrophoneButton.accessibilityValue = muteMicrophoneButton.isSelected ? "已静音" : "已开启"
+        muteMicrophoneButton.accessibilityHint = muteMicrophoneButton.isSelected ? "轻点打开麦克风" : "轻点关闭麦克风"
     }
         
     private func updateLinkStatus(_ seatList: [SeatInfo]) {
@@ -710,9 +774,10 @@ extension VoiceRoomRootView {
                         make.height.equalTo(230.scale375())
                         make.left.right.equalToSuperview()
                     }
-                    karaokeManager.exit()
+                    if prepareStore.roomParams.enableKaraoke { karaokeManager.exit() }
                 } else {
                     cancelPendingBattleIfNeeded()
+                    guard prepareStore.roomParams.enableKaraoke else { return }
                     if ktvView != nil { return }
                     ktvView = KtvView(karaokeManager: karaokeManager, isOwner: isOwner, isKTV: isKTVMode)
                     guard let ktvView = ktvView else { return }
@@ -1110,7 +1175,7 @@ extension VoiceRoomRootView {
     
     private func onRoomDismissed(roomId: String, liveEndedReason: LiveEndedReason) {
         dismissAllPanels()
-        karaokeManager.exit()
+        if prepareStore.roomParams.enableKaraoke { karaokeManager.exit() }
         if isOwner {
             showAnchorEndView(liveEndedReason: liveEndedReason)
         } else {
@@ -1371,6 +1436,17 @@ extension VoiceRoomRootView {
 
 extension VoiceRoomRootView: BarrageStreamViewDelegate {
     func barrageDisplayView(_ barrageDisplayView: BarrageStreamView, createCustomCell barrage: Barrage) -> UIView? {
+        if usesKikiAppearance, barrage.extensionInfo?["TYPE"] != "GIFTMESSAGE" {
+            let owner = liveListStore.state.value.currentLive.liveOwner
+            // The initial SDK join message may contain only an ID. Use the
+            // authenticated profile already available in the room stores.
+            let known = barrage.sender.userID == owner.userID ? owner : audienceStore.state.value.audienceList.first { $0.userID == barrage.sender.userID }
+            let ownProfile = LoginStore.shared.state.value.loginUserInfo
+            let isSelf = ownProfile?.userID == barrage.sender.userID
+            return KikiVoiceBarrageCell(barrage: barrage, ownerID: owner.userID,
+                                       senderName: isSelf ? ownProfile?.nickname : known?.userName,
+                                       senderAvatarURL: isSelf ? ownProfile?.avatarURL : known?.avatarURL)
+        }
         guard let type = barrage.extensionInfo?["TYPE"], type == "GIFTMESSAGE" else {
             return nil
         }
@@ -1378,6 +1454,188 @@ extension VoiceRoomRootView: BarrageStreamViewDelegate {
     }
     
     func onBarrageClicked(user: LiveUserInfo) {
+        if usesKikiAppearance { showKikiUser(user) }
+    }
+}
+
+// MARK: - Kiki room appearance
+
+private extension VoiceRoomRootView {
+    func activateKikiConstraints() {
+        kikiHeader.snp.makeConstraints { make in
+            make.top.equalTo(safeAreaLayoutGuide.snp.top).offset(8)
+            make.leading.trailing.equalToSuperview().inset(16)
+        }
+        seatGridView.snp.makeConstraints { make in
+            make.top.equalTo(kikiHeader.snp.bottom).offset(20)
+            make.leading.trailing.equalToSuperview().inset(6)
+            make.height.equalTo(202)
+        }
+        kikiAudienceStrip.snp.makeConstraints { make in
+            make.top.equalTo(seatGridView.snp.bottom).offset(8)
+            make.leading.trailing.equalToSuperview().inset(18)
+            make.height.equalTo(62)
+        }
+        kikiRoomNotice.snp.makeConstraints { make in
+            make.top.equalTo(kikiAudienceStrip.snp.bottom).offset(8)
+            make.leading.trailing.equalToSuperview().inset(16)
+            make.height.equalTo(34)
+        }
+        kikiChatTitle.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(18)
+            make.top.equalTo(kikiRoomNotice.snp.bottom).offset(15)
+        }
+        bottomMenu.snp.makeConstraints { make in
+            make.trailing.equalToSuperview()
+            make.bottom.equalTo(safeAreaLayoutGuide.snp.bottom).offset(-8)
+            make.width.equalTo(112)
+            make.height.equalTo(48)
+        }
+        muteMicrophoneButton.snp.makeConstraints { make in
+            make.trailing.equalTo(bottomMenu.snp.leading).offset(-6)
+            make.centerY.equalTo(bottomMenu)
+            make.size.equalTo(44)
+        }
+        barrageButton.snp.makeConstraints { make in
+            make.leading.equalToSuperview().offset(12)
+            make.trailing.equalTo(muteMicrophoneButton.snp.leading).offset(-8)
+            make.centerY.equalTo(bottomMenu)
+            make.height.equalTo(44)
+        }
+        barrageDisplayView.snp.makeConstraints { make in
+            make.top.equalTo(kikiChatTitle.snp.bottom).offset(8)
+            make.leading.trailing.equalToSuperview().inset(12)
+            make.bottom.equalTo(barrageButton.snp.top).offset(-12)
+        }
+        giftDisplayView.snp.makeConstraints { $0.edges.equalToSuperview() }
+        giftDisplayView.isHidden = !prepareStore.roomParams.enableGifts
+    }
+
+    func bindKikiAppearance() {
+        kikiHeader.onMore = { [weak self] in self?.showKikiMore() }
+        kikiHeader.onOwner = { [weak self] in
+            guard let self else { return }
+            self.showKikiUser(self.liveListStore.state.value.currentLive.liveOwner)
+        }
+        kikiHeader.onFollow = { [weak self] in self?.toggleKikiFollow() }
+        kikiAudienceStrip.onAudienceList = { [weak self] in self?.showKikiAudience() }
+        kikiAudienceStrip.onUser = { [weak self] user in self?.showKikiUser(user) }
+        liveListStore.state.subscribe(StatePublisherSelector(keyPath: \LiveListState.currentLive))
+            .receive(on: RunLoop.main)
+            .sink { [weak self] live in
+                guard let self, !live.isEmpty else { return }
+                self.kikiHeader.update(live: live, isOwner: self.isOwner)
+            }
+            .store(in: &cancellableSet)
+        imStore.subscribeState(StatePublisherSelector(keyPath: \VoiceRoomIMState.myFollowingUserList))
+            .receive(on: RunLoop.main)
+            .sink { [weak self] following in
+                guard let self else { return }
+                let ownerID = self.liveListStore.state.value.currentLive.liveOwner.userID
+                self.kikiHeader.updateFollowing(following.contains(where: { $0.userId == ownerID }))
+            }
+            .store(in: &cancellableSet)
+        audienceStore.state.subscribe(StatePublisherSelector(keyPath: \LiveAudienceState.audienceList))
+            .combineLatest(audienceStore.state.subscribe(StatePublisherSelector(keyPath: \LiveAudienceState.audienceCount)),
+                           seatStore.state.subscribe(StatePublisherSelector(keyPath: \LiveSeatState.seatList)))
+            .receive(on: RunLoop.main)
+            .sink { [weak self] users, count, seats in
+                guard let self else { return }
+                let occupied = Set(seats.compactMap { $0.userInfo.userID.isEmpty ? nil : $0.userInfo.userID })
+                let ownerID = self.liveListStore.state.value.currentLive.liveOwner.userID
+                let listeners = users.filter { !occupied.contains($0.userID) && $0.userID != ownerID }
+                // audienceCount excludes the owner. Subtract audience members
+                // who are on stage, while retaining listeners not loaded yet.
+                let seatedAudienceCount = occupied.subtracting([ownerID]).count
+                let listenerCount = max(listeners.count, Int(count) - seatedAudienceCount)
+                self.kikiAudienceStrip.update(users: listeners, count: listenerCount)
+            }
+            .store(in: &cancellableSet)
+    }
+
+    func toggleKikiFollow() {
+        let owner = liveListStore.state.value.currentLive.liveOwner
+        guard !owner.userID.isEmpty, owner.userID != selfInfo.userID else { return }
+        let user = TUIUserInfo()
+        user.userId = owner.userID
+        let following = imStore.state.myFollowingUserList.contains(where: { $0.userId == owner.userID })
+        kikiHeader.followButton.isEnabled = false
+        let completion: VoiceRoomIMStore.CompletionClosure = { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.kikiHeader.followButton.isEnabled = true
+                if case .failure(let error) = result { self.handleErrorMessage(error.localizedMessage) }
+            }
+        }
+        if following { imStore.unfollowUser(user, completion: completion) }
+        else { imStore.followUser(user, completion: completion) }
+    }
+
+    func showKikiAudience() {
+        audienceStore.fetchAudienceList(completion: nil)
+        let panel = AudienceListPanelView(liveId: liveID)
+        panel.onBackButtonClickedClosure = { [weak self] in self?.routerManager.dismiss() }
+        panel.onUserManageButtonClicked = { [weak self] user in
+            guard let self else { return }
+            self.routerManager.dismiss { [weak self] in self?.showKikiUser(user) }
+        }
+        routerManager.present(view: panel, config: .bottomDefault())
+    }
+
+    func showKikiUser(_ user: LiveUserInfo) {
+        guard !user.userID.isEmpty else { return }
+        let seat = TUISeatInfo()
+        seat.userId = user.userID
+        seat.userName = user.userName
+        seat.avatarUrl = user.avatarURL
+        seat.index = -1
+        let isSeatUser = seatStore.state.value.seatList.contains(where: { $0.userInfo.userID == user.userID })
+        if let actualSeat = seatStore.state.value.seatList.first(where: { $0.userInfo.userID == user.userID }) {
+            seat.index = actualSeat.index
+            seat.isAudioLocked = !actualSeat.userInfo.allowOpenMicrophone
+        }
+        let panel = VRUserManagerPanel(liveID: liveID, imStore: imStore, toastService: toastService, routerManager: routerManager, seatInfo: seat, isSeatUser: isSeatUser)
+        routerManager.present(view: panel, config: .bottomDefault())
+    }
+
+    func showKikiMore() {
+        let members = AlertButtonConfig(text: "房间成员", type: .primary) { [weak self] _ in
+            guard let self else { return }
+            self.routerManager.dismiss { [weak self] in self?.showKikiAudience() }
+        }
+        let leave = AlertButtonConfig(text: isOwner ? "结束语聊" : "离开房间", type: .red) { [weak self] _ in
+            guard let self else { return }
+            self.routerManager.dismiss { [weak self] in
+                guard let self else { return }
+                if self.isOwner { self.anchorStopButtonClick() }
+                else { self.audienceLeaveButtonClick() }
+            }
+        }
+        let cancel = AlertButtonConfig(text: "取消", type: .grey) { [weak self] _ in self?.routerManager.dismiss() }
+        routerManager.present(view: AtomicAlertView(config: AlertViewConfig(items: [members, leave, cancel])), config: .bottomDefault())
+    }
+}
+
+extension VoiceRoomRootView: SGSeatViewDelegate {
+    func seatGridView(_ view: SeatGridView, createSeatView seatInfo: TUISeatInfo) -> UIView? {
+        let seat = KikiVoiceSeatView(seat: seatInfo, ownerID: liveListStore.state.value.currentLive.liveOwner.userID)
+        updateKikiSeat(seat, info: seatInfo)
+        return seat
+    }
+
+    func seatGridView(_ view: SeatGridView, updateSeatView seatInfo: TUISeatInfo, seatView: UIView) {
+        guard let seat = seatView as? KikiVoiceSeatView else { return }
+        seat.update(seat: seatInfo, ownerID: liveListStore.state.value.currentLive.liveOwner.userID)
+        updateKikiSeat(seat, info: seatInfo)
+    }
+
+    func seatGridView(_ view: SeatGridView, updateUserVolume volume: Int, seatView: UIView) {
+        (seatView as? KikiVoiceSeatView)?.setVolume(volume)
+    }
+
+    private func updateKikiSeat(_ seat: KikiVoiceSeatView, info: TUISeatInfo) {
+        let actual = seatStore.state.value.seatList.first(where: { $0.index == info.index })
+        seat.setMuted(actual?.userInfo.microphoneStatus == .off || info.isAudioLocked)
     }
 }
 

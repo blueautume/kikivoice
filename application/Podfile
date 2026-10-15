@@ -12,7 +12,8 @@ def shared_pods
   pod 'Alamofire', '5.0.0'
   pod 'SnapKit', '5.0.1'
   pod 'Kingfisher', '6.3.1'
-  pod 'AtomicXCore', '4.3.0'
+  pod 'AtomicXCore', '4.3.10'
+  pod 'RTCRoomEngine/Professional', '4.3.10'
   pod 'Toast-Swift'
 
   # ── Shell project local pods ──
@@ -40,6 +41,21 @@ target 'RTCubeLab' do
   target 'RTCubeLabReplayExtension' do
     inherit! :search_paths
     pod 'TXLiteAVSDK_Professional/ReplayKitExt', TXLITEAVSDK_VERSION
+  end
+end
+
+# KikiTalk deliberately links only the real voice/live stack. The legacy
+# application target above remains available for SDK reference development.
+target 'KikiTalk' do
+  use_frameworks!
+  pod 'AtomicXCore', '4.3.10'
+  pod 'RTCRoomEngine/Professional', '4.3.10'
+  pod 'TXLiteAVSDK_Professional', TXLITEAVSDK_VERSION
+  pod 'TUILiveKit', :path => '../live/TUILiveKit.podspec'
+  pod 'AtomicX', :path => '../atomic_x/AtomicX.podspec'
+
+  target 'KikiTalkTests' do
+    inherit! :search_paths
   end
 end
 

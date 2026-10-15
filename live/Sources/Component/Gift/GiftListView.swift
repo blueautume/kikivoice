@@ -52,6 +52,13 @@ public class GiftListView: UIView {
     private var currentSelectedCategoryIndex: Int = 0
     private var currentSelectedCellIndex: IndexPath = .init(row: 0, section: 0)
     private var cancellableSet: Set<AnyCancellable> = []
+    private enum CatalogState {
+        case loading
+        case loaded
+        case failed(Int)
+    }
+    private var catalogState: CatalogState = .loading
+    private var isRefreshingCatalog = false
     
     // Layout Config
     private var rows: Int = 2
@@ -121,6 +128,37 @@ public class GiftListView: UIView {
         view.backgroundColor = .clear
         return view
     }()
+
+    private lazy var catalogStatusView = UIView()
+
+    private lazy var catalogActivityIndicator: UIActivityIndicatorView = {
+        let indicator = UIActivityIndicatorView(style: .medium)
+        indicator.color = .flowKitWhite
+        indicator.hidesWhenStopped = true
+        return indicator
+    }()
+
+    private lazy var catalogStatusLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 14)
+        label.textColor = .flowKitWhite.withAlphaComponent(0.75)
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.accessibilityIdentifier = "gift.catalog.status"
+        return label
+    }()
+
+    private lazy var catalogRetryButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.setTitleColor(.flowKitWhite, for: .normal)
+        button.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
+        button.backgroundColor = .buttonPrimaryDefaultColor
+        button.layer.cornerRadius = 16
+        button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 24, bottom: 8, right: 24)
+        button.addTarget(self, action: #selector(retryCatalogLoading), for: .touchUpInside)
+        button.accessibilityIdentifier = "gift.catalog.retry"
+        return button
+    }()
     
     // MARK: - Init
     
@@ -134,7 +172,7 @@ public class GiftListView: UIView {
             language = "en"
         }
         store.setLanguage(language)
-        store.refreshUsableGifts(completion: nil)
+        refreshCatalog()
     }
 
     @available(*, unavailable)
@@ -182,7 +220,14 @@ extension GiftListView {
         
         addSubview(separatorLine)
         addSubview(collectionView)
+        addSubview(catalogStatusView)
         addSubview(bottomContainer)
+
+        let statusStack = UIStackView(arrangedSubviews: [catalogActivityIndicator, catalogStatusLabel, catalogRetryButton])
+        statusStack.axis = .vertical
+        statusStack.alignment = .center
+        statusStack.spacing = 12
+        catalogStatusView.addSubview(statusStack)
         
         topContainer.snp.makeConstraints { make in
             make.top.leading.trailing.equalToSuperview()
@@ -209,6 +254,20 @@ extension GiftListView {
             make.top.equalTo(separatorLine.snp.bottom).offset(10)
             make.leading.trailing.equalToSuperview()
             make.height.equalTo(200.scale375())
+        }
+
+        catalogStatusView.snp.makeConstraints { make in
+            make.edges.equalTo(collectionView)
+        }
+
+        statusStack.snp.makeConstraints { make in
+            make.center.equalToSuperview()
+            make.leading.greaterThanOrEqualToSuperview().offset(24)
+            make.trailing.lessThanOrEqualToSuperview().offset(-24)
+        }
+
+        catalogStatusLabel.snp.makeConstraints { make in
+            make.width.lessThanOrEqualTo(catalogStatusView.snp.width).offset(-48)
         }
         
         bottomContainer.snp.makeConstraints { make in
@@ -249,7 +308,7 @@ extension GiftListView {
             .receive(on: RunLoop.main)
             .sink { [weak self] categories in
                 guard let self = self else { return }
-                self.giftCategories = categories
+                self.giftCategories = categories.filter { !$0.giftList.isEmpty }
                 self.handleDataUpdate()
             }
             .store(in: &cancellableSet)
@@ -260,10 +319,62 @@ extension GiftListView {
         cancellableSet.forEach { $0.cancel() }
         cancellableSet.removeAll()
     }
+
+    @objc private func retryCatalogLoading() {
+        refreshCatalog()
+    }
+
+    private func refreshCatalog() {
+        guard !isRefreshingCatalog else { return }
+        isRefreshingCatalog = true
+        catalogState = .loading
+        updateCatalogStatus()
+        store.refreshUsableGifts { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.isRefreshingCatalog = false
+                switch result {
+                case .success:
+                    self.giftCategories = self.store.state.value.usableGifts.filter { !$0.giftList.isEmpty }
+                    self.catalogState = .loaded
+                case .failure(let error):
+                    self.catalogState = .failed(error.code)
+                }
+                self.handleDataUpdate()
+            }
+        }
+    }
+
+    private func updateCatalogStatus() {
+        let hasGifts: Bool
+        switch catalogState {
+        case .loading:
+            hasGifts = false
+            catalogActivityIndicator.startAnimating()
+            catalogStatusLabel.text = "正在加载礼物…"
+            catalogRetryButton.isHidden = true
+        case .loaded:
+            hasGifts = !giftCategories.isEmpty
+            catalogActivityIndicator.stopAnimating()
+            catalogStatusLabel.text = "暂无可用礼物\n礼物上架后可在这里查看"
+            catalogRetryButton.setTitle("刷新", for: .normal)
+            catalogRetryButton.isHidden = false
+        case .failed(let code):
+            hasGifts = false
+            catalogActivityIndicator.stopAnimating()
+            catalogStatusLabel.text = "礼物加载失败，请稍后重试\n错误码：\(code)"
+            catalogRetryButton.setTitle("重新加载", for: .normal)
+            catalogRetryButton.isHidden = false
+        }
+        catalogStatusView.isHidden = hasGifts
+        collectionView.isHidden = !hasGifts
+        categoryTabView.isHidden = !hasGifts
+    }
     
     private func handleDataUpdate() {
         categoryTabView.reloadData()
         collectionView.reloadData()
+        updateCatalogStatus()
         
         if !giftCategories.isEmpty {
             if currentSelectedCategoryIndex >= giftCategories.count {
@@ -419,12 +530,12 @@ extension GiftListView: GiftCellDelegate {
         KeyMetrics.reportEventData(eventKey: getReportKey())
         
         store.sendGift(giftID: gift.giftID, count: UInt(count)) { [weak self] result in
-            guard let self = self else { return }
-            
-            self.delegate?.giftListView(self, didSend: gift, count: count, result: result)
-            
-            if case .failure(let error) = result {
-                 print("Send Gift Error: \(error.localizedDescription)")
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if case .failure(let error) = result {
+                    self.showAtomicToast(text: "礼物发送失败，请稍后重试（\(error.code)）", style: .error)
+                }
+                self.delegate?.giftListView(self, didSend: gift, count: count, result: result)
             }
         }
     }
