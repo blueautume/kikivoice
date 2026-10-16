@@ -10,6 +10,7 @@
 		082211E38C26B878DBE36BA7 /* KikiDemoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5857ABCDB7751D39725EE21A /* KikiDemoStore.swift */; };
 		082366E0A67F4BE67756CF3D /* KikiLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C78FE734DAC221D8418D57EC /* KikiLoginView.swift */; };
 		0851A5EEFD60B871FEACB4C1 /* ReplayKitLocalized.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 5B1412993B998075E3CEA419 /* ReplayKitLocalized.xcstrings */; };
+		0957006F958A6A7D637FC300 /* KikiVoiceRoomFloatingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85EC875B0927AF0E14C439AE /* KikiVoiceRoomFloatingOverlay.swift */; };
 		0A3A8002F10AB9426AACADE9 /* Pods_KikiTalk.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8360C8846222B8368EF6994E /* Pods_KikiTalk.framework */; };
 		1C45AE9DE900680E62B6C921 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = D9E9758F47BFA8556C9281DF /* InfoPlist.strings */; };
 		31D1185C3DC2A20C4E93FF69 /* LaunchAnimationPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED8B60ABC44BCB74060FAF72 /* LaunchAnimationPlayerView.swift */; };
@@ -93,6 +94,7 @@
 		DD100003 /* LaunchImage_en@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = AA200003 /* LaunchImage_en@2x.png */; };
 		DD100004 /* LaunchImage_en@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = AA200004 /* LaunchImage_en@3x.png */; };
 		E67DCD8C9D834BF2E632160C /* MineLocalized.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C97618C3ACB8696944DEA829 /* MineLocalized.xcstrings */; };
+		E731E2AFF9EFDF9055E5E071 /* KikiVoiceRoomFloatingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85EC875B0927AF0E14C439AE /* KikiVoiceRoomFloatingOverlay.swift */; };
 		EE0EB99CBF21FBDCCC632470 /* KikiRealtimeIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A35AC2F088BD23CB2AA674 /* KikiRealtimeIntegrationTests.swift */; };
 		EEE3B91D8CF54397B18132BD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2231184EB1D346815C4601A6 /* Assets.xcassets */; };
 		F25F395E27FE42E3A5838F63 /* KikiAPIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18276E256FF3D04749DB6243 /* KikiAPIClientTests.swift */; };
@@ -154,6 +156,7 @@
 		762AC652DB6CB4E52398BD0A /* zh-Hans */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		7E4883B41EE1A2A8656709CD /* KikiAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiAPIClient.swift; sourceTree = "<group>"; };
 		8360C8846222B8368EF6994E /* Pods_KikiTalk.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_KikiTalk.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		85EC875B0927AF0E14C439AE /* KikiVoiceRoomFloatingOverlay.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiVoiceRoomFloatingOverlay.swift; sourceTree = "<group>"; };
 		88BD0E52BAB9FE9019CD9F01 /* Pods-KikiTalkTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-KikiTalkTests.debug.xcconfig"; path = "Target Support Files/Pods-KikiTalkTests/Pods-KikiTalkTests.debug.xcconfig"; sourceTree = "<group>"; };
 		897E10B7F68F9E65CCE0C19B /* Pods-KikiTalkTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-KikiTalkTests.release.xcconfig"; path = "Target Support Files/Pods-KikiTalkTests/Pods-KikiTalkTests.release.xcconfig"; sourceTree = "<group>"; };
 		8A4F11069BA80712ECE428D6 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
@@ -316,6 +319,7 @@
 				8F8E93C5B3749360CD7C39D8 /* KikiTalk.entitlements */,
 				CDC7C4D6B36F7392AEC4F01C /* KikiSDKAvatarTrust.swift */,
 				2EA976C6751A3BE0CB8AD5AD /* KikiLaunchScreen.storyboard */,
+				85EC875B0927AF0E14C439AE /* KikiVoiceRoomFloatingOverlay.swift */,
 			);
 			path = Demo;
 			sourceTree = "<group>";
@@ -1061,6 +1065,7 @@
 				99F4087F0706926E11FCC971 /* KikiAPIClient.swift in Sources */,
 				082366E0A67F4BE67756CF3D /* KikiLoginView.swift in Sources */,
 				97C05E29ECC13CAD5C5083F1 /* KikiSDKAvatarTrust.swift in Sources */,
+				E731E2AFF9EFDF9055E5E071 /* KikiVoiceRoomFloatingOverlay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1132,6 +1137,7 @@
 				A4E4828686F7069B27ACCDAA /* KikiAPIClient.swift in Sources */,
 				4EF055B37A579691C7935E3D /* KikiLoginView.swift in Sources */,
 				A97D40E9BF989536D7E67EFD /* KikiSDKAvatarTrust.swift in Sources */,
+				0957006F958A6A7D637FC300 /* KikiVoiceRoomFloatingOverlay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -47,12 +47,19 @@ final class KikiRTCService: ObservableObject {
 
     @Published private(set) var isPresentingRoom = false
     @Published private(set) var currentRoomID: String?
+    @Published private(set) var isVoiceRoomMinimized = false
     var onRoomClosed: ((String) -> Void)?
     var onSessionExpired: (() -> Void)?
 
     private weak var roomController: UIViewController?
+    // Keep the original room and its SDK subscriptions alive while its UI is hidden.
+    private var minimizedVoiceRoomController: TUIVoiceRoomViewController?
+    private var voiceRoomOverlay: KikiVoiceRoomFloatingOverlay?
+    private var isRestoringVoiceRoom = false
+    private var voiceRoomPresentationGeneration = 0
     private var loginEvents: AnyCancellable?
     private var liveState: AnyCancellable?
+    private var liveEvents: AnyCancellable?
     private var observedSDKRoomID: String?
 
     var isLoggedIn: Bool {
@@ -81,10 +88,26 @@ final class KikiRTCService: ObservableObject {
                 let previous = self.observedSDKRoomID
                 self.observedSDKRoomID = live.liveID.isEmpty ? nil : live.liveID
                 if let previous, previous != self.observedSDKRoomID {
+                    if self.isVoiceRoomMinimized, self.currentRoomID == previous {
+                        self.clearMinimizedVoiceRoom()
+                    }
                     // Floating-window close and remote termination can end a room
                     // without a visible controller being dismissed a second time.
                     self.notifyRoomClosed(previous)
                 }
+            }
+        liveEvents = LiveListStore.shared.liveListEventPublisher
+            .receive(on: RunLoop.main)
+            .sink { [weak self] event in
+                guard let self, self.isVoiceRoomMinimized else { return }
+                let roomID: String
+                switch event {
+                case .onLiveEnded(liveID: let id, reason: _, message: _): roomID = id
+                case .onKickedOutOfLive(liveID: let id, reason: _, message: _): roomID = id
+                }
+                guard self.currentRoomID == roomID else { return }
+                self.clearMinimizedVoiceRoom()
+                self.notifyRoomClosed(roomID)
             }
         loginEvents = LoginStore.shared.loginEventPublisher
             .receive(on: RunLoop.main)
@@ -92,6 +115,7 @@ final class KikiRTCService: ObservableObject {
                 Task { @MainActor in
                     guard let self else { return }
                     self.roomController?.dismiss(animated: false)
+                    self.clearMinimizedVoiceRoom()
                     if FloatWindow.shared.isShowingFloatWindow() { FloatWindow.shared.releaseFloatWindow() }
                     self.onSessionExpired?()
                     NotificationCenter.default.post(name: .kikiRTCSessionExpired, object: nil)
@@ -119,6 +143,7 @@ final class KikiRTCService: ObservableObject {
             }
         }
         roomController?.dismiss(animated: false)
+        clearMinimizedVoiceRoom()
         if FloatWindow.shared.isShowingFloatWindow() { FloatWindow.shared.releaseFloatWindow() }
         try? await complete { completion in LoginStore.shared.logout(completion: completion) }
     }
@@ -156,6 +181,10 @@ final class KikiRTCService: ObservableObject {
     /// Presents the SDK UI after confirming the room still exists on the RTC server.
     func presentRoom(roomID: String, isLive: Bool, isOwner: Bool) async throws {
         try requireLogin()
+        if isVoiceRoomMinimized, currentRoomID == roomID {
+            try await resumeMinimizedVoiceRoom()
+            return
+        }
         if FloatWindow.shared.isShowingFloatWindow(), FloatWindow.shared.getCurrentRoomId() == roomID,
            let presenter = Self.topController() {
             _ = FloatWindow.shared.resumeLive(atViewController: presenter)
@@ -177,6 +206,7 @@ final class KikiRTCService: ObservableObject {
         } else {
             let params = RoomParams(maxSeatCount: 8, seatMode: .applyToTake)
             params.usesKikiAppearance = true
+            params.enableMinimization = true
             params.enableKaraoke = false
             params.enableCrossRoomInteraction = false
             params.enableGifts = false
@@ -214,6 +244,7 @@ final class KikiRTCService: ObservableObject {
         } else {
             let params = RoomParams(maxSeatCount: 8, seatMode: .applyToTake)
             params.usesKikiAppearance = true
+            params.enableMinimization = true
             params.enableKaraoke = false
             params.enableCrossRoomInteraction = false
             params.enableGifts = false
@@ -257,9 +288,10 @@ final class KikiRTCService: ObservableObject {
         }
     }
 
-    private func requireNoActiveRoom() throws {
-        guard !isPresentingRoom, !FloatWindow.shared.isShowingFloatWindow() else {
-            throw KikiRTCError.unavailable("请先退出当前房间。")
+    func requireNoActiveRoom() throws {
+        guard !isPresentingRoom, !isVoiceRoomMinimized, !isRestoringVoiceRoom,
+              currentSDKRoomID == nil, !FloatWindow.shared.isShowingFloatWindow() else {
+            throw KikiRTCError.unavailable(isVoiceRoomMinimized ? "你仍在语聊房中，请先点击悬浮球返回并离开房间。" : "请先退出当前房间。")
         }
     }
 
@@ -280,14 +312,22 @@ final class KikiRTCService: ObservableObject {
         }
         let onPresentationChanged: (Bool) -> Void = { [weak self, weak child] visible in
             guard let self else { return }
+            guard self.currentRoomID == roomID || self.roomController === child else { return }
             self.isPresentingRoom = visible
+            if !visible, self.isVoiceRoomMinimized, self.minimizedVoiceRoomController === child {
+                // Dismissing the full-screen UI is not leaving the RTC room.
+                return
+            }
             self.currentRoomID = visible ? roomID : nil
             self.roomController = visible || self.isCurrentRoom(roomID) ? child : nil
-            if !visible {
+            if !visible, !self.isCurrentRoom(roomID) {
                 self.notifyRoomClosed(roomID)
             }
         }
-        if let voice = child as? TUIVoiceRoomViewController { voice.onRoomPresentationChanged = onPresentationChanged }
+        if let voice = child as? TUIVoiceRoomViewController {
+            voice.onRoomPresentationChanged = onPresentationChanged
+            voice.onMinimizeRequested = { [weak self] in self?.minimizeVoiceRoom() }
+        }
         if let anchor = child as? TUILiveRoomAnchorViewController { anchor.onRoomPresentationChanged = onPresentationChanged }
         if let audience = child as? TUILiveRoomAudienceViewController { audience.onRoomPresentationChanged = onPresentationChanged }
         currentRoomID = roomID
@@ -296,6 +336,128 @@ final class KikiRTCService: ObservableObject {
         await withCheckedContinuation { continuation in
             presenter.present(child, animated: true) { continuation.resume() }
         }
+    }
+
+    /// Hides only the room UI. Audio, seats, chat and the room owner stay connected.
+    @discardableResult
+    func minimizeVoiceRoom() -> Bool {
+        let live = LiveListStore.shared.state.value.currentLive
+        guard !isVoiceRoomMinimized, !isRestoringVoiceRoom,
+              let controller = roomController as? TUIVoiceRoomViewController,
+              let roomID = currentRoomID, live.liveID == roomID, live.status == .running,
+              controller.presentingViewController != nil, !controller.isBeingDismissed,
+              controller.presentedViewController == nil,
+              let scene = controller.view.window?.windowScene else { return false }
+
+        voiceRoomPresentationGeneration += 1
+        let generation = voiceRoomPresentationGeneration
+        minimizedVoiceRoomController = controller
+        isVoiceRoomMinimized = true
+        voiceRoomOverlay = KikiVoiceRoomFloatingOverlay(windowScene: scene, roomTitle: live.liveName,
+                                                       avatarURL: live.liveOwner.avatarURL) { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                do { try await self.resumeMinimizedVoiceRoom() }
+                catch {
+                    guard let presenter = Self.topController(), !(presenter is UIAlertController) else { return }
+                    let alert = UIAlertController(title: "暂时无法返回语聊房", message: error.localizedDescription, preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "知道了", style: .default))
+                    presenter.present(alert, animated: true)
+                }
+            }
+        }
+        controller.view.endEditing(true)
+        // Keep SDK state subscriptions running, but queue popovers such as seat
+        // invitations until their original controller is visible again.
+        controller.enableSubscribeRouter(enable: false)
+        controller.dismiss(animated: true) { [weak self] in
+            guard let self, self.voiceRoomPresentationGeneration == generation,
+                  self.isVoiceRoomMinimized, !self.isRestoringVoiceRoom,
+                  self.isCurrentRoom(roomID) else { return }
+            UIApplication.shared.isIdleTimerDisabled = false
+            self.voiceRoomOverlay?.show()
+        }
+        return true
+    }
+
+    /// Presents the retained controller instead of rejoining or rebuilding the room.
+    func resumeMinimizedVoiceRoom() async throws {
+        guard isVoiceRoomMinimized, !isRestoringVoiceRoom,
+              let controller = minimizedVoiceRoomController, let roomID = currentRoomID else { return }
+        guard isCurrentRoom(roomID), LiveListStore.shared.state.value.currentLive.status == .running else {
+            clearMinimizedVoiceRoom()
+            throw KikiRTCError.unavailable("语聊房已结束，请刷新房间列表。")
+        }
+        try requireLogin()
+        isRestoringVoiceRoom = true
+        let generation = voiceRoomPresentationGeneration
+        defer {
+            if voiceRoomPresentationGeneration == generation {
+                isRestoringVoiceRoom = false
+                // A card can begin restoring before the minimize animation ends.
+                // If that attempt fails or is cancelled, keep a visible way back.
+                if isVoiceRoomMinimized, isCurrentRoom(roomID), controller.presentingViewController == nil {
+                    UIApplication.shared.isIdleTimerDisabled = false
+                    voiceRoomOverlay?.show()
+                }
+            }
+        }
+        // A room can be resumed from a card while the minimize animation finishes,
+        // or above a profile sheet that is still transitioning.
+        for _ in 0..<20 {
+            try Task.checkCancellation()
+            let top = Self.topController()
+            if !controller.isBeingDismissed, controller.presentingViewController == nil,
+               top?.isBeingDismissed != true, top?.isBeingPresented != true { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        guard voiceRoomPresentationGeneration == generation, isCurrentRoom(roomID) else {
+            throw KikiRTCError.unavailable("语聊房已结束，请刷新房间列表。")
+        }
+        if let alert = Self.topController() as? UIAlertController {
+            await withCheckedContinuation { continuation in
+                alert.dismiss(animated: false) { continuation.resume() }
+            }
+        }
+        guard let presenter = Self.topController(), presenter.viewIfLoaded?.window != nil,
+              !presenter.isBeingDismissed, !presenter.isBeingPresented,
+              controller.presentingViewController == nil, !controller.isBeingDismissed else {
+            throw KikiRTCError.unavailable("页面正在切换，请稍后再点击悬浮球。")
+        }
+        presenter.view.endEditing(true)
+        voiceRoomOverlay?.hide()
+        controller.modalPresentationStyle = .fullScreen
+        UIApplication.shared.isIdleTimerDisabled = true
+        await withCheckedContinuation { continuation in
+            presenter.present(controller, animated: true) { continuation.resume() }
+        }
+        guard voiceRoomPresentationGeneration == generation, isCurrentRoom(roomID) else {
+            controller.dismiss(animated: false)
+            throw KikiRTCError.unavailable("语聊房已结束，请刷新房间列表。")
+        }
+        isPresentingRoom = true
+        isVoiceRoomMinimized = false
+        minimizedVoiceRoomController = nil
+        voiceRoomOverlay = nil
+        controller.enableSubscribeRouter(enable: true)
+    }
+
+    private func clearMinimizedVoiceRoom() {
+        guard isVoiceRoomMinimized || minimizedVoiceRoomController != nil else { return }
+        voiceRoomPresentationGeneration += 1
+        let controller = minimizedVoiceRoomController
+        voiceRoomOverlay?.hide()
+        voiceRoomOverlay = nil
+        minimizedVoiceRoomController = nil
+        isVoiceRoomMinimized = false
+        isRestoringVoiceRoom = false
+        if roomController === controller {
+            roomController = nil
+            currentRoomID = nil
+            isPresentingRoom = false
+        }
+        controller?.dismiss(animated: false)
+        UIApplication.shared.isIdleTimerDisabled = false
     }
 
     private func notifyRoomClosed(_ roomID: String) {
@@ -331,6 +493,7 @@ final class KikiRTCService: ObservableObject {
 
     private static func topController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .filter { $0.activationState == .foregroundActive }
         guard let root = scenes.flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController else { return nil }
         var current = root
         while let presented = current.presentedViewController { current = presented }

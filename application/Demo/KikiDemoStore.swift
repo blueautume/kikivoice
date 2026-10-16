@@ -222,6 +222,7 @@ struct DemoRoom: Identifiable, Codable, Equatable {
 
     func reserveRoom(title: String, category: String, isLive: Bool, theme: Int) async throws -> DemoRoom {
         guard let token, isAuthenticated, !needsNickname else { throw KikiAPIError.server(401, "请先登录并设置昵称。") }
+        try rtc.requireNoActiveRoom()
         let room = try await api.reserveRoom(title: title, category: category, isLive: isLive, theme: theme, token: token)
         guard self.token == token else { throw CancellationError() }
         roomMetadata.insert(room, at: 0)

@@ -14,6 +14,7 @@ enum KikiVoicePalette {
 
 final class KikiVoiceHeaderView: UIView {
     var onMore: (() -> Void)?
+    var onMinimize: (() -> Void)?
     var onFollow: (() -> Void)?
     var onOwner: (() -> Void)?
     private let titleLabel = UILabel()
@@ -22,6 +23,7 @@ final class KikiVoiceHeaderView: UIView {
     private let ownerName = UILabel()
     let followButton = UIButton(type: .system)
     private let moreButton = UIButton(type: .system)
+    private let minimizeButton = UIButton(type: .system)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -56,9 +58,22 @@ final class KikiVoiceHeaderView: UIView {
         moreButton.accessibilityLabel = "房间更多操作"
         moreButton.accessibilityIdentifier = "voice.room.more"
         moreButton.addTarget(self, action: #selector(moreTapped), for: .touchUpInside)
-        [titleLabel, subtitleLabel, ownerAvatar, ownerName, followButton, moreButton].forEach(addSubview)
+        minimizeButton.setImage(UIImage(systemName: "arrow.down.right.and.arrow.up.left"), for: .normal)
+        minimizeButton.tintColor = .white
+        minimizeButton.backgroundColor = .black.withAlphaComponent(0.18)
+        minimizeButton.layer.cornerRadius = 20
+        minimizeButton.accessibilityLabel = "最小化语聊房"
+        minimizeButton.accessibilityHint = "继续留在房间中，通过悬浮球随时返回"
+        minimizeButton.accessibilityIdentifier = "voice.room.minimize"
+        minimizeButton.addTarget(self, action: #selector(minimizeTapped), for: .touchUpInside)
+        [titleLabel, subtitleLabel, ownerAvatar, ownerName, followButton, minimizeButton, moreButton].forEach(addSubview)
         moreButton.snp.makeConstraints { make in
             make.trailing.top.equalToSuperview()
+            make.size.equalTo(40)
+        }
+        minimizeButton.snp.makeConstraints { make in
+            make.trailing.equalTo(moreButton.snp.leading).offset(-8)
+            make.top.equalToSuperview()
             make.size.equalTo(40)
         }
         titleLabel.snp.makeConstraints { make in
@@ -90,6 +105,14 @@ final class KikiVoiceHeaderView: UIView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    func setMinimizationEnabled(_ enabled: Bool) {
+        minimizeButton.isHidden = !enabled
+        titleLabel.snp.remakeConstraints { make in
+            make.leading.top.equalToSuperview()
+            make.trailing.equalTo(enabled ? minimizeButton.snp.leading : moreButton.snp.leading).offset(-12)
+        }
+    }
+
     func update(live: AtomicLiveInfo, isOwner: Bool) {
         titleLabel.text = live.liveName.isEmpty ? "一起聊聊天" : live.liveName
         ownerName.text = "房主 · \(live.liveOwner.displayName)"
@@ -104,6 +127,7 @@ final class KikiVoiceHeaderView: UIView {
     }
 
     @objc private func moreTapped() { onMore?() }
+    @objc private func minimizeTapped() { onMinimize?() }
     @objc private func followTapped() { onFollow?() }
     @objc private func ownerTapped() { onOwner?() }
 }

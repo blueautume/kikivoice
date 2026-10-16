@@ -216,7 +216,11 @@ private struct KikiDiscoverView: View {
         HStack(alignment: .center, spacing: 26) {
             modeButton("语聊", live: false); modeButton("直播", live: true)
             Spacer()
-            Button { showCreate = true } label: {
+            Button {
+                if KikiRTCService.shared.isVoiceRoomMinimized {
+                    store.notify("你仍在语聊房中，请先点击悬浮球返回并离开房间。")
+                } else { showCreate = true }
+            } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "plus").font(.system(size: 13, weight: .bold))
                     Text("创建房间").font(.system(size: 12, weight: .semibold))

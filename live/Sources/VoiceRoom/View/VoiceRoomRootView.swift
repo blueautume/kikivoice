@@ -16,6 +16,7 @@ import AtomicXCore
 
 protocol VoiceRoomRootViewDelegate: AnyObject {
     func rootView(_ view: VoiceRoomRootView, showEndView endInfo: [String:Any], isAnchor: Bool)
+    func rootViewDidRequestMinimize(_ view: VoiceRoomRootView)
 }
 
 class VoiceRoomRootView: RTCBaseView {
@@ -1513,6 +1514,8 @@ private extension VoiceRoomRootView {
 
     func bindKikiAppearance() {
         kikiHeader.onMore = { [weak self] in self?.showKikiMore() }
+        kikiHeader.setMinimizationEnabled(prepareStore.roomParams.enableMinimization)
+        kikiHeader.onMinimize = { [weak self] in self?.minimizeKikiRoom() }
         kikiHeader.onOwner = { [weak self] in
             guard let self else { return }
             self.showKikiUser(self.liveListStore.state.value.currentLive.liveOwner)
@@ -1599,6 +1602,12 @@ private extension VoiceRoomRootView {
     }
 
     func showKikiMore() {
+        var items: [AlertButtonConfig] = []
+        if prepareStore.roomParams.enableMinimization {
+            items.append(AlertButtonConfig(text: "最小化，继续收听", type: .primary) { [weak self] _ in
+                self?.routerManager.dismiss { [weak self] in self?.minimizeKikiRoom() }
+            })
+        }
         let members = AlertButtonConfig(text: "房间成员", type: .primary) { [weak self] _ in
             guard let self else { return }
             self.routerManager.dismiss { [weak self] in self?.showKikiAudience() }
@@ -1612,7 +1621,20 @@ private extension VoiceRoomRootView {
             }
         }
         let cancel = AlertButtonConfig(text: "取消", type: .grey) { [weak self] _ in self?.routerManager.dismiss() }
-        routerManager.present(view: AtomicAlertView(config: AlertViewConfig(items: [members, leave, cancel])), config: .bottomDefault())
+        items.append(contentsOf: [members, leave, cancel])
+        routerManager.present(view: AtomicAlertView(config: AlertViewConfig(items: items)), config: .bottomDefault())
+    }
+
+    func minimizeKikiRoom() {
+        guard prepareStore.roomParams.enableMinimization else { return }
+        let live = liveListStore.state.value.currentLive
+        guard live.liveID == liveID, live.status == .running else {
+            toastService.showToast("房间连接中，请稍后再试。", toastStyle: .info)
+            return
+        }
+        // Do not route to .exit: that path leaves the room and cannot be resumed.
+        endEditing(true)
+        delegate?.rootViewDidRequestMinimize(self)
     }
 }
 

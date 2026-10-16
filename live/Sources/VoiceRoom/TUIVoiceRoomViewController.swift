@@ -24,6 +24,8 @@ public class RoomParams: NSObject {
     public var enableGifts: Bool = true
     /// Purple, eight-seat Kiki room appearance. The default SDK layout stays unchanged.
     public var usesKikiAppearance: Bool = false
+    /// The embedding application retains and restores this controller without leaving the room.
+    public var enableMinimization: Bool = false
     public var maxSeatCount: Int = 0 //The default value is the maximum number of seat supported by the package
     public var seatMode: TUISeatMode = .applyToTake
     public init(maxSeatCount: Int, seatMode: TUISeatMode) {
@@ -50,6 +52,7 @@ public class TUIVoiceRoomViewController: UIViewController {
     public var behavior: RoomBehavior = .prepareCreate
     /// Notifies an embedding application when the full-screen room is shown or dismissed.
     @nonobjc public var onRoomPresentationChanged: ((Bool) -> Void)?
+    @nonobjc public var onMinimizeRequested: (() -> Void)?
     
     // MARK: - Private property.
    
@@ -235,6 +238,10 @@ extension TUIVoiceRoomViewController {
 }
 
 extension TUIVoiceRoomViewController: VoiceRoomRootViewDelegate {
+    func rootViewDidRequestMinimize(_ view: VoiceRoomRootView) {
+        onMinimizeRequested?()
+    }
+
     func rootView(_ view: VoiceRoomRootView, showEndView endInfo: [String : Any], isAnchor: Bool) {
         isAnchor ? showAnchorEndView(info: endInfo) : showAudienceEndView(info: endInfo)
     }
