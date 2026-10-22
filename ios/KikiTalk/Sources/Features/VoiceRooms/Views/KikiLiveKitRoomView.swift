@@ -837,7 +837,6 @@ struct KikiRoomSeatTile: View {
     let localUserID: String?
     let avatarSize: CGFloat
     @ObservedObject var gifts: KikiGiftStore
-    private let accent = KikiPalette.purple
     private let secondary = KikiPalette.secondary
 
     var body: some View {
@@ -875,7 +874,9 @@ struct KikiRoomSeatTile: View {
             HStack(spacing: 3) {
                 if let member, member.role != .member {
                     Text(member.role.label).font(.system(size: 8, weight: .semibold))
-                        .padding(.horizontal, 3).padding(.vertical, 2).background(accent, in: RoundedRectangle(cornerRadius: 3))
+                        .foregroundStyle(KikiPalette.roleBadgeText)
+                        .padding(.horizontal, 3).padding(.vertical, 2)
+                        .background(KikiPalette.roleBadgeBackground, in: RoundedRectangle(cornerRadius: 3))
                 }
                 Text(member.map { $0.name + ($0.userID == localUserID ? " (我)" : "") } ?? "\(slot.index) 号麦\(slot.locked ? "·锁定" : "位")")
                     .font(.system(size: 10)).foregroundStyle(member == nil ? secondary : KikiPalette.text).lineLimit(1)

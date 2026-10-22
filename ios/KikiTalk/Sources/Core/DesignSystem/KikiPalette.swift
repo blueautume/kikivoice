@@ -16,6 +16,8 @@ enum KikiPalette {
     static let purple = adaptive(0x7456CC, 0xA78AEF)
     static let lavender = adaptive(0x7355BA, 0xC6B5EF)
     static let action = adaptive(0x7456CC, 0x7456CC)
+    static let roleBadgeBackground = adaptive(0xEEE7FA, 0x51336E)
+    static let roleBadgeText = adaptive(0x5C3A99, 0xF1E7FF)
     static let text = adaptive(0x25232B, 0xF4F2F8)
     static let secondary = adaptive(0x6D6878, 0xBAB5C5)
     static let muted = adaptive(0x88838F, 0x928D9D)
