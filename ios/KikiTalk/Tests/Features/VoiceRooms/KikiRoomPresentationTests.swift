@@ -5,6 +5,123 @@ import XCTest
 
 @MainActor
 final class KikiRoomPresentationTests: XCTestCase {
+    func testRoomHeaderUsesRemainingWidthWithoutCompressingAvatarOrFourControls() async throws {
+        let scene = try foregroundScene()
+        let previous = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        defer { window.isHidden = true; previous?.makeKeyAndVisible() }
+        let longTitle = "忙碌了一天，在这里慢慢聊聊生活里那些微小又值得开心的事"
+        let cases: [(name: String, size: CGSize, scheme: ColorScheme, textSize: DynamicTypeSize,
+                     owner: Bool, enabled: Bool, title: String)] = [
+            ("320-light", CGSize(width: 320, height: 812), .light, .large, true, true, longTitle),
+            ("375-dark", CGSize(width: 375, height: 812), .dark, .large, true, true, longTitle),
+            ("402-member-light", CGSize(width: 402, height: 874), .light, .large, false, true, longTitle),
+            ("ipad-744-dark", CGSize(width: 744, height: 1133), .dark, .large, true, true, longTitle),
+            ("ipad-1133-light", CGSize(width: 1133, height: 744), .light, .large, true, true, longTitle),
+            ("320-accessibility-dark", CGSize(width: 320, height: 812), .dark, .accessibility3, true, true, longTitle),
+            ("375-member-accessibility-light", CGSize(width: 375, height: 812), .light, .accessibility3, false, true, longTitle),
+            ("402-accessibility-dark", CGSize(width: 402, height: 874), .dark, .accessibility3, true, true, longTitle),
+            ("ipad-744-accessibility-light", CGSize(width: 744, height: 1133), .light, .accessibility3, true, true, longTitle),
+            ("402-disabled-dark", CGSize(width: 402, height: 874), .dark, .large, true, false, "晚风")
+        ]
+        var standardHeights: [CGFloat: CGFloat] = [:]
+        for item in cases {
+            let fixture = KikiRoomHeaderFixtureState()
+            let onEdit: (() -> Void)? = item.owner ? { fixture.editCalls += 1 } : nil
+            let header = KikiRoomHeader(title: item.title, host: "一个昵称很长也需要清楚区分的房主",
+                                       onEditTitle: onEdit, isTitleEditingEnabled: item.enabled) {
+                Button {} label: { KikiAvatar(index: 4, size: 36) }
+                    .buttonStyle(.plain)
+                    .background(KikiRoomHeaderFixtureProbe(key: "avatar", state: fixture))
+            } controls: {
+                HStack(spacing: 4) {
+                    ForEach(0..<4, id: \.self) { index in
+                        Button { fixture.controlCalls += 1 } label: {
+                            Image(systemName: ["ellipsis", "person.2", "arrow.down.right.and.arrow.up.left", "xmark"][index])
+                                .font(.system(size: 15)).frame(width: 36, height: 36)
+                                .background(KikiPalette.elevated, in: Circle())
+                                .frame(width: 44, height: 44).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).accessibilityIdentifier("roomHeader.fixture.control.\(index)")
+                        .background(KikiRoomHeaderFixtureProbe(key: "control.\(index)", state: fixture))
+                    }
+                }.background(KikiRoomHeaderFixtureProbe(key: "controls", state: fixture))
+            }
+            .background(KikiRoomHeaderFixtureProbe(key: "header", state: fixture))
+            let host = UIHostingController(rootView: header
+                .padding(.horizontal, 18).padding(.top, 10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(KikiPalette.background.ignoresSafeArea())
+                .preferredColorScheme(item.scheme).dynamicTypeSize(item.textSize))
+            // This is a synthetic viewport fixture; real keyboard avoidance is
+            // exercised separately by KikiRoomMessageInputTests on native scenes.
+            host.safeAreaRegions = .container
+            window.rootViewController = host
+            window.frame = CGRect(origin: .zero, size: item.size)
+            host.view.frame = window.bounds
+            window.makeKeyAndVisible()
+            try await Task.sleep(nanoseconds: 150_000_000)
+            window.layoutIfNeeded()
+            func frame(_ key: String) throws -> CGRect {
+                let probe = try XCTUnwrap(fixture.probes[key], "Missing \(key) in \(item.name)")
+                XCTAssertTrue(probe.window === window)
+                return probe.convert(probe.bounds, to: window)
+            }
+            let row = try frame("header"), avatar = try frame("avatar"), controls = try frame("controls")
+            XCTAssertEqual(row.width, item.size.width - 36, accuracy: 1, item.name)
+            XCTAssertEqual(avatar.width, 36, accuracy: 0.5, item.name)
+            XCTAssertEqual(avatar.height, 36, accuracy: 0.5, item.name)
+            XCTAssertEqual(avatar.minX, row.minX, accuracy: 0.5, item.name)
+            XCTAssertEqual(avatar.midY, row.midY, accuracy: 0.5, item.name)
+            XCTAssertEqual(controls.width, 188, accuracy: 0.5, item.name)
+            XCTAssertEqual(controls.maxX, row.maxX, accuracy: 0.5, item.name)
+            XCTAssertGreaterThanOrEqual(row.height, 44, item.name)
+            XCTAssertTrue(host.view.bounds.contains(row), item.name)
+            var previousControl: CGRect?
+            for index in 0..<4 {
+                let control = try frame("control.\(index)")
+                XCTAssertEqual(control.width, 44, accuracy: 0.5, item.name)
+                XCTAssertEqual(control.height, 44, accuracy: 0.5, item.name)
+                XCTAssertEqual(control.midY, row.midY, accuracy: 0.5, item.name)
+                if let previousControl { XCTAssertEqual(control.minX - previousControl.maxX, 4, accuracy: 0.5, item.name) }
+                previousControl = control
+            }
+            if item.textSize == .large, item.title == longTitle { standardHeights[item.size.width] = row.height }
+            if item.textSize.isAccessibilitySize, let standard = standardHeights[item.size.width] {
+                XCTAssertGreaterThan(row.height, standard + 20, "Large text must gain height instead of shrinking the fixed controls: \(item.name)")
+            }
+            XCTAssertEqual(fixture.editCalls, 0)
+            XCTAssertEqual(fixture.controlCalls, 0)
+
+            // Public accessibility containers expose the real identity region
+            // on supporting runtimes. Native probes above remain unconditional.
+            let nodes = headerAccessibilityNodes(in: host.view)
+            let edit = nodes.first {
+                ($0 as? UIAccessibilityIdentification)?.accessibilityIdentifier == "livekit.room.editTitle"
+            }
+            if !item.owner {
+                XCTAssertNil(edit, "A member's room identity must not become an edit button")
+                if let title = nodes.first(where: { $0.accessibilityLabel == item.title }),
+                   let owner = nodes.first(where: { $0.accessibilityLabel == "房主 一个昵称很长也需要清楚区分的房主" }) {
+                    XCTAssertLessThanOrEqual(title.accessibilityFrame.maxY, owner.accessibilityFrame.minY + 1,
+                                             "The title must stay above the host nickname")
+                }
+            } else if let edit {
+                let identity = window.convert(edit.accessibilityFrame, from: window.screen.coordinateSpace)
+                XCTAssertEqual(identity.minX, avatar.maxX + 8, accuracy: 1, item.name)
+                XCTAssertEqual(identity.maxX, controls.minX - 8, accuracy: 1,
+                               "The actual identity button must use the entire gap: \(item.name)")
+                XCTAssertGreaterThanOrEqual(identity.height, 44, item.name)
+                XCTAssertEqual(edit.accessibilityValue, item.title, "The complete title must remain readable by VoiceOver")
+                XCTAssertEqual(edit.accessibilityTraits.contains(.notEnabled), !item.enabled)
+                let activated = edit.accessibilityActivate()
+                if !item.enabled { XCTAssertEqual(fixture.editCalls, 0) }
+                else if activated { XCTAssertEqual(fixture.editCalls, 1) }
+            }
+            try capture(name: "room-header-" + item.name, windows: [window], bounds: window.bounds)
+        }
+    }
+
     func testCreateRoomIconKeepsACompactNativeTouchTargetAtAnyTextSize() {
         for textSize in [DynamicTypeSize.large, .accessibility3] {
             let host = UIHostingController(rootView: KikiCreateRoomButton(isVisible: false, action: {})
@@ -350,6 +467,26 @@ final class KikiRoomPresentationTests: XCTestCase {
         [view] + view.subviews.flatMap { descendants(of: $0) }
     }
 
+    private func headerAccessibilityNodes(in root: UIView) -> [NSObject] {
+        var result: [NSObject] = [], visited = Set<ObjectIdentifier>()
+        func visit(_ object: NSObject) {
+            guard result.count < 2_000, visited.insert(ObjectIdentifier(object)).inserted else { return }
+            result.append(object)
+            if let view = object as? UIView { view.subviews.forEach(visit) }
+            if let elements = object.accessibilityElements {
+                for case let element as NSObject in elements { visit(element) }
+            }
+            let count = object.accessibilityElementCount()
+            if count > 0, count < 500 {
+                for index in 0..<count {
+                    if let element = object.accessibilityElement(at: index) as? NSObject { visit(element) }
+                }
+            }
+        }
+        visit(root)
+        return result
+    }
+
     private func capture(name: String, windows: [UIWindow], bounds: CGRect) throws {
         windows.forEach { $0.layoutIfNeeded() }
         let image = UIGraphicsImageRenderer(bounds: bounds).image { _ in
@@ -363,6 +500,28 @@ final class KikiRoomPresentationTests: XCTestCase {
         let folder = URL(fileURLWithPath: "/tmp/kiki-room-presentation-screenshots", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(device + "-" + name + ".png"), options: .atomic)
+    }
+}
+
+@MainActor
+private final class KikiRoomHeaderFixtureState {
+    var probes: [String: UIView] = [:]
+    var editCalls = 0
+    var controlCalls = 0
+}
+
+private struct KikiRoomHeaderFixtureProbe: UIViewRepresentable {
+    let key: String
+    let state: KikiRoomHeaderFixtureState
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        state.probes[key] = view
+        return view
+    }
+    func updateUIView(_ view: UIView, context: Context) { state.probes[key] = view }
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
     }
 }
 

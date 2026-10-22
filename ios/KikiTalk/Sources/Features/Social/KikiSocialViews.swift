@@ -173,12 +173,10 @@ struct KikiPublicProfileView: View {
                                 Text("最近动态").font(.headline)
                                 ForEach(moments.prefix(3)) { moment in
                                     Button { destination = .moment(moment) } label: {
-                                        VStack(alignment: .leading, spacing: 10) {
-                                            if !moment.text.isEmpty { Text(moment.text).font(.body).foregroundStyle(KikiPalette.text).lineLimit(4) }
-                                            if let media = moment.media.first { KikiSocialImageView(media: media, store: store).frame(height: 150).clipShape(RoundedRectangle(cornerRadius: 12)) }
-                                            Label("\(moment.commentCount) 条评论", systemImage: "bubble.right").font(.caption).foregroundStyle(KikiPalette.muted)
-                                        }.frame(maxWidth: .infinity, alignment: .leading).padding(15).background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 15))
+                                        KikiProfileMomentPreview(moment: moment, store: store)
                                     }.buttonStyle(.plain)
+                                        .accessibilityHint("查看完整动态和评论")
+                                        .accessibilityIdentifier("social.profile.moment.\(moment.id)")
                                 }
                             }
                         }
@@ -271,6 +269,96 @@ struct KikiPublicProfileView: View {
     private func open(_ room: KikiRoom) async {
         do { dismiss(); try await Task.sleep(nanoseconds: 450_000_000); try await store.openRoom(room) }
         catch is CancellationError { } catch { store.notify(error.localizedDescription) }
+    }
+}
+
+struct KikiProfileMomentPreview: View {
+    let moment: KikiMoment
+    @ObservedObject var store: KikiAppStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(Date(timeIntervalSince1970: moment.createdAt), format: .dateTime.month().day().hour().minute())
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                if !moment.media.isEmpty {
+                    Label("\(moment.media.count) 张图片", systemImage: "photo.on.rectangle")
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+            }.font(.caption).foregroundStyle(KikiPalette.muted)
+            if !moment.text.isEmpty {
+                Text(moment.text).font(.body).lineSpacing(4).lineLimit(4)
+                    .foregroundStyle(KikiPalette.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            mediaPreview
+            Divider().overlay(KikiPalette.elevated)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { statistics; Spacer(minLength: 0); detailLabel }
+                VStack(alignment: .leading, spacing: 8) { statistics; detailLabel }
+            }.font(.caption)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    @ViewBuilder private var mediaPreview: some View {
+        if moment.media.count == 1, let media = moment.media.first {
+            Color.clear.aspectRatio(max(aspectRatio(media), 1.25), contentMode: .fit)
+                .frame(maxHeight: 280).frame(maxWidth: .infinity)
+                .background(KikiPalette.elevated)
+                .overlay { image(media) }
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        } else if !moment.media.isEmpty {
+            HStack(spacing: 7) {
+                ForEach(moment.media) { media in
+                    Color.clear.aspectRatio(1, contentMode: .fit)
+                        .frame(maxWidth: .infinity)
+                        .background(KikiPalette.elevated)
+                        .overlay { image(media) }
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+            }
+        }
+    }
+
+    private func image(_ media: KikiSocialMedia) -> some View {
+        // Fit the authenticated image into its metadata ratio before the outer
+        // preview frame, so portrait/panorama content is not cropped to a strip.
+        KikiSocialImageView(media: media, store: store)
+            .aspectRatio(aspectRatio(media), contentMode: .fit)
+    }
+
+    private func aspectRatio(_ media: KikiSocialMedia) -> CGFloat {
+        CGFloat(max(1, media.width)) / CGFloat(max(1, media.height))
+    }
+
+    private var statistics: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) { likeStatistic; commentStatistic }
+                .fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .leading, spacing: 7) { likeStatistic; commentStatistic }
+        }
+    }
+
+    private var likeStatistic: some View {
+        Label("\(moment.likeCount) 个赞", systemImage: moment.liked ? "heart.fill" : "heart")
+            .foregroundStyle(moment.liked ? KikiPalette.lavender : KikiPalette.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var commentStatistic: some View {
+        Label("\(moment.commentCount) 条评论", systemImage: "bubble.right")
+            .foregroundStyle(KikiPalette.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var detailLabel: some View {
+        Label("查看动态", systemImage: "chevron.right")
+            .foregroundStyle(KikiPalette.lavender)
+            .fixedSize(horizontal: true, vertical: false)
     }
 }
 

@@ -419,6 +419,11 @@ struct KikiMomentCommentsView: View {
         _currentMoment = State(initialValue: moment)
         _commentCount = State(initialValue: moment.commentCount)
     }
+    private var canSendComment: Bool {
+        !isSending && !isLoading && !isChangingMoment && deletingCommentID == nil
+            && (pendingText != nil || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+    private var sendLabel: String { isSending ? "发送中" : (pendingText == nil ? "发送" : "重试") }
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -471,26 +476,41 @@ struct KikiMomentCommentsView: View {
                                     .frame(minHeight: 44)
                             }
                         }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                            .background { KikiPalette.surface.onTapGesture { isCommentFocused = false } }
+                            .background { KikiPalette.background.onTapGesture { isCommentFocused = false } }
                     }.frame(maxWidth: 720).frame(maxWidth: .infinity)
                         .frame(maxWidth: .infinity, minHeight: 1, alignment: .topLeading)
                 }.scrollDismissesKeyboard(.interactively)
-                    .background { KikiPalette.background.onTapGesture { isCommentFocused = false } }
+                    .background { KikiPalette.surface.onTapGesture { isCommentFocused = false } }
                     .refreshable { await reload() }
-                HStack(alignment: .bottom, spacing: 10) {
-                    TextField("写一条评论…", text: $text, axis: .vertical).lineLimit(1...5).font(.body).padding(12)
-                        .background(KikiPalette.elevated, in: RoundedRectangle(cornerRadius: 20))
+                HStack(alignment: .top, spacing: 10) {
+                    TextField("写一条评论…", text: $text, axis: .vertical).lineLimit(1...5).font(.body)
+                        .padding(.horizontal, 14).padding(.vertical, 12).frame(minHeight: 44)
+                        .background(KikiPalette.elevated, in: RoundedRectangle(cornerRadius: 14))
+                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(KikiPalette.muted.opacity(0.22), lineWidth: 1))
                         .focused($isCommentFocused)
                         .accessibilityIdentifier("moment.detail.commentInput")
                         .onChange(of: text) { if $0.count > 300 { text = String($0.prefix(300)) } }
                         .disabled(pendingText != nil)
-                    Button(isSending ? "发送中" : (pendingText == nil ? "发送" : "重试")) { Task { await send() } }
-                        .font(.subheadline.weight(.semibold)).frame(minHeight: 44)
-                        .disabled(isSending || isLoading || isChangingMoment || deletingCommentID != nil || (pendingText == nil && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                    Button { Task { await send() } } label: {
+                        HStack(spacing: 6) {
+                            if isSending { ProgressView().controlSize(.small).tint(.white).accessibilityHidden(true) }
+                            Text(sendLabel).lineLimit(1)
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .frame(minWidth: 52, minHeight: 44, maxHeight: .infinity).padding(.horizontal, 12)
+                        .foregroundStyle(isSending || canSendComment ? Color.white : KikiPalette.secondary)
+                        .background(isSending || canSendComment ? KikiPalette.action : KikiPalette.elevated,
+                                    in: RoundedRectangle(cornerRadius: 14))
+                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(KikiPalette.muted.opacity(0.22), lineWidth: 1))
+                    }.buttonStyle(.plain).disabled(!canSendComment)
                         .accessibilityIdentifier("moment.detail.sendComment")
-                }.padding(.horizontal, 16).padding(.vertical, 10)
+                }.fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
                     .frame(maxWidth: 720).frame(maxWidth: .infinity).background(KikiPalette.surface)
-            }.background(KikiPalette.background.ignoresSafeArea()).navigationTitle("详情").navigationBarTitleDisplayMode(.inline)
+                    .overlay(alignment: .top) { KikiPalette.elevated.frame(height: 1) }
+            }.background(KikiPalette.surface.ignoresSafeArea()).navigationTitle("详情").navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(KikiPalette.surface, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { isCommentFocused = false; dismiss() } } }
                 .task { await reload() }
                 .task { await applyInitialFocus() }

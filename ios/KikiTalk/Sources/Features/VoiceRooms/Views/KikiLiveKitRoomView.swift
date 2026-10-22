@@ -175,7 +175,9 @@ struct KikiLiveKitRoomView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
+        KikiRoomHeader(title: rtc.roomInfo?.title ?? "语聊房", host: rtc.roomInfo?.host ?? "",
+                       onEditTitle: rtc.isRoomOwner ? editRoomTitle : nil,
+                       isTitleEditingEnabled: rtc.canUseRoom) {
             Button { if let id = rtc.roomInfo?.hostID { openPerson(id) } } label: {
                 if let info = rtc.roomInfo {
                     let online = rtc.roomState?.members.first { $0.userID == info.hostID }?.online ?? true
@@ -183,24 +185,7 @@ struct KikiLiveKitRoomView: View {
                         .saturation(online ? 1 : 0).opacity(online ? 1 : 0.45)
                 } else { initials("", size: 36) }
             }.buttonStyle(.plain).accessibilityLabel("查看房主主页")
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 2) {
-                    Text(rtc.roomInfo?.title ?? "语聊房").font(.system(size: 17, weight: .semibold)).lineLimit(1)
-                    if rtc.isRoomOwner {
-                        Button {
-                            endComposing()
-                            roomTitleDraft = rtc.roomInfo?.title ?? ""
-                            roomTitleError = nil
-                            showsTitleEditor = true
-                        } label: { Image(systemName: "pencil").font(.system(size: 12)).frame(width: 32, height: 44) }
-                        .buttonStyle(.plain).disabled(!rtc.canUseRoom)
-                        .accessibilityLabel("编辑房间名称").accessibilityIdentifier("livekit.room.editTitle")
-                    }
-                }
-                Text("房主 \(rtc.roomInfo?.host ?? "")")
-                    .font(.system(size: 11)).foregroundStyle(secondary).lineLimit(1)
-            }
-            Spacer(minLength: 2)
+        } controls: {
             HStack(spacing: 4) {
                 Menu {
                     if rtc.canManageRoom || !rtc.announcement.text.isEmpty {
@@ -239,6 +224,13 @@ struct KikiLiveKitRoomView: View {
                     .accessibilityIdentifier("livekit.room.leave")
             }
         }
+    }
+
+    private func editRoomTitle() {
+        endComposing()
+        roomTitleDraft = rtc.roomInfo?.title ?? ""
+        roomTitleError = nil
+        showsTitleEditor = true
     }
 
     private func roomControlIcon(_ symbol: String, size: CGFloat, active: Bool = false, loading: Bool = false) -> some View {
@@ -841,6 +833,48 @@ struct KikiLiveKitRoomView: View {
         } message: { Text(rtc.roomError ?? "") }
         .confirmationDialog("拉黑后，你将不再听到对方的声音或看到对方的房间文字。对方仍可能在公开房间听到你；可在设置解除。", isPresented: blockConfirmation(inParticipants: true), titleVisibility: .visible) { blockConfirmationButtons }
         .alert(pendingModeration?.title ?? "确认管理操作", isPresented: moderationConfirmation(inParticipants: true)) { moderationConfirmationButtons } message: { Text(pendingModeration?.message ?? "") }
+    }
+}
+
+/// The room identity uses all space between the avatar and the fixed touch targets.
+struct KikiRoomHeader<Avatar: View, Controls: View>: View {
+    let title: String
+    let host: String
+    var onEditTitle: (() -> Void)? = nil
+    var isTitleEditingEnabled = true
+    @ViewBuilder var avatar: () -> Avatar
+    @ViewBuilder var controls: () -> Controls
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        HStack(spacing: 8) {
+            avatar().fixedSize()
+            Group {
+                if let onEditTitle {
+                    Button(action: onEditTitle) { identity }
+                        .buttonStyle(.plain).disabled(!isTitleEditingEnabled)
+                        .accessibilityLabel("编辑房间名称")
+                        .accessibilityValue(title)
+                        .accessibilityIdentifier("livekit.room.editTitle")
+                } else { identity }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            controls().fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private var identity: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.body.weight(.semibold))
+                .foregroundStyle(KikiPalette.text)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 2)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("房主 \(host)").font(.caption2)
+                .foregroundStyle(KikiPalette.secondary).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 

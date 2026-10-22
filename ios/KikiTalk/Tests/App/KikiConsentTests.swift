@@ -4181,13 +4181,31 @@ extension KikiConsentTests {
                 self.momentEditableViews(window).contains { $0.isFirstResponder }
             }
             let input = try XCTUnwrap(self.momentEditableViews(window).first { $0.isFirstResponder })
-            let draft = "准备评论，系统 Emoji 😀"
+            let draft = "准备评论，系统 Emoji 😀\n第二行继续输入\n第三行保留草稿\n第四行检查发送按钮"
             if let field = input as? UITextField {
                 field.insertText(draft); field.sendActions(for: .editingChanged)
             } else if let textView = input as? UITextView { textView.insertText(draft) }
             else { XCTFail("Expected a public UIKit text input") }
-            try await Task.sleep(nanoseconds: 150_000_000)
+            try await Task.sleep(nanoseconds: 750_000_000)
             XCTAssertEqual(self.momentInputText(input), draft)
+            window.layoutIfNeeded()
+            let composer = input.convert(input.bounds, to: window)
+            XCTAssertGreaterThan(composer.height, 50, "The real multiline comment input must grow with the draft")
+            if let native = input as? UITextView {
+                print("CommentComposer bounds=\(native.bounds) contentSize=\(native.contentSize) inset=\(native.textContainerInset)")
+                XCTAssertGreaterThanOrEqual(native.bounds.height, (native.font?.lineHeight ?? 20) * 4 - 1,
+                                            "The four-line comment must be readable without clipping its third and fourth lines")
+            }
+            XCTAssertGreaterThanOrEqual(composer.minX, window.bounds.minX)
+            XCTAssertLessThanOrEqual(composer.maxX, window.bounds.maxX)
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let attachment = XCTAttachment(image: image); attachment.name = "comment-multiline-composer"
+            attachment.lifetime = .keepAlways; self.add(attachment)
+            let folder = URL(fileURLWithPath: "/tmp/kiki-moment-presentation-screenshots", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent("comment-multiline-composer.png"))
             XCTAssertTrue(window.endEditing(true))
             store.notify("本地测试重绘")
             try await Task.sleep(nanoseconds: 400_000_000)
@@ -4258,6 +4276,8 @@ extension KikiConsentTests {
             try await capture("feed-large-text", size: phone, screen: AnyView(KikiMomentsView(store: store).preferredColorScheme(.light).dynamicTypeSize(.accessibility1)))
             try await capture("detail-light", size: phone, screen: AnyView(KikiMomentCommentsView(moment: moment, store: store).preferredColorScheme(.light)))
             try await capture("detail-comments", size: phone, screen: AnyView(KikiMomentCommentsView(moment: moment, store: store).preferredColorScheme(.light)), scrollToBottom: true)
+            try await capture("profile-light", size: phone, screen: AnyView(KikiPublicProfileView(userID: moment.author.id, store: store).preferredColorScheme(.light)), scrollToBottom: true)
+            try await capture("profile-dark", size: phone, screen: AnyView(KikiPublicProfileView(userID: moment.author.id, store: store).preferredColorScheme(.dark)), scrollToBottom: true)
             try await capture("feed-ipad-landscape", size: tablet, screen: AnyView(KikiMomentsView(store: store).preferredColorScheme(.light)))
             try await capture("detail-ipad-dark", size: tablet, screen: AnyView(KikiMomentCommentsView(moment: moment, store: store).preferredColorScheme(.dark)))
             window.frame = originalFrame
