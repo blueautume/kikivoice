@@ -356,6 +356,7 @@ enum KikiPushEnvironment {
             if self.accountTag == nil { await self.refresh() }
             guard self.currentForegroundScope == scope, tap.accountTag == self.accountTag else { return }
             store.directMessagePushReceived()
+            store.momentContentPushReceived(scope: scope)
             await store.refreshSocialSummary()
             guard self.currentForegroundScope == scope else { return }
             await self.refresh()

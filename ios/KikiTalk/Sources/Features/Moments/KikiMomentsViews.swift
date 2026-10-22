@@ -237,94 +237,247 @@ struct KikiMomentCard: View {
     }
 }
 
+@MainActor
+final class KikiMomentFeedModel: ObservableObject {
+    @Published private(set) var moments: [KikiMoment] = []
+    @Published private(set) var nextCursor: String?
+    @Published private(set) var isLoading = false
+    @Published private(set) var error: String?
+    private let fetchPage: (String?) async throws -> KikiMomentsPage
+    private let fetchMoment: (String) async throws -> KikiMoment
+    private var active = false
+    private var revision = UUID()
+    private var worker: Task<Void, Never>?
+    private var reloadRequested = false
+    private var pageRequested = false
+    private var momentRequests: [String] = []
+    private var inFlightMomentID: String?
+    private var inFlightPage = false
+    private var loadedPageCount = 0
+
+    init(fetchPage: @escaping (String?) async throws -> KikiMomentsPage,
+         fetchMoment: @escaping (String) async throws -> KikiMoment) {
+        self.fetchPage = fetchPage; self.fetchMoment = fetchMoment
+    }
+
+    func setActive(_ value: Bool, refreshOnResume: Bool = true) {
+        if !value && refreshOnResume { reloadRequested = true; pageRequested = false }
+        guard active != value else { return }
+        active = value
+        if value {
+            if refreshOnResume || loadedPageCount == 0 { invalidate() }
+            else { startIfNeeded() }
+        }
+        else {
+            revision = UUID()
+            if inFlightPage { reloadRequested = true; pageRequested = false }
+            if let id = inFlightMomentID, !momentRequests.contains(id) { momentRequests.insert(id, at: 0) }
+            worker?.cancel(); isLoading = false
+        }
+    }
+
+    func invalidate() {
+        revision = UUID(); reloadRequested = true; pageRequested = false
+        startIfNeeded()
+    }
+
+    func reload() async {
+        // A pull during an older GET must await a new GET, rather than reuse
+        // that GET's snapshot or disappear behind an isLoading guard.
+        invalidate()
+        await waitForReads()
+    }
+
+    func loadMore() async {
+        guard nextCursor != nil, !reloadRequested else { return }
+        pageRequested = true; startIfNeeded()
+        await waitForReads()
+    }
+
+    func update(_ moment: KikiMoment) {
+        revision = UUID()
+        replace(moment)
+        if worker != nil { reloadRequested = true; pageRequested = false }
+    }
+
+    func remove(_ id: String) {
+        revision = UUID(); moments.removeAll { $0.id == id }
+        momentRequests.removeAll { $0 == id }
+        if worker != nil { reloadRequested = true; pageRequested = false }
+    }
+
+    func refreshMoment(_ id: String) async {
+        guard moments.contains(where: { $0.id == id }) else { return }
+        // This single-item read follows any older page in the same worker, so
+        // its fresh detail value cannot later be overwritten by that page.
+        if !momentRequests.contains(id) { momentRequests.append(id) }
+        startIfNeeded()
+        await waitForReads()
+    }
+
+    func reset() {
+        setActive(false); revision = UUID()
+        moments = []; nextCursor = nil; error = nil
+        momentRequests = []; reloadRequested = true; pageRequested = false; loadedPageCount = 0
+    }
+
+    private func replace(_ moment: KikiMoment) {
+        if let index = moments.firstIndex(where: { $0.id == moment.id }) { moments[index] = moment }
+    }
+
+    private func waitForReads() async {
+        // Finishing a cancelled worker may start the queued foreground worker.
+        // Await that successor too, including a pull's trailing fresh request.
+        while active, let current = worker { await current.value }
+    }
+
+    private func startIfNeeded() {
+        guard active, worker == nil, reloadRequested || pageRequested || !momentRequests.isEmpty else { return }
+        isLoading = true
+        worker = Task { await drain() }
+    }
+
+    private func drain() async {
+        defer {
+            worker = nil; inFlightMomentID = nil; isLoading = false
+            startIfNeeded()
+        }
+        while active, !Task.isCancelled {
+            let requestRevision = revision
+            if !momentRequests.isEmpty {
+                let id = momentRequests.removeFirst(); inFlightMomentID = id
+                defer { inFlightMomentID = nil }
+                do {
+                    let value = try await fetchMoment(id)
+                    guard active, !Task.isCancelled, revision == requestRevision else { continue }
+                    replace(value); error = nil
+                } catch {
+                    guard active, !Task.isCancelled, revision == requestRevision else { continue }
+                    if case KikiAPIError.server(404, _) = error { moments.removeAll { $0.id == id } }
+                    else if !(error is CancellationError) { self.error = error.localizedDescription }
+                }
+            } else if reloadRequested || pageRequested {
+                let isReload = reloadRequested
+                let cursor = isReload ? nil : nextCursor
+                reloadRequested = false; pageRequested = false
+                guard isReload || cursor != nil else { continue }
+                inFlightPage = true
+                defer { inFlightPage = false }
+                do {
+                    let result: (KikiMomentsPage, Int)
+                    if isReload { result = try await readLoadedRange(revision: requestRevision) }
+                    else { result = (try await fetchPage(cursor), loadedPageCount + 1) }
+                    let (page, pageCount) = result
+                    guard active, !Task.isCancelled, revision == requestRevision else { continue }
+                    if isReload { moments = page.moments }
+                    else {
+                        let ids = Set(moments.map(\.id))
+                        moments += page.moments.filter { !ids.contains($0.id) }
+                    }
+                    nextCursor = page.nextCursor; loadedPageCount = pageCount; error = nil
+                } catch {
+                    guard active, !Task.isCancelled, revision == requestRevision else { continue }
+                    if !(error is CancellationError) { self.error = error.localizedDescription }
+                }
+            } else { return }
+        }
+    }
+
+    private func readLoadedRange(revision expected: UUID) async throws -> (KikiMomentsPage, Int) {
+        let targetPages = max(1, loadedPageCount)
+        var values: [KikiMoment] = [], ids = Set<String>(), cursor: String?, count = 0
+        repeat {
+            let page = try await fetchPage(cursor)
+            guard active, !Task.isCancelled, revision == expected else { throw CancellationError() }
+            values += page.moments.filter { ids.insert($0.id).inserted }
+            cursor = page.nextCursor; count += 1
+        } while count < targetPages && cursor != nil
+        // Publish only once the previously loaded range is fresh. A failed or
+        // superseded later page must not truncate the visible list or cursor.
+        return (.init(moments: values, nextCursor: cursor), count)
+    }
+}
+
 struct KikiMomentsView: View {
     @ObservedObject var store: KikiAppStore
+    @Environment(\.scenePhase) private var scenePhase
     var isActive = true
-    @State private var moments: [KikiMoment] = []
-    @State private var nextCursor: String?
-    @State private var isLoading = false
-    @State private var error: String?
-    @State private var generation = UUID()
+    @StateObject private var feed: KikiMomentFeedModel
     @State private var showsComposer = false
     @State private var person: KikiPersonDestination?
     @State private var selectedMoment: KikiMomentDetailDestination?
     @State private var detailMomentID: String?
+    init(store: KikiAppStore, isActive: Bool = true) {
+        self.store = store; self.isActive = isActive
+        _feed = StateObject(wrappedValue: KikiMomentFeedModel(
+            fetchPage: { try await store.socialMoments(kind: .all, cursor: $0) },
+            fetchMoment: { try await store.socialMoment($0) }))
+    }
+    private var pageIsActive: Bool {
+        isActive && scenePhase == .active && store.isAuthenticated && !store.isPresentingRoom
+    }
+    private var refreshIsActive: Bool {
+        pageIsActive && !showsComposer && person == nil && selectedMoment == nil
+    }
+    private var refreshScope: String {
+        store.userID + ":" + String(store.socialPrivacyRevision) + ":" + String(pageIsActive) + ":" + String(refreshIsActive)
+    }
+    private func syncFeedActivity() {
+        feed.setActive(refreshIsActive, refreshOnResume: !pageIsActive)
+    }
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    if let error { KikiInlineError(message: error) { Task { await reload() } } }
-                    if isLoading && moments.isEmpty { ProgressView().padding(30) }
-                    else if moments.isEmpty && error == nil { KikiEmptyState(symbol: "text.bubble", title: "分享一点日常", message: "一段文字，或几张照片，让朋友更了解你。") }
+                    if let error = feed.error { KikiInlineError(message: error) { Task { await feed.reload() } } }
+                    if feed.isLoading && feed.moments.isEmpty { ProgressView().padding(30) }
+                    else if feed.moments.isEmpty && feed.error == nil { KikiEmptyState(symbol: "text.bubble", title: "分享一点日常", message: "一段文字，或几张照片，让朋友更了解你。") }
                     LazyVStack(spacing: 0) {
-                        ForEach(moments) { moment in
-                            KikiMomentCard(moment: moment, store: store, openPerson: { person = .init(id: $0.id) },
-                                openComments: { open(moment, focusComment: true) }, update: update,
-                                remove: { moments.removeAll { $0.id == moment.id } },
+                        ForEach(feed.moments) { moment in
+                            KikiMomentCard(moment: moment, store: store, openPerson: { feed.setActive(false, refreshOnResume: false); person = .init(id: $0.id) },
+                                openComments: { open(moment, focusComment: true) }, update: feed.update,
+                                remove: { feed.remove(moment.id) },
                                 openDetails: { open(moment, focusComment: false) })
-                            if moment.id != moments.last?.id {
+                            if moment.id != feed.moments.last?.id {
                                 Divider().overlay(KikiPalette.elevated).padding(.horizontal, 18)
                             }
                         }
                     }
-                    if nextCursor != nil { Button(isLoading ? "正在加载…" : "加载更多") { Task { await loadMore() } }.disabled(isLoading) }
+                    if feed.nextCursor != nil { Button(feed.isLoading ? "正在加载…" : "加载更多") { Task { await feed.loadMore() } }.disabled(feed.isLoading) }
                 }.padding(.vertical, 16).frame(maxWidth: 720).frame(maxWidth: .infinity)
-            }.background(KikiPalette.background.ignoresSafeArea()).refreshable { await reload() }
+            }.background(KikiPalette.background.ignoresSafeArea()).refreshable { await feed.reload() }
                 .kikiTransparentTopScrollEdge()
                 .navigationTitle("").navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button { showsComposer = true } label: {
+                        Button { feed.setActive(false, refreshOnResume: false); showsComposer = true } label: {
                             Image(systemName: "square.and.pencil").font(.system(size: 20)).frame(width: 24, height: 24)
                         }.accessibilityLabel("发布动态").accessibilityIdentifier("moments.compose")
                     }
                 }
-                .task(id: isActive) { if isActive { await reload() } }
-                .onChange(of: store.socialRevision) { _ in if isActive { Task { await reload() } } }
+                .task(id: refreshScope) { syncFeedActivity() }
+                .onChange(of: store.socialRevision) { _ in syncFeedActivity(); feed.invalidate() }
+                .onChange(of: store.momentContentRevision) { _ in syncFeedActivity(); feed.invalidate() }
                 .onChange(of: store.socialPrivacyRevision) { _ in
-                    generation = UUID(); moments = []; nextCursor = nil; isLoading = false
-                    person = nil; selectedMoment = nil; detailMomentID = nil
-                    if isActive { Task { await reload() } }
+                    feed.reset(); showsComposer = false; person = nil; selectedMoment = nil; detailMomentID = nil
+                    syncFeedActivity()
                 }
-                .sheet(isPresented: $showsComposer, onDismiss: { Task { await reload() } }) { KikiMomentComposer(store: store) }
+                .onChange(of: store.userID) { _ in feed.reset(); syncFeedActivity() }
+                .onDisappear { feed.setActive(false, refreshOnResume: !pageIsActive) }
+                .sheet(isPresented: $showsComposer) { KikiMomentComposer(store: store) }
                 .sheet(item: $person) { KikiPublicProfileView(userID: $0.id, store: store) }
                 .sheet(item: $selectedMoment, onDismiss: {
                     let id = detailMomentID; detailMomentID = nil
-                    if let id { Task { await refreshMoment(id) } }
+                    if let id { Task { await feed.refreshMoment(id) } }
                 }) {
                     KikiMomentCommentsView(moment: $0.moment, store: store, focusComment: $0.focusComment)
                 }
         }.tint(KikiPalette.lavender).foregroundStyle(KikiPalette.text)
     }
     private func open(_ moment: KikiMoment, focusComment: Bool) {
+        feed.setActive(false, refreshOnResume: false)
         detailMomentID = moment.id; selectedMoment = .init(moment: moment, focusComment: focusComment)
-    }
-    private func refreshMoment(_ momentID: String) async {
-        let id = generation; let account = store.userID; let privacy = store.socialPrivacyRevision
-        do {
-            let value = try await store.socialMoment(momentID)
-            guard id == generation, account == store.userID, privacy == store.socialPrivacyRevision else { return }
-            update(value)
-        } catch is CancellationError { } catch {
-            guard id == generation, account == store.userID, privacy == store.socialPrivacyRevision else { return }
-            if case KikiAPIError.server(404, _) = error { moments.removeAll { $0.id == momentID } }
-        }
-    }
-    private func update(_ moment: KikiMoment) { if let index = moments.firstIndex(where: { $0.id == moment.id }) { moments[index] = moment } }
-    private func reload() async {
-        let id = UUID(); generation = id; let privacy = store.socialPrivacyRevision; isLoading = true; error = nil
-        defer { if generation == id { isLoading = false } }
-        do { let page = try await store.socialMoments(kind: .all); guard generation == id, privacy == store.socialPrivacyRevision else { return }; moments = page.moments; nextCursor = page.nextCursor }
-        catch is CancellationError { } catch { if generation == id { self.error = error.localizedDescription; moments = [] } }
-    }
-    private func loadMore() async {
-        guard !isLoading, let cursor = nextCursor else { return }; let id = generation; let privacy = store.socialPrivacyRevision; isLoading = true
-        defer { if generation == id { isLoading = false } }
-        do {
-            let page = try await store.socialMoments(kind: .all, cursor: cursor); guard generation == id, privacy == store.socialPrivacyRevision else { return }
-            let ids = Set(moments.map(\.id)); moments += page.moments.filter { !ids.contains($0.id) }; nextCursor = page.nextCursor
-        } catch is CancellationError { } catch { if generation == id { self.error = error.localizedDescription } }
     }
 }
 

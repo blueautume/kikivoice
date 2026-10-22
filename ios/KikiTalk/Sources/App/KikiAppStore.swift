@@ -52,6 +52,7 @@ import Combine
     @Published private(set) var directHistoryRevision: [String: Int] = [:]
     @Published private(set) var notificationHistoryRevision = 0
     @Published private(set) var socialRevision = 0
+    @Published private(set) var momentContentRevision = 0
     @Published private(set) var socialPrivacyRevision = 0
     private var socialRefreshID = UUID()
     private var socialMutationRefreshTask: Task<Void, Never>?
@@ -59,6 +60,10 @@ import Combine
     private var directUnreadGate = KikiUnreadRequestGate()
     private var notificationForegroundScope: KikiForegroundNotificationScope?
     private var directForegroundScope: KikiForegroundNotificationScope?
+    private var momentNotificationScope: KikiForegroundNotificationScope?
+    private var momentNotificationSequence = 0
+    private var legacyMomentNotificationIDs: Set<String> = []
+    private var legacyMomentNotificationOrder: [String] = []
     private var appIsForeground = false
     private struct VisibleDirectConversation {
         let owner: UUID
@@ -1304,6 +1309,7 @@ import Combine
         guard privacy == socialPrivacyRevision else { throw CancellationError() }
         if notificationUnreadGate.accepts(fetch) {
             unreadNotificationCount = result.unreadCount
+            if cursor == nil, let scope { acceptMomentNotifications(result.notifications, scope: scope) }
             if cursor == nil, let push = pushController, let scope, scope == push.currentForegroundScope {
                 let baseline = notificationForegroundScope != scope
                 notificationForegroundScope = scope
@@ -1315,6 +1321,55 @@ import Combine
             }
         }
         return result
+    }
+
+    private func acceptMomentNotifications(_ notifications: [KikiSocialNotification], scope: KikiForegroundNotificationScope) {
+        guard scope.sessionKey == pushSessionKey, scope.privacyRevision == socialPrivacyRevision else { return }
+        let baseline = momentNotificationScope != scope
+        if baseline {
+            momentNotificationScope = scope
+            momentNotificationSequence = 0
+            legacyMomentNotificationIDs = []; legacyMomentNotificationOrder = []
+        }
+        let previousSequence = momentNotificationSequence
+        var changed = false
+        for notification in notifications {
+            let fresh: Bool
+            if notification.seq > 0 {
+                fresh = notification.seq > previousSequence
+                momentNotificationSequence = max(momentNotificationSequence, notification.seq)
+            } else {
+                fresh = legacyMomentNotificationIDs.insert(notification.id).inserted
+                legacyMomentNotificationOrder.removeAll { $0 == notification.id }
+                legacyMomentNotificationOrder.append(notification.id)
+                if legacyMomentNotificationOrder.count > 512 {
+                    legacyMomentNotificationIDs.remove(legacyMomentNotificationOrder.removeFirst())
+                }
+            }
+            // The server currently uses kind=system for comment/like notices.
+            // A verified moment reference is the contract; copy and kind are not.
+            // Even the first snapshot can postdate the feed's initial GET.
+            // Seed deduplication and request one content refresh; the separate
+            // banner gate still keeps its own initial snapshot silent.
+            if fresh, let momentID = notification.momentID, UUID(uuidString: momentID) != nil {
+                changed = true
+            }
+        }
+        if changed { momentContentRevision &+= 1 }
+    }
+
+    /// An account-verified push is only an invalidation hint. Feed permissions
+    /// and content still come from the ordinary authenticated moments request.
+    func momentContentPushReceived(scope: KikiForegroundNotificationScope) {
+        guard permitsBusiness, isAuthenticated, scope.sessionKey == pushSessionKey,
+              scope.privacyRevision == socialPrivacyRevision else { return }
+        momentContentRevision &+= 1
+    }
+
+    private func resetMomentNotificationTracking() {
+        momentNotificationScope = nil; momentNotificationSequence = 0
+        legacyMomentNotificationIDs = []; legacyMomentNotificationOrder = []
+        momentContentRevision &+= 1
     }
 
     func readNotifications(ids: [String] = [], all: Bool = false) async throws {
@@ -1408,22 +1463,31 @@ import Combine
         try await socialRequest { try await self.api.socialMoment(id, token: $0) }
     }
     func publishMoment(requestID: UUID, text: String, mediaIDs: [String]) async throws -> KikiMoment {
-        try await socialRequest { try await self.api.socialPublishMoment(requestID: requestID, text: text, mediaIDs: mediaIDs, token: $0) }
+        try await momentMutation { try await self.api.socialPublishMoment(requestID: requestID, text: text, mediaIDs: mediaIDs, token: $0) }
     }
     func deleteMoment(_ id: String) async throws {
-        try await socialRequest { try await self.api.socialDeleteMoment(id, token: $0) }
+        try await momentMutation { try await self.api.socialDeleteMoment(id, token: $0) }
     }
     func likeMoment(_ moment: KikiMoment) async throws -> KikiMoment {
-        try await socialRequest { try await self.api.socialLike(moment.id, enabled: !moment.liked, requestID: UUID(), token: $0) }
+        try await momentMutation { try await self.api.socialLike(moment.id, enabled: !moment.liked, requestID: UUID(), token: $0) }
     }
     func socialComments(_ id: String, cursor: String? = nil) async throws -> KikiCommentsPage {
         try await socialRequest { try await self.api.socialComments(id, cursor: cursor, token: $0) }
     }
     func commentMoment(_ id: String, text: String, requestID: UUID) async throws -> KikiMomentComment {
-        try await socialRequest { try await self.api.socialComment(id, text: text, requestID: requestID, token: $0) }
+        try await momentMutation { try await self.api.socialComment(id, text: text, requestID: requestID, token: $0) }
     }
     func deleteComment(_ id: String) async throws {
-        try await socialRequest { try await self.api.socialDeleteComment(id, token: $0) }
+        try await momentMutation { try await self.api.socialDeleteComment(id, token: $0) }
+    }
+
+    private func momentMutation<Value>(_ operation: (String) async throws -> Value) async throws -> Value {
+        let generation = sessionGeneration, privacy = socialPrivacyRevision, expectedToken = token
+        let result = try await socialRequest(operation)
+        try requireAccess(generation: generation, token: expectedToken)
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        momentContentRevision &+= 1
+        return result
     }
     func socialConversations(cursor: String? = nil) async throws -> KikiConversationsPage {
         let privacy = socialPrivacyRevision
@@ -1634,6 +1698,7 @@ import Combine
     }
     func socialPolicyChanged(userID: String, blocked: Bool) {
         socialPrivacyRevision += 1
+        resetMomentNotificationTracking()
         pendingDirectConversation = nil; directConversationPath = []
         socialRefreshID = UUID()
         socialMutationRefreshTask?.cancel(); socialMutationRefreshTask = nil
@@ -1687,6 +1752,7 @@ import Combine
         socialMutationRefreshTask?.cancel(); socialMutationRefreshTask = nil
         socialRefreshID = UUID()
         socialPrivacyRevision += 1
+        resetMomentNotificationTracking()
         pendingDirectConversation = nil; directConversationPath = []
         notificationUnreadGate = KikiUnreadRequestGate(); directUnreadGate = KikiUnreadRequestGate()
         notificationForegroundScope = nil; directForegroundScope = nil

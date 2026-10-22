@@ -2058,7 +2058,7 @@ extension KikiConsentTests {
         let screens: [(String, AnyView)] = [
             ("rooms-light", mainTabVisualScreen(AnyView(KikiDiscoverView().environmentObject(store).preferredColorScheme(.light)))),
             ("create-room-light", AnyView(KikiCreateRoomView(isLive: false, onCreate: { _ in XCTFail("Visual fixtures must not create a room") }).environmentObject(store).preferredColorScheme(.light))),
-            ("moments-light", mainTabVisualScreen(AnyView(KikiMomentsView(store: store).preferredColorScheme(.light)))),
+            ("moments-light", mainTabVisualScreen(AnyView(KikiMomentsView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.light)))),
             ("messages-unified-light", mainTabVisualScreen(AnyView(KikiMessagesView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.light)))),
             ("person-light", AnyView(KikiPublicProfileView(userID: person.id, store: store).preferredColorScheme(.light))),
             ("comments-dark", AnyView(KikiMomentCommentsView(moment: moment, store: store).preferredColorScheme(.dark))),
@@ -2165,7 +2165,7 @@ extension KikiConsentTests {
         XCTAssertTrue(store.isAuthenticated)
         let pages: [(String, AnyView)] = [
             ("rooms", AnyView(KikiDiscoverView().environmentObject(store))),
-            ("moments", AnyView(KikiMomentsView(store: store))),
+            ("moments", AnyView(KikiMomentsView(store: store).environment(\.scenePhase, .active))),
             ("messages", AnyView(KikiMessagesView(store: store).environment(\.scenePhase, .active))),
             ("profile", AnyView(KikiProfileView().environmentObject(store)))
         ]
@@ -4620,6 +4620,58 @@ extension KikiConsentTests {
         await store.logout()
     }
 
+    func testRemoteCommentUpdatesVisibleFeedAndNativePullRefreshWithoutOpeningDetails() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let fixture = MomentRefreshFixture(person: momentFixturePerson(following: false))
+        let mock = KikiAPIMockServer { request in
+            if let response = try fixture.response(request) { return response }
+            return try p1VisualResponse(request, documents: docs)
+        }
+        let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        _ = try await store.socialNotifications() // Seed the ordinary inbox poll before a remote event.
+        try await withMomentWindow { window in
+            let host = UIHostingController(rootView: KikiMomentsView(store: store).environment(\.scenePhase, .active))
+            window.rootViewController = host; window.makeKeyAndVisible()
+            try await self.waitUntil { fixture.pageReads >= 1 && !self.momentScrollViews(window).isEmpty }
+            try await Task.sleep(nanoseconds: 250_000_000)
+            let initialReads = fixture.pageReads
+            let revision = store.momentContentRevision
+            fixture.setComments(1, notify: true)
+            _ = try await store.socialNotifications()
+            XCTAssertGreaterThan(store.momentContentRevision, revision, "Real system notifications with momentID must invalidate the visible feed")
+            try await self.waitUntil { fixture.pageReads > initialReads }
+            try await Task.sleep(nanoseconds: 250_000_000)
+            XCTAssertEqual(fixture.lastReadCount, 1)
+            XCTAssertEqual(fixture.detailReads, 0, "A received comment must update without opening or fetching details")
+            try self.captureMomentRefresh(window, name: "remote-comment")
+
+            let scroll = try XCTUnwrap(self.momentScrollViews(window).first { $0.refreshControl != nil })
+            let refresh = try XCTUnwrap(scroll.refreshControl, "The production ScrollView must expose its native pull refresh control")
+            let beforePull = fixture.pageReads
+            fixture.setComments(2, notify: false)
+            refresh.beginRefreshing(); refresh.sendActions(for: .valueChanged)
+            try await self.waitUntil { fixture.pageReads > beforePull && !refresh.isRefreshing }
+            try await Task.sleep(nanoseconds: 250_000_000)
+            XCTAssertEqual(fixture.lastReadCount, 2)
+            XCTAssertEqual(fixture.detailReads, 0)
+            try self.captureMomentRefresh(window, name: "native-pull")
+        }
+        await store.logout()
+    }
+
+    private func captureMomentRefresh(_ window: UIWindow, name: String) throws {
+        window.layoutIfNeeded()
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+        }
+        let attachment = XCTAttachment(image: image); attachment.name = "moment-refresh-" + name
+        attachment.lifetime = .keepAlways; add(attachment)
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        let folder = URL(fileURLWithPath: "/tmp/kiki-moment-refresh-screenshots/" + device, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(name + ".png"))
+    }
+
     func testMomentFeedAndDetailFixtureScreenshots() async throws {
         let docs = try XCTUnwrap(KikiLegalBundle.bundled)
         let mock = try momentPresentationMock(documents: docs)
@@ -4676,14 +4728,14 @@ extension KikiConsentTests {
                 try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(device + "-" + name + ".png"))
             }
             let phone = CGSize(width: 375, height: 812), tablet = CGSize(width: 1133, height: 744)
-            try await capture("feed-light", size: phone, screen: AnyView(KikiMomentsView(store: store).preferredColorScheme(.light)))
-            try await capture("feed-dark", size: phone, screen: AnyView(KikiMomentsView(store: store).preferredColorScheme(.dark)))
-            try await capture("feed-large-text", size: phone, screen: AnyView(KikiMomentsView(store: store).preferredColorScheme(.light).dynamicTypeSize(.accessibility1)))
+            try await capture("feed-light", size: phone, screen: AnyView(KikiMomentsView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.light)))
+            try await capture("feed-dark", size: phone, screen: AnyView(KikiMomentsView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.dark)))
+            try await capture("feed-large-text", size: phone, screen: AnyView(KikiMomentsView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.light).dynamicTypeSize(.accessibility1)))
             try await capture("detail-light", size: phone, screen: AnyView(KikiMomentCommentsView(moment: moment, store: store).preferredColorScheme(.light)))
             try await capture("detail-comments", size: phone, screen: AnyView(KikiMomentCommentsView(moment: moment, store: store).preferredColorScheme(.light)), scrollToBottom: true)
             try await capture("profile-light", size: phone, screen: AnyView(KikiPublicProfileView(userID: moment.author.id, store: store).preferredColorScheme(.light)), scrollToBottom: true)
             try await capture("profile-dark", size: phone, screen: AnyView(KikiPublicProfileView(userID: moment.author.id, store: store).preferredColorScheme(.dark)), scrollToBottom: true)
-            try await capture("feed-ipad-landscape", size: tablet, screen: AnyView(KikiMomentsView(store: store).preferredColorScheme(.light)))
+            try await capture("feed-ipad-landscape", size: tablet, screen: AnyView(KikiMomentsView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.light)))
             try await capture("detail-ipad-dark", size: tablet, screen: AnyView(KikiMomentCommentsView(moment: moment, store: store).preferredColorScheme(.dark)))
             window.frame = originalFrame
         }
@@ -4774,5 +4826,47 @@ extension KikiConsentTests {
     private func momentScrollViews(_ view: UIView) -> [UIScrollView] {
         let own = (view as? UIScrollView).map { [$0] } ?? []
         return own + view.subviews.flatMap(momentScrollViews)
+    }
+}
+
+// A second user's server changes are independent of this client's presentation.
+private final class MomentRefreshFixture {
+    private let lock = NSLock()
+    private let person: KikiPerson
+    private let momentID = "88888888-8888-4888-8888-888888888888"
+    private var comments = 0
+    private var notice = false
+    private var pages = 0
+    private var details = 0
+    private var readCount = -1
+    init(person: KikiPerson) { self.person = person }
+    var pageReads: Int { lock.lock(); defer { lock.unlock() }; return pages }
+    var detailReads: Int { lock.lock(); defer { lock.unlock() }; return details }
+    var lastReadCount: Int { lock.lock(); defer { lock.unlock() }; return readCount }
+    func setComments(_ count: Int, notify: Bool) { lock.lock(); defer { lock.unlock() }; comments = count; notice = notify }
+    func response(_ request: URLRequest) throws -> (Int, Data)? {
+        lock.lock(); defer { lock.unlock() }
+        let path = request.url?.path ?? ""
+        guard path == "/v1/social/moments" || path == "/v1/social/notifications" || path == "/v1/social/moments/" + momentID else { return nil }
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer moment-fixture-session")
+        let author = try JSONSerialization.jsonObject(with: JSONEncoder().encode(person))
+        let now = Date().timeIntervalSince1970
+        if path == "/v1/social/notifications" {
+            let notifications: [[String: Any]] = notice ? [["id": "comment-notice", "seq": 1, "kind": "system", "actor": author,
+                "text": "评论了你的动态", "createdAt": now, "readAt": now, "momentID": momentID]] : []
+            return (200, try JSONSerialization.data(withJSONObject: ["notifications": notifications, "unreadCount": 0, "nextCursor": NSNull()]))
+        }
+        let preview: [[String: Any]] = (0..<comments).map { index in
+            ["id": "remote-comment-\(index)", "momentID": momentID, "author": author,
+             "text": "另一位用户的新评论 \(index + 1)", "createdAt": now, "canDelete": false]
+        }
+        let moment: [String: Any] = ["id": momentID, "author": author, "text": "动态同步测试：收到评论后直接更新这里。", "media": [],
+            "createdAt": now - 60, "likeCount": 0, "commentCount": comments, "liked": false, "canDelete": false, "commentPreview": preview]
+        if path == "/v1/social/moments" {
+            pages += 1; readCount = comments
+            return (200, try JSONSerialization.data(withJSONObject: ["moments": [moment], "nextCursor": NSNull()]))
+        }
+        details += 1
+        return (200, try JSONSerialization.data(withJSONObject: ["moment": moment]))
     }
 }
