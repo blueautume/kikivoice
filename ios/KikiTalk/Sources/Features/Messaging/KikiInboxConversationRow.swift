@@ -68,7 +68,7 @@ struct KikiInboxConversationRow: View {
                     .accessibilityIdentifier("messages.delete." + entry.id)
             }
 
-            if canPin {
+            if canPin, case .direct = entry.content {
                 Button(action: onTogglePin) {
                     Label(entry.isPinned ? "取消置顶" : "置顶", systemImage: entry.isPinned ? "pin.slash" : "pin")
                 }

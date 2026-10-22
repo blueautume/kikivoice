@@ -576,6 +576,33 @@ class SocialService(ContentMethods):
             db.execute("INSERT INTO social_receipts VALUES(?,?,?,?,NULL)",(user["account_id"],payload.requestID,hashed,int(time.time())))
             return {"ok":True}
 
+    def delete_notification(self,user,notification_id,payload):
+        content={"kind":"notification-delete","notificationID":notification_id}
+        # The source row is gone after success. Check the authenticated receipt
+        # first so an ambiguous retry cannot fail or touch a newer notification.
+        with self.database(self.settings) as db:
+            db.execute("BEGIN IMMEDIATE")
+            self.check(db,user)
+            old,_=self.receipt(db,user,payload.requestID,content)
+            if old: return {"ok":True}
+        policy=self.policy(user)
+        with self.database(self.settings) as db:
+            db.execute("BEGIN IMMEDIATE")
+            self.check(db,user)
+            old,hashed=self.receipt(db,user,payload.requestID,content)
+            if old: return {"ok":True}
+            row=db.execute("SELECT n.actor_id,a.login_id AS actor_public FROM social_notifications n LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE n.id=? AND n.recipient_id=? AND n.created_at>?",(notification_id,user["account_id"],int(time.time())-DAYS)).fetchone()
+            if row is None or not self.notification_visible(db,row,policy):
+                raise HTTPException(404,"通知不存在或暂不可见")
+            self.rate(db,user,"inbox",300,1000)
+            # Outbox sources intentionally have no FK: retain accepted delivery
+            # receipts, but revoke pending/leased sends in this same transaction.
+            if hasattr(self,"push"):
+                db.execute("UPDATE push_outbox SET state='cancelled',completed_at=?,lease_id=NULL,lease_until=NULL WHERE recipient_id=? AND event_kind='notification' AND source_id=? AND state IN ('pending','sending')",(int(time.time()),user["account_id"],notification_id))
+            db.execute("DELETE FROM social_notifications WHERE id=? AND recipient_id=?",(notification_id,user["account_id"]))
+            db.execute("INSERT INTO social_receipts VALUES(?,?,?,?,NULL)",(user["account_id"],payload.requestID,hashed,int(time.time())))
+            return {"ok":True}
+
     def read_notifications(self,user,payload):
         policy=self.policy(user)
         with self.database(self.settings) as db:
@@ -718,6 +745,10 @@ def build_router(app, *, consented_user):
     @router.post("/notifications/clear")
     def clear_notifications(payload:NotificationClear,user=Depends(social_user)):
         return app.state.social.clear_notifications(user,payload)
+
+    @router.delete("/notifications/{notification_id}")
+    def delete_notification(notification_id:uuid.UUID,payload:Mutation,user=Depends(social_user)):
+        return app.state.social.delete_notification(user,str(notification_id),payload)
 
     install_content_routes(router,app,social_user)
     return router

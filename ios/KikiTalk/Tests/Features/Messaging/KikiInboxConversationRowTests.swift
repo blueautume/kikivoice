@@ -47,6 +47,7 @@ final class KikiInboxConversationRowTests: XCTestCase {
             XCTAssertEqual(fixture.entries.first?.unreadLabel, "99+")
             XCTAssertTrue(fixture.entries.contains { $0.isPinned })
             XCTAssertTrue(fixture.entries.contains { $0.id == "notification:fixture-notice" })
+            XCTAssertTrue(fixture.entries.contains { $0.id == "notification:fixture-moment-comment" && !$0.isPinned })
         }
 
         guard ProcessInfo.processInfo.environment["KIKI_INBOX_SWIPE_OBSERVATION"] == "1" else { return }
@@ -111,6 +112,9 @@ private final class KikiInboxRowFixtureState: ObservableObject {
                            preview: "已置顶的会话保留时间与未读布局", unreadCount: 0, isPinned: true),
             KikiInboxEntry(notification: KikiSocialNotification(id: "fixture-notice", kind: "follow", actor: target.person,
                 text: "关注了你", createdAt: now - 450, readAt: nil, roomID: nil, momentID: nil)),
+            KikiInboxEntry(notification: KikiSocialNotification(id: "fixture-moment-comment", kind: "system", actor: target.person,
+                text: "评论了你的动态：这张照片很好看", createdAt: now - 500, readAt: nil, roomID: nil,
+                momentID: "11111111-1111-4111-8111-111111111111")),
             KikiInboxEntry(content: .direct(long), activityAt: now - 600,
                            preview: "长名称与消息预览仍然保持单行，避免挤压未读标记", unreadCount: 8, isPinned: false)
         ]
@@ -159,7 +163,7 @@ private struct KikiInboxRowFixtureList: View {
         NavigationStack {
             List {
                 ForEach(fixture.entries) { entry in
-                    KikiInboxConversationRow(entry: entry, isWorking: false, canDelete: isDirect(entry), canPin: isDirect(entry),
+                    KikiInboxConversationRow(entry: entry, isWorking: false, canDelete: true, canPin: isDirect(entry),
                         onOpen: { fixture.open(entry) }, onTogglePin: { fixture.togglePin(entry) }, onDelete: { fixture.delete(entry) })
                         .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
                         .listRowBackground(entry.isPinned ? KikiPalette.purple.opacity(0.06) : KikiPalette.surface)

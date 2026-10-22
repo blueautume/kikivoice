@@ -4620,6 +4620,60 @@ extension KikiConsentTests {
         await store.logout()
     }
 
+    func testInboxNotificationDeletionReloadsToCenteredEmptyStateWithNativeRefresh() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let fixture = InboxDeleteUIFixture(person: momentFixturePerson(following: false))
+        let mock = KikiAPIMockServer { request in
+            if let response = try fixture.response(request) { return response }
+            return try p1VisualResponse(request, documents: docs)
+        }
+        let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        try await withMomentWindow { window in
+            let original = window.frame
+            let host = UIHostingController(rootView: mainTabVisualScreen(AnyView(
+                KikiMessagesView(store: store).environment(\.scenePhase, .active))).preferredColorScheme(.light))
+            window.rootViewController = host; window.makeKeyAndVisible()
+            try await self.waitUntil { fixture.pageReads > 0 }
+            try await Task.sleep(nanoseconds: 250_000_000)
+            let initialPage = try await store.socialInbox()
+            let entry = try XCTUnwrap(initialPage.entries.first)
+            XCTAssertEqual(entry.preview, "评论了你的动态")
+            let before = fixture.pageReads
+            try await store.clearInboxEntry(entry, throughID: fixture.notificationID, requestID: UUID())
+            try await self.waitUntil { fixture.pageReads > before }
+            XCTAssertEqual(fixture.deletes, 1)
+            XCTAssertEqual(store.unreadNotificationCount, 0)
+            let clearedPage = try await store.socialInbox()
+            XCTAssertTrue(clearedPage.entries.isEmpty)
+            let folder = URL(fileURLWithPath: "/tmp/kiki-inbox-empty-screenshots", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+            for (name, size, scheme) in [
+                ("phone-light", CGSize(width: 375, height: 812), ColorScheme.light),
+                ("phone-dark", CGSize(width: 375, height: 812), ColorScheme.dark),
+                ("tablet-light", CGSize(width: 744, height: 1133), ColorScheme.light),
+                ("tablet-dark", CGSize(width: 1133, height: 744), ColorScheme.dark)
+            ] {
+                window.rootViewController = UIHostingController(rootView: mainTabVisualScreen(AnyView(
+                    KikiMessagesView(store: store).environment(\.scenePhase, .active))).preferredColorScheme(scheme))
+                window.frame = CGRect(origin: original.origin, size: size)
+                window.rootViewController?.view.frame = window.bounds; window.makeKeyAndVisible()
+                try await Task.sleep(nanoseconds: 500_000_000)
+                window.layoutIfNeeded()
+                let scroll = try XCTUnwrap(self.momentScrollViews(window).first { $0.refreshControl != nil })
+                XCTAssertNotNil(scroll.refreshControl, "Centering the empty overlay must preserve the native pull refresh control")
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                }
+                let attachment = XCTAttachment(image: image); attachment.name = "inbox-empty-" + device + "-" + name
+                attachment.lifetime = .keepAlways; self.add(attachment)
+                try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(device + "-" + name + ".png"))
+            }
+            window.frame = original
+        }
+        await store.logout()
+    }
+
     func testRemoteCommentUpdatesVisibleFeedAndNativePullRefreshWithoutOpeningDetails() async throws {
         let docs = try XCTUnwrap(KikiLegalBundle.bundled)
         let fixture = MomentRefreshFixture(person: momentFixturePerson(following: false))
@@ -4868,5 +4922,45 @@ private final class MomentRefreshFixture {
         }
         details += 1
         return (200, try JSONSerialization.data(withJSONObject: ["moment": moment]))
+    }
+}
+
+private final class InboxDeleteUIFixture {
+    let notificationID = "77777777-7777-4777-8777-777777777777"
+    private let person: KikiPerson
+    private let lock = NSLock()
+    private var deleted = false
+    private var reads = 0
+    private var deleteCount = 0
+    init(person: KikiPerson) { self.person = person }
+    var pageReads: Int { lock.lock(); defer { lock.unlock() }; return reads }
+    var deletes: Int { lock.lock(); defer { lock.unlock() }; return deleteCount }
+    func response(_ request: URLRequest) throws -> (Int, Data)? {
+        lock.lock(); defer { lock.unlock() }
+        let path = request.url?.path ?? ""
+        let routes = ["/v1/social/inbox", "/v1/social/notifications", "/v1/social/notifications/" + notificationID]
+        guard routes.contains(path) else { return nil }
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer moment-fixture-session")
+        if path == routes[2] {
+            XCTAssertEqual(request.httpMethod, "DELETE")
+            let body = try requestBody(request)
+            XCTAssertEqual(Set(body.keys), ["requestID"])
+            XCTAssertNotNil(UUID(uuidString: body["requestID"] as? String ?? ""))
+            deleted = true; deleteCount += 1
+            return (200, Data("{\"ok\":true}".utf8))
+        }
+        let actor = try JSONSerialization.jsonObject(with: JSONEncoder().encode(person))
+        let notice: [String: Any] = ["id": notificationID, "seq": 1, "kind": "system", "actor": actor,
+            "text": "评论了你的动态", "createdAt": Date().timeIntervalSince1970, "readAt": NSNull(),
+            "momentID": "88888888-8888-4888-8888-888888888888"]
+        let body: [String: Any]
+        if path == "/v1/social/inbox" {
+            reads += 1
+            body = ["entries": deleted ? [] : [["kind": "notification", "notification": notice]],
+                    "nextCursor": NSNull(), "unreadNotificationCount": deleted ? 0 : 1, "unreadDirectMessageCount": 0]
+        } else {
+            body = ["notifications": deleted ? [] : [notice], "unreadCount": deleted ? 0 : 1, "nextCursor": NSNull()]
+        }
+        return (200, try JSONSerialization.data(withJSONObject: body))
     }
 }

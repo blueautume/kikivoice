@@ -402,6 +402,13 @@ extension KikiAccountAPIClient {
     func socialConversations(cursor: String?, token: String) async throws -> KikiConversationsPage {
         try await request(socialPath("conversations", cursor: cursor), token: token)
     }
+    func socialDeleteNotification(_ id: String, requestID: UUID, token: String) async throws {
+        try validateSocialUUID(id)
+        struct Body: Encodable { let requestID: UUID }
+        let result: Success = try await send("/v1/social/notifications/\(id)", method: "DELETE",
+                                            body: Body(requestID: requestID), token: token)
+        guard result.ok else { throw KikiAPIError.invalidResponse }
+    }
     func socialInbox(cursor: String?, token: String) async throws -> KikiInboxPage {
         try await request(socialPath("inbox", cursor: cursor), token: token)
     }

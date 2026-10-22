@@ -367,6 +367,133 @@ final class KikiInboxRefreshTests: XCTestCase {
         await store.logout()
     }
 
+    func testDeletingOneNotificationPreservesNewArrivalsUnloadedUnreadAndDirectDrafts() async throws {
+        let fixture = try await fixture(), store = fixture.store
+        let targetID = UUID().uuidString.lowercased(), olderID = UUID().uuidString.lowercased()
+        let incomingID = UUID().uuidString.lowercased(), requestID = UUID()
+        fixture.responses.notifications([targetID, olderID], unread: 80)
+        fixture.responses.conversation(messageID: "direct-survives-notification-delete", unread: 9)
+        let page = try await store.socialInbox()
+        let entry = try XCTUnwrap(page.entries.first { $0.id == "notification:" + targetID })
+        store.updateDirectDraft("删除提醒时保留私信草稿", personID: InboxRefreshResponses.peer)
+        let history = store.notificationHistoryRevision, directHistory = store.directHistoryRevision
+        let arrived = expectation(description: "single notification deletion is waiting")
+        let gate = fixture.responses.holdNextResponse(path: "/v1/social/notifications/" + targetID) { arrived.fulfill() }
+        defer { gate.signal() }
+        let deletion = Task { try await store.clearInboxEntry(entry, throughID: targetID, requestID: requestID) }
+        await fulfillment(of: [arrived], timeout: 2)
+        XCTAssertEqual(store.notificationHistoryRevision, history, "Do not hide history before a positive acknowledgement")
+        XCTAssertEqual(store.unreadNotificationCount, 80)
+        fixture.responses.notifications([incomingID, targetID, olderID], unread: 81)
+        let requestBoundary = fixture.responses.requests.count
+        gate.signal()
+        try await deletion.value
+        XCTAssertEqual(store.notificationHistoryRevision, history + 1)
+        XCTAssertEqual(store.unreadNotificationCount, 80, "The authoritative total includes unread rows outside this page")
+        XCTAssertEqual(store.unreadDirectMessageCount, 9)
+        XCTAssertEqual(store.directHistoryRevision, directHistory)
+        XCTAssertEqual(store.directDrafts[InboxRefreshResponses.peer], "删除提醒时保留私信草稿")
+        XCTAssertTrue(fixture.responses.requests.dropFirst(requestBoundary).contains("/v1/social/notifications"))
+        XCTAssertTrue(fixture.responses.requests.dropFirst(requestBoundary).contains("/v1/push/status"), "A confirmed deletion refreshes the system badge from the server")
+        let after = try await store.socialInbox()
+        XCTAssertEqual(Set(after.entries.filter { $0.id.hasPrefix("notification:") }.map(\.id)),
+                       Set(["notification:" + incomingID, "notification:" + olderID]))
+        let call = try XCTUnwrap(fixture.responses.notificationDeletions.first)
+        XCTAssertEqual(call.id, targetID)
+        XCTAssertEqual(Set(call.body.keys), ["requestID"])
+        XCTAssertEqual(UUID(uuidString: call.body["requestID"] as? String ?? ""), requestID)
+        await store.logout()
+    }
+
+    func testUnconfirmedNotificationDeletionKeepsHistoryAndRetriesOnlyItsOriginalRowAndRequestID() async throws {
+        for cancelled in [false, true] {
+            let fixture = try await fixture(), store = fixture.store
+            let targetID = UUID().uuidString.lowercased(), olderID = UUID().uuidString.lowercased()
+            let incomingID = UUID().uuidString.lowercased(), requestID = UUID()
+            fixture.responses.momentNotifications([.init(id: targetID, seq: 2), .init(id: olderID, seq: 1)])
+            let page = try await store.socialInbox()
+            let entry = try XCTUnwrap(page.entries.first { $0.id == "notification:" + targetID })
+            let history = store.notificationHistoryRevision
+            fixture.responses.setNotificationDeleteStatus(cancelled ? 200 : 503)
+            fixture.responses.setNotificationDeleteCancelled(cancelled)
+            do { try await store.clearInboxEntry(entry, throughID: targetID, requestID: requestID); XCTFail("Unconfirmed deletion must fail") }
+            catch is CancellationError { XCTAssertTrue(cancelled) }
+            catch let error as KikiAPIError {
+                XCTAssertFalse(cancelled)
+                guard case .server(503, _) = error else { return XCTFail("Expected the original deletion failure, got \(error)") }
+            }
+            XCTAssertEqual(store.notificationHistoryRevision, history)
+            XCTAssertEqual(store.unreadNotificationCount, 2)
+            let unchanged = try await store.socialInbox()
+            XCTAssertTrue(unchanged.entries.contains { $0.id == entry.id })
+            fixture.responses.momentNotifications([.init(id: incomingID, seq: 3), .init(id: targetID, seq: 2), .init(id: olderID, seq: 1)])
+            fixture.responses.setNotificationDeleteStatus(200)
+            fixture.responses.setNotificationDeleteCancelled(false)
+            try await store.clearInboxEntry(entry, throughID: targetID, requestID: requestID)
+            XCTAssertEqual(store.notificationHistoryRevision, history + 1)
+            XCTAssertEqual(store.unreadNotificationCount, 2)
+            let after = try await store.socialInbox()
+            XCTAssertEqual(Set(after.entries.map(\.id)), Set(["notification:" + incomingID, "notification:" + olderID]))
+            XCTAssertEqual(fixture.responses.notificationDeletions.count, 2)
+            for call in fixture.responses.notificationDeletions {
+                XCTAssertEqual(call.id, targetID)
+                XCTAssertEqual(UUID(uuidString: call.body["requestID"] as? String ?? ""), requestID)
+            }
+            await store.logout()
+        }
+    }
+
+    func testDeletingReadNotificationKeepsOtherUnreadAndRejectsMismatchedRowBeforeNetwork() async throws {
+        let fixture = try await fixture(), store = fixture.store
+        let targetID = UUID().uuidString.lowercased(), unreadID = UUID().uuidString.lowercased()
+        fixture.responses.momentNotifications([.init(id: targetID, seq: 2, read: true), .init(id: unreadID, seq: 1)])
+        let page = try await store.socialInbox()
+        let entry = try XCTUnwrap(page.entries.first { $0.id == "notification:" + targetID })
+        let history = store.notificationHistoryRevision
+        do { try await store.clearInboxEntry(entry, throughID: unreadID, requestID: UUID()); XCTFail("A stale row cannot delete a different notification") }
+        catch let error as KikiAPIError { guard case .invalidResponse = error else { return XCTFail("Expected row identity validation") } }
+        XCTAssertTrue(fixture.responses.notificationDeletions.isEmpty)
+        XCTAssertEqual(store.notificationHistoryRevision, history)
+        try await store.clearInboxEntry(entry, throughID: targetID, requestID: UUID())
+        XCTAssertEqual(store.notificationHistoryRevision, history + 1)
+        XCTAssertEqual(store.unreadNotificationCount, 1, "Deleting an already-read interaction must not blindly subtract from another unread item")
+        await store.logout()
+    }
+
+    func testLateNotificationDeleteAcknowledgementCannotRefreshOrChangeNewAccountOrPrivacyScope() async throws {
+        for switchSession in [false, true] {
+            let fixture = try await fixture(), store = fixture.store
+            let targetID = UUID().uuidString.lowercased(), currentID = UUID().uuidString.lowercased()
+            fixture.responses.notifications([targetID], unread: 40)
+            let page = try await store.socialInbox()
+            let entry = try XCTUnwrap(page.entries.first { $0.id == "notification:" + targetID })
+            let arrived = expectation(description: "old-scope notification deletion is waiting")
+            let gate = fixture.responses.holdNextResponse(path: "/v1/social/notifications/" + targetID) { arrived.fulfill() }
+            defer { gate.signal() }
+            let old = Task { try await store.clearInboxEntry(entry, throughID: targetID, requestID: UUID()) }
+            await fulfillment(of: [arrived], timeout: 2)
+            if switchSession { await store.logout(); try await store.loginWithApple() }
+            else { store.socialPolicyChanged(userID: InboxRefreshResponses.peer, blocked: true) }
+            fixture.responses.notifications([currentID], unread: 7)
+            _ = try await store.socialInbox()
+            // Finish the new scope's own device sync before observing whether
+            // the held old operation causes any additional refresh.
+            await fixture.push.refresh()
+            let history = store.notificationHistoryRevision
+            let requestBoundary = fixture.responses.requests.count
+            gate.signal()
+            if case .success = await old.result { XCTFail("The old deletion acknowledgement must fail its account/privacy gate") }
+            XCTAssertEqual(store.notificationHistoryRevision, history)
+            XCTAssertEqual(store.unreadNotificationCount, 7)
+            XCTAssertFalse(fixture.responses.requests.dropFirst(requestBoundary).contains {
+                $0 == "/v1/social/notifications" || $0 == "/v1/push/status" || $0 == "/v1/social/notifications/read"
+            }, "A late old-scope mutation must not refresh counts, device state or read state in the current scope")
+            let after = try await store.socialInbox()
+            XCTAssertEqual(after.entries.map(\.id), ["notification:" + currentID])
+            await store.logout()
+        }
+    }
+
     func testVisibleConversationSuppressesIncomingBannerWhileItsOverlayAllowsIt() async throws {
         let fixture = try await fixture()
         let store = fixture.store, push = fixture.push, owner = UUID()
@@ -608,6 +735,13 @@ private final class InboxRefreshResponses: @unchecked Sendable {
     private var accountNotificationsEnabled = true
     private var momentMutationStatus = 200
     private var momentFeedCommentCount = 0
+    private var notificationDeleteStatus = 200
+    private var notificationDeleteCancelled = false
+    private var notificationDeleteCalls: [(id: String, body: [String: Any])] = []
+    private var notificationDeleteReceipts: Set<String> = []
+    var notificationDeletions: [(id: String, body: [String: Any])] { lock.lock(); defer { lock.unlock() }; return notificationDeleteCalls }
+    func setNotificationDeleteStatus(_ value: Int) { lock.lock(); defer { lock.unlock() }; notificationDeleteStatus = value }
+    func setNotificationDeleteCancelled(_ value: Bool) { lock.lock(); defer { lock.unlock() }; notificationDeleteCancelled = value }
     static let momentID = "11111111-1111-4111-8111-111111111111"
     static let commentID = "22222222-2222-4222-8222-222222222222"
     struct MomentNotice {
@@ -669,6 +803,8 @@ private final class InboxRefreshResponses: @unchecked Sendable {
 
     func respond(_ request: URLRequest, documents: KikiLegalBundle) throws -> (Int, Data) {
         let path = try XCTUnwrap(request.url?.path)
+        let deletesNotice = request.httpMethod == "DELETE" && path.hasPrefix("/v1/social/notifications/")
+        let deletionBody = deletesNotice ? try requestBody(request) : nil
         lock.lock(); paths.append(path)
         let isPage = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "cursor" } == true
         let notifications = isPage ? notificationPage ?? notificationBody : notificationBody
@@ -677,6 +813,8 @@ private final class InboxRefreshResponses: @unchecked Sendable {
         let currentBulkStatus = bulkStatus
         let mutationStatus = momentMutationStatus
         let feedCommentCount = momentFeedCommentCount
+        let deleteStatus = notificationDeleteStatus, deleteCancelled = notificationDeleteCancelled
+        if let deletionBody { notificationDeleteCalls.append((request.url!.lastPathComponent, deletionBody)) }
         let heldResponse = responseHold?.path == path ? responseHold : nil
         if heldResponse != nil { responseHold = nil }
         if ["/v1/social/inbox/read", "/v1/social/inbox/clear"].contains(path) { bulkRequests.append(try requestBody(request)) }
@@ -749,10 +887,27 @@ private final class InboxRefreshResponses: @unchecked Sendable {
         case "/v1/library": body = ["favorites": [], "recents": [], "created": []]
         case "/v1/push/status": body = ["enabled": enabled, "registered": false, "badgeCount": 0, "accountTag": "inbox-fixture-account", "hideNotificationContent": hidden]
         default:
-            if path.hasPrefix("/v1/push/devices/") { body = ["ok": true] }
+            if deletesNotice {
+                if deleteCancelled { throw URLError(.cancelled) }
+                if deleteStatus != 200 { return (deleteStatus, Data(#"{"detail":"删除结果未确认"}"#.utf8)) }
+                let input = try requestBody(request)
+                try deleteNotification(request.url!.lastPathComponent, requestID: XCTUnwrap(input["requestID"] as? String))
+                body = ["ok": true]
+            } else if path.hasPrefix("/v1/push/devices/") { body = ["ok": true] }
             else { XCTFail("Unexpected inbox refresh request: \(path)"); body = ["detail": "Unexpected route"]; return (404, try JSONSerialization.data(withJSONObject: body)) }
         }
         return (200, try JSONSerialization.data(withJSONObject: body))
+    }
+
+    private func deleteNotification(_ id: String, requestID: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        guard notificationDeleteReceipts.insert(requestID).inserted else { return }
+        var page = try XCTUnwrap(JSONSerialization.jsonObject(with: notificationBody) as? [String: Any])
+        let values = page["notifications"] as? [[String: Any]] ?? []
+        let deletedUnread = values.filter { $0["id"] as? String == id && $0["readAt"] is NSNull }.count
+        page["notifications"] = values.filter { $0["id"] as? String != id }
+        page["unreadCount"] = max(0, (page["unreadCount"] as? Int ?? 0) - deletedUnread)
+        notificationBody = try JSONSerialization.data(withJSONObject: page)
     }
 
     private static var person: [String: Any] {

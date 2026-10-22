@@ -1573,6 +1573,11 @@ import Combine
     }
 
     func clearInboxEntry(_ entry: KikiInboxEntry, throughID: String, requestID: UUID) async throws {
+        if case .notification(let notice) = entry.content {
+            guard throughID == notice.id else { throw KikiAPIError.invalidResponse }
+            try await deleteInboxNotification(notice.id, requestID: requestID)
+            return
+        }
         guard case .direct(let conversation) = entry.content else { throw KikiAPIError.invalidResponse }
         let privacy = socialPrivacyRevision
         let generation = sessionGeneration, expectedToken = token
@@ -1592,6 +1597,31 @@ import Combine
         directHistoryRevision[conversation.person.id, default: 0] += 1
         directUnreadGate.finishMutation(mutation)
         if !directUnreadGate.hasPendingMutation { _ = try? await socialConversations() }
+        try requireAccess(generation: generation, token: expectedToken)
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        await pushController?.refresh()
+        try requireAccess(generation: generation, token: expectedToken)
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+    }
+
+    private func deleteInboxNotification(_ id: String, requestID: UUID) async throws {
+        let privacy = socialPrivacyRevision
+        let generation = sessionGeneration, expectedToken = token
+        let mutation = notificationUnreadGate.beginMutation()
+        defer { notificationUnreadGate.finishMutation(mutation) }
+        do {
+            try await socialRequest { try await self.api.socialDeleteNotification(id, requestID: requestID, token: $0) }
+        } catch {
+            notificationUnreadGate.finishMutation(mutation)
+            if privacy == socialPrivacyRevision, generation == sessionGeneration, token == expectedToken,
+               permitsBusiness, isAuthenticated, !notificationUnreadGate.hasPendingMutation { _ = try? await socialNotifications() }
+            throw error
+        }
+        try requireAccess(generation: generation, token: expectedToken)
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        notificationHistoryRevision += 1
+        notificationUnreadGate.finishMutation(mutation)
+        if !notificationUnreadGate.hasPendingMutation { _ = try? await socialNotifications() }
         try requireAccess(generation: generation, token: expectedToken)
         guard privacy == socialPrivacyRevision else { throw CancellationError() }
         await pushController?.refresh()

@@ -13,7 +13,8 @@ final class KikiInboxActionsTests: XCTestCase {
             { _ = try await server.client.socialInboxSnapshot(token: "account-inbox-only") },
             { try await server.client.socialMutateInbox(snapshot: .init(snapshot: "signed-cutoff"), clear: true, requestID: UUID(), token: "account-inbox-only") },
             { try await server.client.socialSetConversationPinned("kiki_target0000", pinned: true, requestID: UUID(), token: "account-inbox-only") },
-            { try await server.client.socialClearConversation("kiki_target0000", throughMessageID: UUID().uuidString, requestID: UUID(), token: "account-inbox-only") }
+            { try await server.client.socialClearConversation("kiki_target0000", throughMessageID: UUID().uuidString, requestID: UUID(), token: "account-inbox-only") },
+            { try await server.client.socialDeleteNotification(UUID().uuidString, requestID: UUID(), token: "account-inbox-only") }
         ]
         for operation in operations {
             do { try await operation(); XCTFail("A cancelled URLSession request must not succeed") }
@@ -33,7 +34,8 @@ final class KikiInboxActionsTests: XCTestCase {
             { _ = try await server.client.socialInboxSnapshot(token: "account-inbox-only") },
             { try await server.client.socialMutateInbox(snapshot: .init(snapshot: "signed-cutoff"), clear: true, requestID: UUID(), token: "account-inbox-only") },
             { try await server.client.socialSetConversationPinned("kiki_target0000", pinned: true, requestID: UUID(), token: "account-inbox-only") },
-            { try await server.client.socialClearConversation("kiki_target0000", throughMessageID: UUID().uuidString, requestID: UUID(), token: "account-inbox-only") }
+            { try await server.client.socialClearConversation("kiki_target0000", throughMessageID: UUID().uuidString, requestID: UUID(), token: "account-inbox-only") },
+            { try await server.client.socialDeleteNotification(UUID().uuidString, requestID: UUID(), token: "account-inbox-only") }
         ]
         for operation in operations {
             do { try await operation(); XCTFail("A genuine service failure must remain visible to the inbox") }
@@ -86,6 +88,41 @@ final class KikiInboxActionsTests: XCTestCase {
         try await server.client.socialClearConversation("kiki_target0000", throughMessageID: through, requestID: nonce, token: "account-inbox-only")
         try await server.client.socialClearConversation("kiki_target0000", throughMessageID: through, requestID: nonce, token: "account-inbox-only")
         XCTAssertEqual(calls.requests.count, 2)
+    }
+
+    func testNotificationDeleteTargetsOnlyOneUUIDAndRetries503WithItsOriginalRequestID() async throws {
+        let noticeID = UUID().uuidString.lowercased(), requestID = UUID()
+        let calls = KikiInboxActionsRequestLog()
+        let server = KikiAPIMockServer { request in
+            try self.assertMutation(request, path: "/v1/social/notifications/" + noticeID, method: "DELETE")
+            let body = try requestBody(request)
+            XCTAssertEqual(Set(body.keys), ["requestID"])
+            XCTAssertEqual(UUID(uuidString: body["requestID"] as? String ?? ""), requestID)
+            XCTAssertNil(body["throughNotificationID"], "A single row must never invoke the aggregate clear watermark")
+            calls.append(request)
+            if calls.requests.count == 1 { return (503, try inboxActionsJSON(["detail": "删除结果未确认"])) }
+            return (200, try inboxActionsJSON(["ok": true]))
+        }
+        do { try await server.client.socialDeleteNotification(noticeID, requestID: requestID, token: "account-inbox-only"); XCTFail("A 503 must remain unconfirmed") }
+        catch let error as KikiAPIError { guard case .server(503, _) = error else { return XCTFail("Expected the original server failure") } }
+        try await server.client.socialDeleteNotification(noticeID, requestID: requestID, token: "account-inbox-only")
+        try await server.client.socialDeleteNotification(noticeID, requestID: requestID, token: "account-inbox-only")
+        XCTAssertEqual(calls.requests.count, 3)
+        XCTAssertEqual(Set(try calls.requests.map { try requestBody($0)["requestID"] as? String }).count, 1)
+    }
+
+    func testNotificationDeleteRejectsUnauthorizedMissingFalseAndMalformedAcknowledgements() async throws {
+        let noticeID = UUID().uuidString
+        let unauthorized = KikiAPIMockServer { _ in (401, try inboxActionsJSON(["detail": "登录已过期"])) }
+        do { try await unauthorized.client.socialDeleteNotification(noticeID, requestID: UUID(), token: "account-inbox-only"); XCTFail("Unauthorized deletion must fail") }
+        catch let error as KikiAPIError { XCTAssertTrue(error.isUnauthorized) }
+        for acknowledgement: [String: Any] in [[:], ["ok": false], ["ok": "true"]] {
+            let malformed = KikiAPIMockServer { _ in (200, try inboxActionsJSON(acknowledgement)) }
+            do { try await malformed.client.socialDeleteNotification(noticeID, requestID: UUID(), token: "account-inbox-only"); XCTFail("Deletion needs a valid positive acknowledgement") }
+            catch let error as KikiAPIError {
+                guard case .invalidResponse = error else { return XCTFail("Expected acknowledgement validation, got \(error)") }
+            }
+        }
     }
 
     func testInboxBulkReadAndClearReuseOnlyTheSignedSnapshotAndStableRequestID() async throws {
@@ -152,6 +189,9 @@ final class KikiInboxActionsTests: XCTestCase {
         for invalid in ["", "not-a-uuid", "../messages", UUID().uuidString + "?all=true", "12345678-1234-1234-1234-123456789xyy"] {
             await assertSecurityFailure {
                 try await server.client.socialClearConversation("kiki_target0000", throughMessageID: invalid, requestID: UUID(), token: "private")
+            }
+            await assertSecurityFailure {
+                try await server.client.socialDeleteNotification(invalid, requestID: UUID(), token: "private")
             }
         }
     }

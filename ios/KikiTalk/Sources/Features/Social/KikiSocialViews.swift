@@ -533,6 +533,23 @@ struct KikiMessagesView: View {
     private var showsDeletion: Binding<Bool> {
         Binding(get: { pendingDeletion != nil || pendingBulkDeletion != nil }, set: { if !$0 { pendingDeletion = nil; pendingBulkDeletion = nil } })
     }
+    private var deletionTitle: String {
+        if pendingBulkDeletion != nil { return "删除全部消息？" }
+        guard let entry = pendingDeletion?.entry else { return "删除消息？" }
+        switch entry.content {
+        case .notification: return "删除这条提醒？"
+        case .direct: return "删除“\(entry.name)”？"
+        }
+    }
+    private var deletionMessage: String {
+        if pendingBulkDeletion != nil {
+            return "清空你这一侧已有的私聊记录和互动提醒，对方不受影响。确认期间收到的新消息会保留。"
+        }
+        if let entry = pendingDeletion?.entry, case .notification = entry.content {
+            return "仅删除这条提醒，其他提醒及原动态、评论和私聊记录不受影响。"
+        }
+        return "将移除此会话并清空你这一侧的记录，对方不受影响。新消息到来后会重新显示。"
+    }
     var body: some View {
         NavigationStack(path: $store.directConversationPath) {
             messageList
@@ -573,7 +590,7 @@ struct KikiMessagesView: View {
                 .onChange(of: push.inboxRequest) { _ in handlePushRequest() }
                 .onChange(of: push.pendingInboxRequest) { _ in handlePushRequest() }
                 .onChange(of: push.inboxPresentationReady) { _ in handlePushRequest() }
-                .alert(pendingBulkDeletion != nil ? "删除全部消息？" : "删除“\(pendingDeletion?.entry.name ?? "")”？", isPresented: showsDeletion) {
+                .alert(deletionTitle, isPresented: showsDeletion) {
                     Button("删除", role: .destructive) {
                         let bulk = pendingBulkDeletion; let single = pendingDeletion
                         pendingBulkDeletion = nil; pendingDeletion = nil
@@ -582,9 +599,7 @@ struct KikiMessagesView: View {
                     }
                     Button("取消", role: .cancel) { pendingDeletion = nil; pendingBulkDeletion = nil }
                 } message: {
-                    Text(pendingBulkDeletion != nil
-                         ? "清空你这一侧已有的私聊记录和互动提醒，对方不受影响。确认期间收到的新消息会保留。"
-                         : "将移除此会话并清空你这一侧的记录，对方不受影响。新消息到来后会重新显示。")
+                    Text(deletionMessage)
                 }
                 .onChange(of: store.socialRevision) { _ in if refreshIsActive { Task { await reload(silent: true) } } }
                 .onChange(of: store.directContentRevision) { _ in if refreshIsActive { Task { await reload(silent: true) } } }
@@ -628,21 +643,29 @@ struct KikiMessagesView: View {
             } else if nextCursor != nil {
                 Button("加载更多") { Task { await loadMore() } }.frame(maxWidth: .infinity).padding(.vertical, 12)
                     .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
-            } else if entries.isEmpty && error == nil {
-                KikiEmptyState(symbol: "bubble.left.and.bubble.right", title: "这里什么都没有", message: "")
-                    .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
             }
         }.listStyle(.plain).scrollContentBackground(.hidden)
             .kikiTransparentTopScrollEdge()
             .frame(maxWidth: 760).frame(maxWidth: .infinity)
             .background(KikiPalette.background.ignoresSafeArea())
+            .overlay {
+                if hasLoaded && entries.isEmpty && !isLoading && error == nil && nextCursor == nil {
+                    KikiEmptyState(symbol: "bubble.left.and.bubble.right", title: "这里什么都没有", message: "")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("messages.empty")
+                }
+            }
             .refreshable { await reload() }
     }
     private func isDirect(_ entry: KikiInboxEntry) -> Bool {
         if case .direct = entry.content { return true }; return false
     }
     private func deletionThroughID(_ entry: KikiInboxEntry) -> String? {
-        if case .direct(let conversation) = entry.content { return conversation.lastMessage?.id }; return nil
+        switch entry.content {
+        case .notification(let notice): return notice.id
+        case .direct(let conversation): return conversation.lastMessage?.id
+        }
     }
     private func isWorking(_ entry: KikiInboxEntry) -> Bool {
         if isMutating || hasRetry { return true }
