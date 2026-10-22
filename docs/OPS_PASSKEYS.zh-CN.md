@@ -1,5 +1,7 @@
 # Kiki 运维统一 Passkey 账户
 
+> **证据位置：** 下文 `output/`、`experiments/livekit/validation/` 的截图和结果为本地归档，未纳入 Git，克隆仓库不会自动取得；保留链接用于追溯当时记录。
+
 > 后续 P0 发布新增独立 `community` 权限，支持举报与语聊处置；原 `account`、`voice` 两个看板权限继续只读，互不自动扩权。见 [P0 交付说明](P0_COMMUNITY_SAFETY.zh-CN.md)。
 
 本轮仅替换 Kiki 运维 App 的管理口令，不改变普通 KikiTalk 用户的 Apple 登录。账号服务器 `kiki.group / 43.138.219.160` 统一保存运维身份、Passkey 公钥、会话与权限；语聊服务器 `furby.top / 139.224.50.108` 不另建一套运维账号。

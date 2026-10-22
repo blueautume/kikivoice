@@ -237,21 +237,6 @@ final class KikiConsentStore: ObservableObject {
         return KikiLegalAcceptance(versions: documents.versions, accepted: true, adultConfirmed: true)
     }
 
-    // Compatibility for existing internal callers/tests; no UI uses checkboxes.
-    func accept(agreed: Bool, adultConfirmed: Bool) throws {
-        guard agreed, adultConfirmed else {
-            throw KikiAPIError.security("请先阅读并同意当前协议，确认已满 18 周岁。")
-        }
-        try accept()
-    }
-
-    func acceptance(agreed: Bool, adultConfirmed: Bool) throws -> KikiLegalAcceptance {
-        guard agreed, adultConfirmed else {
-            throw KikiAPIError.security("请先阅读并同意当前协议，确认已满 18 周岁。")
-        }
-        return try acceptance()
-    }
-
     func verify(_ status: KikiLegalStatus) throws {
         guard status.requiredVersions == documents?.versions, !status.requiresAcceptance else {
             throw KikiAPIError.legalUpdateRequired("服务器协议已更新或尚未确认，请重新核对协议。", status.requiredVersions)

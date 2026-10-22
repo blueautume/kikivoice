@@ -9,7 +9,7 @@ final class KikiRealtimeIntegrationTests: XCTestCase {
         guard ProcessInfo.processInfo.environment["KIKI_TEST_APPLE_CHALLENGE"] == "1" else {
             throw XCTSkip("设置 KIKI_TEST_APPLE_CHALLENGE=1 后验证真实 Apple 登录 challenge；不会创建账号。")
         }
-        let api = KikiAPIClient.shared
+        let api = KikiAccountAPIClient.shared
         let first = try await api.appleChallenge()
         let second = try await api.appleChallenge()
         XCTAssertFalse(first.challengeID.isEmpty)

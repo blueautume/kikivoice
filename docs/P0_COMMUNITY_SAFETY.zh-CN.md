@@ -1,5 +1,7 @@
 # P0 社区安全与运维交付说明
 
+> **证据位置：** 下文 `output/`、`experiments/livekit/validation/` 的截图和结果为本地归档，未纳入 Git，克隆仓库不会自动取得；保留链接用于追溯当时记录。
+
 本轮按“仅中文语聊、小范围社区”的目标补齐容量以外的 P0 能力。记录日期为 **2026-10-19，Asia/Shanghai**。接口字段以 [P0 安全合约](../experiments/livekit/shared/p0-safety-contract.json) 为准；此文件记录权限、行为、保留规则与维护边界。
 
 ## 服务与本轮范围

@@ -1,5 +1,9 @@
 # KikiTalk 自建语聊停机切换
 
+> **证据位置：** 下文 `output/`、`experiments/livekit/validation/` 的截图和结果为本地归档，未纳入 Git，克隆仓库不会自动取得；保留链接用于追溯当时记录。
+
+> **源码入口更新（2026-10-22）：** 自建语聊已由主 App 承接；旧腾讯组件、示例 target/Pods、独立实验 iOS 和 vendor 快照已移除。当前使用 `application/RTCube.xcworkspace` 的 KikiTalk；独立 KikiVoiceOps、两套后端、infra/shared 和验收资料保留。下文为各日期切换及后续发布的归档记录，不表示本次清理重新发布或完成相同验收。现行结构见[接手指南](PROJECT_HANDOVER.zh-CN.md)。
+
 > 2026-10-20 前台收礼修复已覆盖安装：手工 UIKit 房间控制器缺少 SwiftUI 场景环境，导致接收端被误判为后台、轮询未启动。已改为跟随实际窗口生命周期；17 项回归及 iPhone / iPad 两次真实服务页面自动接收、GIF 播放验证通过，详情见 [收礼修复记录](GIFTS.zh-CN.md#前台接收端不显示礼物修复2026-10-20)。
 
 > 2026-10-20 后续发布：当前 LiveKit 已上线一次性 100,000,000 免费体验钻石、五款礼物和十二件永久装饰，以及服务器动态协议获取。**账号、语聊、官网已发布，iPhone「穷奇」和 iPad 已覆盖安装并启动**。本轮独立线上隔离测试 16 项通过，详细接口、权限、保留和执行记录见 [当前免费体验系统说明](GIFTS.zh-CN.md#本轮上线记录2026-10-20)，不沿用本文 2026-10-19 切换的验收结论。体验钻石、礼物和装饰无现金价值，不能充值、提现、转让或兑换现金及实物；收礼无收益，也不迁移旧腾讯钱包。
@@ -35,7 +39,7 @@
 - 本期不提供耳返、变声、混响等语音音效。视频直播入口隐藏，创建/加入视频请求明确拒绝。礼物及积分相关入口关闭；不把原腾讯或旧免费礼物数据迁入本次语聊实现。
 - 不做新旧媒体互通或灰度兼容；旧腾讯安装包应停止使用并更新到本次版本。保留的厂商参考代码与历史资源不表示仍有可用入口，最终发布包依赖与隐私清单仍以构建检查为准。
 
-原应用入口为 `application/RTCube.xcworkspace`，scheme 为 `KikiTalk`。实验应用仍在 `experiments/livekit/ios/`；独立运维应用为 `experiments/livekit/admin-ios/KikiVoiceOps.xcworkspace`，scheme 为 `KikiVoiceOps`，两者不共享应用容器或账号凭据。
+应用入口为 `application/RTCube.xcworkspace`，scheme 为 `KikiTalk`；独立运维应用为 `experiments/livekit/admin-ios/KikiVoiceOps.xcworkspace`，scheme 为 `KikiVoiceOps`，两者不共享应用容器或账号凭据。切换时保留的 `experiments/livekit/ios/` 实验客户端及 vendor 快照已于 2026-10-22 清理，不再是运行入口。
 
 ## 容量配置
 

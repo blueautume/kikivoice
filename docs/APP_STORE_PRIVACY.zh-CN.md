@@ -1,5 +1,10 @@
 # 隐私签署与 App Store 准备记录
 
+> **证据位置：** 下文 `output/`、`experiments/livekit/validation/` 的截图和结果为本地归档，未纳入 Git，克隆仓库不会自动取得；保留链接用于追溯当时记录。
+
+> **文档范围更新（2026-10-22）：** 本页保留各日期的隐私实现、发布及待发布记录，不代替当前 App 隐私报告。当前 KikiTalk 使用系统 Apple 登录/APNs 与 SPM LiveKit；旧腾讯组件、RTCubeLab、Pods 和实验客户端已移除。下文腾讯/Kingfisher/SnapKit 及旧归档的清单数量只属于相应历史构建。此次清理不修改正式协议正文、协议版本或线上隐私页面；当前源码入口见[接手指南](PROJECT_HANDOVER.zh-CN.md)。
+
+
 ## 首次私聊额度协议准备（2026-10-20，未发布）
 
 配合无需互关、对方首次回复前最多 5 条的私聊规则，本地协议更新为 `2026-10-20-r12`，集合 SHA-256 为 `4f84e391121cdd11d20929d033bb2623d91c49f9c7a820bc31140ee46d2525ec`。正文明确关注变化不决定私聊权限、清空本人历史不重置首次联系额度，以及服务器最小条数／回复状态的用途和删除边界。私聊正文的 30 天保留规则、双方拉黑和治理权限继续有效。
@@ -26,7 +31,7 @@ App Store Connect 对 1.0.4（1）报告缺少 `NSCameraUsageDescription`。当�
 
 公网检查确认两个公开协议接口返回完整四份文本、`no-store` 且不设置 Cookie，私有业务接口未认证时返回 401。另用两个临时签名身份和两个真实 LiveKit 客户端完成 16 项生产冒烟检查，覆盖首次体验钻、礼物与装扮、幂等扣款及真实房间连接；结束后已清理临时账号、会话、房间、体验数据和 SFU 房间。**本轮不含本人 Apple 登录与真实麦克风听感验收**。详情见 [公网检查](../experiments/livekit/validation/experience-dynamic-legal-2026-10-20/public-verification.json)、[生产冒烟与清理](../experiments/livekit/validation/experience-dynamic-legal-2026-10-20/experience-smoke.json)及[设备覆盖安装](../experiments/livekit/validation/experience-dynamic-legal-2026-10-20/client-installation.json)。下文各节为先前阶段记录，其中本地固定协议或“更新 App”处理不再代表本轮实现。
 
-> **当前切换说明（2026-10-19）：** 本次语聊将由腾讯迁至自建 LiveKit，Apple 登录仍由独立账号服务负责。当前客户端、服务边界、协议发布与人工验收状态见 [LiveKit 停机切换](LIVEKIT_CUTOVER.zh-CN.md)；本页下文保留 2026-10-17 及更早的历史，不能据此认定新媒体链路或新协议已经发布、真机验收或完成 App Store 提交。
+> **归档：切换初期说明（2026-10-19）：** 本次语聊将由腾讯迁至自建 LiveKit，Apple 登录仍由独立账号服务负责。当前客户端、服务边界、协议发布与人工验收状态见 [LiveKit 停机切换](LIVEKIT_CUTOVER.zh-CN.md)；本页下文保留 2026-10-17 及更早的历史，不能据此认定新媒体链路或新协议已经发布、真机验收或完成 App Store 提交。
 
 ## 登录前权限准备（2026-10-20）
 
@@ -64,7 +69,7 @@ App 的 `PrivacyInfo.xcprivacy` 已将 Performance Data 标记为关联身份，
 
 当前工作区已切换为 **Apple 登录专用版本**，协议升级为 `2026-10-17-r2`。本轮生产切换、旧用户清理、公网验收及本人真机首次Apple授权已完成；下文历史初版验收与本轮记录分别列示。接入合同、服务器环境变量、密钥管理及人工验收见 [Apple 登录说明](APPLE_LOGIN.zh-CN.md)。
 
-## 本轮范围
+## 归档：Apple 登录首版的隐私签署范围（2026-10-17）
 
 本轮实现明确的电子同意记录，不采集手写签名、身份证照片或出生日期。年龄勾选是本人声明，不代表实名认证或经验证的年龄识别。协议签署流程的完成不等于 App Store 或大陆经营资质已审核通过。
 
@@ -90,12 +95,12 @@ App 的 `PrivacyInfo.xcprivacy` 已将 Performance Data 标记为关联身份，
 
 唯一正文为 `legal/documents.json`，当前隐私政策、用户协议及配套文档版本均为 `2026-10-17-r2`，增加 Apple 身份认证、必要授权凭据、保存与撤销说明，并移除旧 ID 登录规则。`python3 tools/build_legal_documents.py --check` 校验本地资源、后端资源和网页一致；修改必须先升级相应协议版本并保留已接受的历史文本。新旧整组文本哈希不同，旧版同意不能沿用。SHA-256用于关联文本，不等于CA数字签名、个人实名或有法律效力的第三方电子签章服务。本节 URL 是发布配置和待验收目标，不代表本轮网页已经替换上线。
 
-## 隐私清单与依赖
+## 归档：腾讯版隐私清单与依赖（2026-10-17）
 
 - KikiTalk App添加自身 `PrivacyInfo.xcprivacy`；UserDefaults仅用于应用本地设置/同意状态，使用CA92.1理由。自有用户、头像、内容、使用记录按功能用途声明，关联身份，不用于追踪。
 - Kingfisher由6.3.1升级为7.12.0，SnapKit由5.0.1升级为5.7.1，使用维护者随CocoaPods发布的隐私清单。SDWebImage及腾讯二进制组件已有厂商清单，保留原始文件，不伪造厂商签名或声明。
 - 应检查最终Archive内App资源和SDK资源包，不能只检查源码目录存在清单。新版本或功能改变时重新查看Xcode隐私报告；App manifest不能替代SDK自身所需manifest/适用签名。
-- 当前发布目标为 **KikiTalk**。旧RTCubeLab示例目标的登录、分析、推送及协议配置不是本产品发布路径，不能将它作为本次隐私实现的替代验收结果。
+- 本历史批次的发布目标为 **KikiTalk**。RTCubeLab 当时仅为示例，现已移除；其登录、分析、推送及协议配置不能作为当前产品的验收结果。
 - Apple 登录使用 iOS 自带 AuthenticationServices，已加入 `com.apple.developer.applesignin` entitlement；不另行嵌入第三方登录 SDK。Apple 身份服务已列入本轮 SDK/共享清单，不能将系统框架的使用等同于没有外部身份数据处理。
 
 官方依据：[Apple第三方SDK要求](https://developer.apple.com/support/third-party-SDK-requirements/)、[隐私清单](https://developer.apple.com/documentation/bundleresources/privacy-manifest-files)、[Kingfisher 7.12.0清单](https://github.com/onevcat/Kingfisher/blob/7.12.0/Sources/PrivacyInfo.xcprivacy)、[SnapKit 5.7.1 Podspec](https://github.com/SnapKit/SnapKit/blob/5.7.1/SnapKit.podspec)。

@@ -1,6 +1,0 @@
-framework module TUICallKit_Swift {
-  umbrella header "TUICallKit_Swift-umbrella.h"
-
-  export *
-  module * { export * }
-}

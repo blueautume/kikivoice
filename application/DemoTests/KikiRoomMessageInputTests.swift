@@ -285,6 +285,9 @@ final class KikiRoomMessageInputTests: XCTestCase {
         for (name, size) in cases {
             let model = ScreenshotModel()
             let host = UIHostingController(rootView: ComposerScreenshotFixture(model: model))
+            // Synthetic viewports exercise layout and focus independently of the
+            // scene's physical keyboard. The native opt-in retains keyboard geometry.
+            host.safeAreaRegions = inspectSoftwareKeyboard ? .all : .container
             window.rootViewController = host
             window.frame = CGRect(origin: .zero, size: size)
             host.view.frame = window.bounds

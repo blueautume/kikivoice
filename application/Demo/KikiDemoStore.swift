@@ -344,11 +344,6 @@ struct DemoRoom: Identifiable, Codable, Equatable {
         }
     }
 
-    func loginWithApple(agreed: Bool, adultConfirmed: Bool) async throws {
-        _ = try consent.acceptance(agreed: agreed, adultConfirmed: adultConfirmed)
-        try await loginWithApple()
-    }
-
     func loginWithApple() async throws {
         let acceptance = try consent.acceptance()
         try requireAccess()
@@ -1693,16 +1688,6 @@ struct KikiDecoratedAvatar: View {
     var body: some View {
         KikiAvatar(index: index, size: size, customURL: customURL)
             .overlay { KikiAvatarDecoration(decorationID: gifts.appearance(for: userID).avatarFrame, size: size) }
-    }
-}
-
-@available(iOS 16.0, *)
-struct KikiWave: View {
-    var color: Color = KikiPalette.lavender
-    var body: some View {
-        HStack(spacing: 2.5) {
-            ForEach(0..<4) { i in Capsule().fill(color).frame(width: 3, height: [8.0, 16, 12, 6][i]) }
-        }.accessibilityHidden(true)
     }
 }
 

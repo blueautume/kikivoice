@@ -1,8 +1,31 @@
-
-application/Pods
-application/App-UIKit.xcworkspace/xcuserdata
-*.sh
+# Xcode and dependency caches
+**/Pods/
+**/build/
+**/DerivedData/
 **/xcuserdata/
 *.xcuserstate
 .DS_Store
+
+# Python caches and virtual environments
+**/__pycache__/
+*.py[cod]
+**/.pytest_cache/
+**/.venv/
+
+# Local credentials
+.private/
+.local/
+.env
+.env.*
+*.env
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
 *.p8
+*.mobileprovision
+
+# Generated assets and local validation evidence
+/output/
+/experiments/livekit/validation/

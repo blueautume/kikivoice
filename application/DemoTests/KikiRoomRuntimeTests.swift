@@ -274,22 +274,6 @@ final class KikiRoomRuntimeTests: XCTestCase {
                                                                            now: Date(timeIntervalSince1970: 999)))
     }
 
-    func testChatPacketBoundsAndValidation() throws {
-        let (packet, encoded) = try KikiVoiceChatPacket.encode("  你好 LiveKit  ")
-        XCTAssertEqual(packet.text, "你好 LiveKit")
-        XCTAssertEqual(KikiVoiceChatPacket.decode(encoded)?.id, packet.id)
-        let emojiText = "你好 😀 👩🏽‍💻 🇨🇳 ❤️‍🔥"
-        let (emojiPacket, emojiData) = try KikiVoiceChatPacket.encode(emojiText)
-        XCTAssertEqual(emojiPacket.text, emojiText)
-        XCTAssertEqual(KikiVoiceChatPacket.decode(emojiData)?.text, emojiText)
-        XCTAssertThrowsError(try KikiVoiceChatPacket.encode(" \n "))
-        XCTAssertThrowsError(try KikiVoiceChatPacket.encode(String(repeating: "a", count: 2_001)))
-        XCTAssertNil(KikiVoiceChatPacket.decode(Data(repeating: 0, count: 4_097)))
-        XCTAssertNil(KikiVoiceChatPacket.decode(Data("{\"version\":1,\"id\":\"bad\",\"text\":\"hello\"}".utf8)))
-        let unknown = "{\"version\":9,\"id\":\"\(UUID().uuidString)\",\"text\":\"hello\"}"
-        XCTAssertNil(KikiVoiceChatPacket.decode(Data(unknown.utf8)))
-    }
-
     func testOrderedSeatStateDecodesPresenceAndRetainsLegacyCompatibility() throws {
         let member: [String: Any] = ["userID": "listener", "name": "听众", "avatarIndex": 2,
             "role": "member", "seatIndex": NSNull(), "audioMuted": false, "chatMuted": false,

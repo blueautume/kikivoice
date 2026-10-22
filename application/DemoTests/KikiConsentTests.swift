@@ -1524,9 +1524,7 @@ private final class TestRTC: KikiRTCServicing {
     var deferLogin = false
     var roomConnectError: Error?
     var lastRoomAttemptID: String?
-    var deferRooms = false
     var loginContinuation: CheckedContinuation<Void, Error>?
-    var roomContinuation: CheckedContinuation<[KikiRTCListing], Error>?
     func isCurrentRoom(_ roomID: String) -> Bool { currentSDKRoomID == roomID }
     func requireNoActiveRoom() throws { }
     func login(credentials: KikiSDKCredentials, sessionToken: String) async throws {
@@ -1539,10 +1537,6 @@ private final class TestRTC: KikiRTCServicing {
     func stopMediaForPrivacy() { stopCount += 1; isPresentingRoom = false; currentSDKRoomID = nil }
     func logoutForPrivacy() async throws { await logout() }
     func updateProfile(userID: String, name: String, bio: String, avatarURL: String) async throws { }
-    func fetchRooms() async throws -> [KikiRTCListing] {
-        if deferRooms { return try await withCheckedThrowingContinuation { roomContinuation = $0 } }
-        return []
-    }
     func createRoom(roomID: String, title: String, category: String, isLive: Bool, theme: Int) async throws {
         lastRoomAttemptID = KikiIncidentContext.attempt?.id
         KikiIncidentContext.attempt?.enter(.mediaConnect)

@@ -1,6 +1,0 @@
-framework module AtomicX {
-  umbrella header "AtomicX-umbrella.h"
-
-  export *
-  module * { export * }
-}

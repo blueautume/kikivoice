@@ -1,4 +1,3 @@
-#if KIKI_DEMO_STANDALONE
 import SwiftUI
 
 @main
@@ -8,4 +7,3 @@ struct KikiDemoApp: App {
         WindowGroup { KikiDemoRootView() }
     }
 }
-#endif

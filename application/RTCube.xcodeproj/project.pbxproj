@@ -9,32 +9,17 @@
 /* Begin PBXBuildFile section */
 		082211E38C26B878DBE36BA7 /* KikiDemoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5857ABCDB7751D39725EE21A /* KikiDemoStore.swift */; };
 		082366E0A67F4BE67756CF3D /* KikiLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C78FE734DAC221D8418D57EC /* KikiLoginView.swift */; };
-		0851A5EEFD60B871FEACB4C1 /* ReplayKitLocalized.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 5B1412993B998075E3CEA419 /* ReplayKitLocalized.xcstrings */; };
-		0957006F958A6A7D637FC300 /* KikiVoiceRoomFloatingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85EC875B0927AF0E14C439AE /* KikiVoiceRoomFloatingOverlay.swift */; };
 		12D30AA314AF3271840D8BB3 /* KikiMomentsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66F890A7F84309FB5D4EA330 /* KikiMomentsViews.swift */; };
-		1C45AE9DE900680E62B6C921 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = D9E9758F47BFA8556C9281DF /* InfoPlist.strings */; };
-		31D1185C3DC2A20C4E93FF69 /* LaunchAnimationPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED8B60ABC44BCB74060FAF72 /* LaunchAnimationPlayerView.swift */; };
-		37AD2BDEA6146BF524057164 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 008566B2B072CF7DA5A69344 /* Localizable.xcstrings */; };
-		48A8A75CBC5526E8F4AF15C9 /* 69babfea7b12a1a7d89502bc918f480b.mov in Resources */ = {isa = PBXBuildFile; fileRef = FE037D22B116E78C267CD926 /* 69babfea7b12a1a7d89502bc918f480b.mov */; };
-		49F98C61FE3BBDC6C36FF195 /* AppAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD4ADCA4B9FE7C9ADB83FD68 /* AppAnalytics.swift */; };
-		4EF055B37A579691C7935E3D /* KikiLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C78FE734DAC221D8418D57EC /* KikiLoginView.swift */; };
+		419EE0B7C50496A0804F54E1 /* KikiRealtimeIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A35AC2F088BD23CB2AA674 /* KikiRealtimeIntegrationTests.swift */; };
 		51CE35B6E6A94EBB11B9E20D /* KikiRTCService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E86C4063B886D07A199A55 /* KikiRTCService.swift */; };
-		56052174246E6C515AC43FAB /* MainLocalized.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = FB0E736CA96EC2173C773277 /* MainLocalized.xcstrings */; };
-		5B0070D3829C72416680CFBB /* LaunchAnimationPlaybackRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF4E3F31AB81DA4F9762EED4 /* LaunchAnimationPlaybackRecord.swift */; };
 		5BBB2099AB0B88FBFDA1F1AA /* KikiDemoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30442ADCE3A3C4DDB29CEDCF /* KikiDemoApp.swift */; };
 		6177B1747CA73EA635A3951B /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = 868487E6A8B625D7B7BA52B6 /* LiveKit */; };
 		64A225D462F7BE84ADD40B1F /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A4F11069BA80712ECE428D6 /* Foundation.framework */; };
-		64BBE4C5B54E66077AA665BD /* KikiCreateRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D8A7DD9AEF50739450B570 /* KikiCreateRoomView.swift */; };
-		68318AD0AE7C005F916FB535 /* LaunchAnimationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66C9F2D121C87825726C4CF9 /* LaunchAnimationCoordinator.swift */; };
-		735D1A2DADACE9AA9199481A /* KikiRTCService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E86C4063B886D07A199A55 /* KikiRTCService.swift */; };
 		77591E077D625C9F66490AC7 /* KikiSocialModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4A43C686CB31556D53F97EF /* KikiSocialModels.swift */; };
 		78FA065D82985302C2E8F57B /* KikiIncidents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF17FBC07B097DAE35202DBD /* KikiIncidents.swift */; };
 		794E6B39AC33F70940416664 /* KikiDemoStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4E154A32FB7F1B3EBE3606 /* KikiDemoStoreTests.swift */; };
 		9136083FCAF5B2DEAE345291 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 222468891BB2144371D09557 /* Foundation.framework */; };
-		971D2F196DEE3C8BC470FC04 /* AvatarPickerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7536B416CDE69AACA73EA8 /* AvatarPickerViewController.swift */; };
-		97C05E29ECC13CAD5C5083F1 /* KikiSDKAvatarTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDC7C4D6B36F7392AEC4F01C /* KikiSDKAvatarTrust.swift */; };
 		99F4087F0706926E11FCC971 /* KikiAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E4883B41EE1A2A8656709CD /* KikiAPIClient.swift */; };
-		9D449D70447381AAA6647E74 /* KikiProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7D6536860014019A14E989 /* KikiProfileView.swift */; };
 		A019A0000000000000000001 /* KikiPush.swift in Sources */ = {isa = PBXBuildFile; fileRef = A019A0000000000000000002 /* KikiPush.swift */; };
 		A020B0000000000000000001 /* KikiStartupPermissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A020B0000000000000000002 /* KikiStartupPermissions.swift */; };
 		A020C0000000000000000001 /* KikiRoomPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A020C0000000000000000002 /* KikiRoomPresentationTests.swift */; };
@@ -54,95 +39,32 @@
 		A020F0000000000000000051 /* KikiRoomChatPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A020F0000000000000000052 /* KikiRoomChatPresentationTests.swift */; };
 		A020F0000000000000000061 /* KikiCreateRoomButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A020F0000000000000000062 /* KikiCreateRoomButton.swift */; };
 		A020F0000000000000000071 /* KikiDirectMessageAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A020F0000000000000000072 /* KikiDirectMessageAccessTests.swift */; };
-		A0DE0A1A0F0E0AAA00BBCCDD /* ModuleAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0DE0A1B0F0E0AAA00BBCCDD /* ModuleAnalytics.swift */; };
-		A4E4828686F7069B27ACCDAA /* KikiAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E4883B41EE1A2A8656709CD /* KikiAPIClient.swift */; };
 		A6C5EB94E630B3FCD10C06A6 /* KikiAccountAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C191B94ED9DBF69D185AD6A /* KikiAccountAPIClient.swift */; };
-		A97D40E9BF989536D7E67EFD /* KikiSDKAvatarTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDC7C4D6B36F7392AEC4F01C /* KikiSDKAvatarTrust.swift */; };
 		AB8A4D0731C63040DAD9690B /* KikiDemoRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7ED23089D0DDFD83E22C26 /* KikiDemoRootView.swift */; };
-		ACC8B082055E87747518C91D /* KikiDemoRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7ED23089D0DDFD83E22C26 /* KikiDemoRootView.swift */; };
 		AD79C944179E9680D46F1562 /* KikiProductionVoiceIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D15E7303C535658D1F1DAFD /* KikiProductionVoiceIntegrationTests.swift */; };
 		ADF16338E8461FCD89632C98 /* KikiLaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 2EA976C6751A3BE0CB8AD5AD /* KikiLaunchScreen.storyboard */; };
 		B187CDE8913D04375D238521 /* KikiDirectMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5B162B839EFE438CD43AF6C /* KikiDirectMessages.swift */; };
 		BEDD6E1014E6B7D4A02848CD /* KikiProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7D6536860014019A14E989 /* KikiProfileView.swift */; };
 		C01717000000000000000011 /* KikiLegal.swift in Sources */ = {isa = PBXBuildFile; fileRef = C01717000000000000000001 /* KikiLegal.swift */; };
 		C01717000000000000000012 /* KikiLegalViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C01717000000000000000002 /* KikiLegalViews.swift */; };
-		C01717000000000000000013 /* Resources/KikiLegalDocuments.json in Resources */ = {isa = PBXBuildFile; fileRef = C01717000000000000000003 /* Resources/KikiLegalDocuments.json */; };
+		C01717000000000000000013 /* KikiLegalDocuments.json in Resources */ = {isa = PBXBuildFile; fileRef = C01717000000000000000003 /* KikiLegalDocuments.json */; };
 		C01717000000000000000014 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = C01717000000000000000004 /* PrivacyInfo.xcprivacy */; };
 		C01717000000000000000015 /* KikiConsentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C01717000000000000000005 /* KikiConsentTests.swift */; };
-		C01717000000000000000016 /* KikiLegal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 851BB306D9881B98E0EF8387 /* KikiLegal.swift */; };
-		C01717000000000000000017 /* KikiLegalViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6399EEB7A348C99C0A7B3D55 /* KikiLegalViews.swift */; };
 		C2F00A321151546E624F6CD5 /* KikiRoomRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D2CF212BB641E10EB7092F2 /* KikiRoomRuntime.swift */; };
 		C44C336BF741A1AB6176ADA9 /* KikiSocialViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AC5BA7BC6A3316253C3B7AE /* KikiSocialViews.swift */; };
-		C657EE552F61698F00D01990 /* EntranceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657EE3D2F61698F00D01990 /* EntranceStore.swift */; };
-		C657EE562F61698F00D01990 /* EntranceState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657EE3C2F61698F00D01990 /* EntranceState.swift */; };
-		C657EE572F61698F00D01990 /* ResolvedModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657EE2C2F61698F00D01990 /* ResolvedModule.swift */; };
-		C657EE592F61698F00D01990 /* LeftAlignedFlowLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657EE392F61698F00D01990 /* LeftAlignedFlowLayout.swift */; };
-		C657EE5A2F61698F00D01990 /* EntranceReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657EE382F61698F00D01990 /* EntranceReportView.swift */; };
-		C657EE5B2F61698F00D01990 /* EntranceViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657EE3E2F61698F00D01990 /* EntranceViewController.swift */; };
-		C657EE5C2F61698F00D01990 /* EntranceCollectionCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657EE362F61698F00D01990 /* EntranceCollectionCell.swift */; };
-		C657EE5E2F61698F00D01990 /* EntranceFooterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657EE372F61698F00D01990 /* EntranceFooterView.swift */; };
-		C657EE5F2F61698F00D01990 /* MainNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657EE3A2F61698F00D01990 /* MainNavigationView.swift */; };
-		C657EE602F61698F00D01990 /* MainLocalized.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657EE312F61698F00D01990 /* MainLocalized.swift */; };
-		C657EE612F61698F00D01990 /* ModuleRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657EE3F2F61698F00D01990 /* ModuleRegistry.swift */; };
-		C657EE622F61698F00D01990 /* ModulePermissionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657EE342F61698F00D01990 /* ModulePermissionService.swift */; };
 		C68A78AEA31492A66E61A57E /* KikiCreateRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D8A7DD9AEF50739450B570 /* KikiCreateRoomView.swift */; };
-		C6E1A8632F6A4CAB0047AD91 /* LayoutDefine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1A8602F6A4CAB0047AD91 /* LayoutDefine.swift */; };
-		C6E1A8642F6A521D0047AD91 /* GenerateTestUserSig.swift in Sources */ = {isa = PBXBuildFile; fileRef = C657D1002F5AD40200D01990 /* GenerateTestUserSig.swift */; };
-		C6E1A8662F6A52330047AD91 /* LanguageSelectViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6LANG0042F5B000000D01990 /* LanguageSelectViewController.swift */; };
-		C6E1A8682F6A523E0047AD91 /* LanguageEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6LANG0032F5B000000D01990 /* LanguageEntry.swift */; };
-		C6E1BE9C2F7137B00047AD91 /* ProfileUpdateInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1BE7B2F7137B00047AD91 /* ProfileUpdateInfoView.swift */; };
-		C6E1BE9D2F7137B00047AD91 /* ProfileInfoModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1BE6C2F7137B00047AD91 /* ProfileInfoModel.swift */; };
-		C6E1BE9E2F7137B00047AD91 /* ProfileDatePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1BE792F7137B00047AD91 /* ProfileDatePickerView.swift */; };
-		C6E1BE9F2F7137B00047AD91 /* MineAboutResignViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1BE742F7137B00047AD91 /* MineAboutResignViewController.swift */; };
-		C6E1BEA02F7137B00047AD91 /* MineViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1BE772F7137B00047AD91 /* MineViewController.swift */; };
-		C6E1BEA12F7137B00047AD91 /* MineEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1BE7D2F7137B00047AD91 /* MineEntry.swift */; };
-		C6E1BEA22F7137B00047AD91 /* ProfileController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1BE782F7137B00047AD91 /* ProfileController.swift */; };
-		C6E1BEA32F7137B00047AD91 /* MineLocalized.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1BE712F7137B00047AD91 /* MineLocalized.swift */; };
-		C6E1BEA42F7137B00047AD91 /* MineRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1BE762F7137B00047AD91 /* MineRootView.swift */; };
-		C6E1BEA52F7137B00047AD91 /* MineViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1BE6B2F7137B00047AD91 /* MineViewModel.swift */; };
-		C6E1BEA62F7137B00047AD91 /* MineAboutViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1BE752F7137B00047AD91 /* MineAboutViewController.swift */; };
-		C6E1BEA72F7137B00047AD91 /* ProfileTableViewCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1BE7A2F7137B00047AD91 /* ProfileTableViewCell.swift */; };
-		C6E1CD412F73E9380047AD91 /* SafetyReminderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1CD3F2F73E9380047AD91 /* SafetyReminderView.swift */; };
-		C6E1D74B2F7BA7BF0047AD91 /* EnvironmentOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1D74A2F7BA7BF0047AD91 /* EnvironmentOperation.swift */; };
-		C6E1DEA42F7E56D60047AD91 /* RTCExperienceRoomButtonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E1DEA12F7E447B0047AD91 /* RTCExperienceRoomButtonView.swift */; };
-		C6E402702F67FCD0003F5BAF /* Double+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E4026B2F67FCD0003F5BAF /* Double+Extension.swift */; };
-		C6E402712F67FCD0003F5BAF /* CGFloat+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E4026A2F67FCD0003F5BAF /* CGFloat+Extension.swift */; };
-		C6E402752F67FCD0003F5BAF /* Int+Extension.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E4026C2F67FCD0003F5BAF /* Int+Extension.swift */; };
-		C6LOG0022F7B000000000001 /* LogUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6LOG0052F7B000000000001 /* LogUploadView.swift */; };
-		C6LOG0022F7B000000000002 /* LogUploadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6LOG0052F7B000000000002 /* LogUploadManager.swift */; };
-		C6LOG0022F7B000000000003 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6LOG0052F7B000000000003 /* AppLogger.swift */; };
-		C6MA00032F6BEE0000D01990 /* MainAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C6MA00042F6BEE0000D01990 /* MainAssets.xcassets */; };
-		C6PU00032FA200000047AD91 /* PushLifecycleHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6PU00002FA200000047AD91 /* PushLifecycleHandler.swift */; };
-		CCDD71C58C5F55C31F4A4A15 /* KikiDemoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5857ABCDB7751D39725EE21A /* KikiDemoStore.swift */; };
-		D1000001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000001 /* AppDelegate.swift */; };
-		D1000002 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000002 /* SceneDelegate.swift */; };
-		D1000004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000004 /* Assets.xcassets */; };
-		D1000005 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A2000005 /* LaunchScreen.storyboard */; };
-		D1000008 /* Privacy.plist in Resources */ = {isa = PBXBuildFile; fileRef = A2000008 /* Privacy.plist */; };
-		D1POD001 /* Pods_RTCubeLab.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D2POD001 /* Pods_RTCubeLab.framework */; };
 		DC8B8ABDD6EBFC230819BDF1 /* KikiKeychainRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00BA3EAFA2B96B9C0C244B5B /* KikiKeychainRuntimeTests.swift */; };
-		DD100001 /* LaunchImage@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = AA200001 /* LaunchImage@2x.png */; };
-		DD100002 /* LaunchImage@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = AA200002 /* LaunchImage@3x.png */; };
-		DD100003 /* LaunchImage_en@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = AA200003 /* LaunchImage_en@2x.png */; };
-		DD100004 /* LaunchImage_en@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = AA200004 /* LaunchImage_en@3x.png */; };
 		E02020000000000000000011 /* KikiGiftViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E02020000000000000000001 /* KikiGiftViews.swift */; };
 		E02020000000000000000012 /* KikiGiftTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01818000000000000000003 /* KikiGiftTests.swift */; };
 		E2DD37DDF2616DAD922EF8D4 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = 78785EC7FCF2644A5E84FE49 /* LiveKit */; };
-		E67DCD8C9D834BF2E632160C /* MineLocalized.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C97618C3ACB8696944DEA829 /* MineLocalized.xcstrings */; };
 		E731E2AFF9EFDF9055E5E071 /* KikiVoiceRoomFloatingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85EC875B0927AF0E14C439AE /* KikiVoiceRoomFloatingOverlay.swift */; };
 		ED963A05558976AD8228CC04 /* KikiVoiceAPIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40529D9F2F37E2C3E22D90DB /* KikiVoiceAPIClientTests.swift */; };
 		EEE3B91D8CF54397B18132BD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2231184EB1D346815C4601A6 /* Assets.xcassets */; };
 		F01818000000000000000011 /* KikiGifts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01818000000000000000001 /* KikiGifts.swift */; };
-		F01818000000000000000012 /* KikiGifts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B5D3B932A8151A55182D2E /* KikiGifts.swift */; };
-		F01818000000000000000013 /* Resources/Gifts in Resources */ = {isa = PBXBuildFile; fileRef = F01818000000000000000002 /* Resources/Gifts */; };
+		F01818000000000000000013 /* Gifts in Resources */ = {isa = PBXBuildFile; fileRef = F01818000000000000000002 /* Gifts */; };
 		F25F395E27FE42E3A5838F63 /* KikiAPIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18276E256FF3D04749DB6243 /* KikiAPIClientTests.swift */; };
 		F75BA20B13B118E35590D3A6 /* KikiRoomRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1B3CE0785CA8D1A6E73949E /* KikiRoomRuntimeTests.swift */; };
 		FD45AE7BC055861B6F9E6E06 /* KikiLiveKitRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C7418E0A8762B03BCC91F37 /* KikiLiveKitRoomView.swift */; };
-		G1LR0001 /* SampleHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = E2RP0002 /* SampleHandler.m */; };
-		G1LR0002 /* ReplayKitLocalized.m in Sources */ = {isa = PBXBuildFile; fileRef = E2RP0004 /* ReplayKitLocalized.m */; };
-		G1LR0003 /* ReplayKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E2RP0010 /* ReplayKit.framework */; };
-		G1LR0006 /* RTCubeLabReplayExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = G2LR0011 /* RTCubeLabReplayExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		G1LRPOD1 /* Pods_RTCubeLabReplayExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = G2LRPOD1 /* Pods_RTCubeLabReplayExtension.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -153,71 +75,30 @@
 			remoteGlobalIDString = D67015E2A500000C872DA019;
 			remoteInfo = KikiTalk;
 		};
-		E4RP0003 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = A8000001 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = G5LR0001;
-			remoteInfo = RTCubeLabReplayExtension;
-		};
 /* End PBXContainerItemProxy section */
 
-/* Begin PBXCopyFilesBuildPhase section */
-		E3RP0003 /* Embed App Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				G1LR0006 /* RTCubeLabReplayExtension.appex in Embed App Extensions */,
-			);
-			name = "Embed App Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
-
 /* Begin PBXFileReference section */
-		008566B2B072CF7DA5A69344 /* Localizable.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		00BA3EAFA2B96B9C0C244B5B /* KikiKeychainRuntimeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiKeychainRuntimeTests.swift; sourceTree = "<group>"; };
 		0B7D6536860014019A14E989 /* KikiProfileView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiProfileView.swift; sourceTree = "<group>"; };
 		0C7418E0A8762B03BCC91F37 /* KikiLiveKitRoomView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiLiveKitRoomView.swift; sourceTree = "<group>"; };
-		0F7536B416CDE69AACA73EA8 /* AvatarPickerViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AvatarPickerViewController.swift; sourceTree = "<group>"; };
-		0F75B0A42490CDB953E1FE81 /* KikiLoginView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiLoginView.swift; sourceTree = "<group>"; };
 		18276E256FF3D04749DB6243 /* KikiAPIClientTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiAPIClientTests.swift; sourceTree = "<group>"; };
 		1F4D2BC5D0DEB9091B19082F /* KikiTalk.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KikiTalk.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		222468891BB2144371D09557 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		2231184EB1D346815C4601A6 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		2934405D9BF120EEBC17B6C6 /* KikiDemoStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiDemoStore.swift; sourceTree = "<group>"; };
 		2AC5BA7BC6A3316253C3B7AE /* KikiSocialViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiSocialViews.swift; sourceTree = "<group>"; };
 		2EA976C6751A3BE0CB8AD5AD /* KikiLaunchScreen.storyboard */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file.storyboard; path = KikiLaunchScreen.storyboard; sourceTree = "<group>"; };
-		2F46C58F911A2981D01067C6 /* en */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		30442ADCE3A3C4DDB29CEDCF /* KikiDemoApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiDemoApp.swift; sourceTree = "<group>"; };
 		37E86C4063B886D07A199A55 /* KikiRTCService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiRTCService.swift; sourceTree = "<group>"; };
 		3D2CF212BB641E10EB7092F2 /* KikiRoomRuntime.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiRoomRuntime.swift; sourceTree = "<group>"; };
 		40529D9F2F37E2C3E22D90DB /* KikiVoiceAPIClientTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiVoiceAPIClientTests.swift; sourceTree = "<group>"; };
 		4C191B94ED9DBF69D185AD6A /* KikiAccountAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiAccountAPIClient.swift; sourceTree = "<group>"; };
 		5857ABCDB7751D39725EE21A /* KikiDemoStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiDemoStore.swift; sourceTree = "<group>"; };
-		5B1412993B998075E3CEA419 /* ReplayKitLocalized.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.json.xcstrings; path = ReplayKitLocalized.xcstrings; sourceTree = "<group>"; };
-		5EFB7937FEB2D9FBB3A74945 /* Pods-KikiTalk.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-KikiTalk.release.xcconfig"; path = "Target Support Files/Pods-KikiTalk/Pods-KikiTalk.release.xcconfig"; sourceTree = "<group>"; };
-		6399EEB7A348C99C0A7B3D55 /* KikiLegalViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiLegalViews.swift; sourceTree = "<group>"; };
-		63B43D1AAA724BA5442F1B9C /* KikiRTCService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiRTCService.swift; sourceTree = "<group>"; };
-		64D3C262054A349625AD9A29 /* KikiVoiceRoomFloatingOverlay.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiVoiceRoomFloatingOverlay.swift; sourceTree = "<group>"; };
-		66C9F2D121C87825726C4CF9 /* LaunchAnimationCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LaunchAnimationCoordinator.swift; sourceTree = "<group>"; };
-		66EA237A199D1EC5C02ACDE6 /* KikiSDKAvatarTrust.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiSDKAvatarTrust.swift; sourceTree = "<group>"; };
 		66F890A7F84309FB5D4EA330 /* KikiMomentsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiMomentsViews.swift; sourceTree = "<group>"; };
 		6D15E7303C535658D1F1DAFD /* KikiProductionVoiceIntegrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiProductionVoiceIntegrationTests.swift; sourceTree = "<group>"; };
-		71B5D3B932A8151A55182D2E /* KikiGifts.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiGifts.swift; sourceTree = "<group>"; };
-		762AC652DB6CB4E52398BD0A /* zh-Hans */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		7E4883B41EE1A2A8656709CD /* KikiAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiAPIClient.swift; sourceTree = "<group>"; };
-		8360C8846222B8368EF6994E /* Pods_KikiTalk.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_KikiTalk.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		851BB306D9881B98E0EF8387 /* KikiLegal.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiLegal.swift; sourceTree = "<group>"; };
 		85EC875B0927AF0E14C439AE /* KikiVoiceRoomFloatingOverlay.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiVoiceRoomFloatingOverlay.swift; sourceTree = "<group>"; };
-		882FF0C801776CB40F81492F /* KikiCreateRoomView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiCreateRoomView.swift; sourceTree = "<group>"; };
-		88BD0E52BAB9FE9019CD9F01 /* Pods-KikiTalkTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-KikiTalkTests.debug.xcconfig"; path = "Target Support Files/Pods-KikiTalkTests/Pods-KikiTalkTests.debug.xcconfig"; sourceTree = "<group>"; };
-		897E10B7F68F9E65CCE0C19B /* Pods-KikiTalkTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-KikiTalkTests.release.xcconfig"; path = "Target Support Files/Pods-KikiTalkTests/Pods-KikiTalkTests.release.xcconfig"; sourceTree = "<group>"; };
 		8A4F11069BA80712ECE428D6 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		8F8E93C5B3749360CD7C39D8 /* KikiTalk.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = KikiTalk.entitlements; sourceTree = "<group>"; };
-		99FBE66C7C8D76E767B2ADA0 /* Pods_KikiTalkTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_KikiTalkTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		A019A0000000000000000002 /* KikiPush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiPush.swift; sourceTree = "<group>"; };
 		A020B0000000000000000002 /* KikiStartupPermissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiStartupPermissions.swift; sourceTree = "<group>"; };
 		A020C0000000000000000002 /* KikiRoomPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiRoomPresentationTests.swift; sourceTree = "<group>"; };
@@ -237,106 +118,26 @@
 		A020F0000000000000000052 /* KikiRoomChatPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiRoomChatPresentationTests.swift; sourceTree = "<group>"; };
 		A020F0000000000000000062 /* KikiCreateRoomButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiCreateRoomButton.swift; sourceTree = "<group>"; };
 		A020F0000000000000000072 /* KikiDirectMessageAccessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiDirectMessageAccessTests.swift; sourceTree = "<group>"; };
-		A0DE0A1B0F0E0AAA00BBCCDD /* ModuleAnalytics.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ModuleAnalytics.swift; sourceTree = "<group>"; };
-		A2000001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		A2000002 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
-		A2000004 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		A2000005 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
-		A2000008 /* Privacy.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Privacy.plist; sourceTree = "<group>"; };
 		A7BA9D480FA2EA37E88AA0BF /* KikiTalkTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KikiTalkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A82ACFB226B4EFDFB112ABDE /* KikiInfo.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = KikiInfo.plist; sourceTree = "<group>"; };
-		AA200001 /* LaunchImage@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "LaunchImage@2x.png"; sourceTree = "<group>"; };
-		AA200002 /* LaunchImage@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "LaunchImage@3x.png"; sourceTree = "<group>"; };
-		AA200003 /* LaunchImage_en@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "LaunchImage_en@2x.png"; sourceTree = "<group>"; };
-		AA200004 /* LaunchImage_en@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "LaunchImage_en@3x.png"; sourceTree = "<group>"; };
-		AA200005 /* TencentRTCLaunchImage@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "TencentRTCLaunchImage@2x.png"; sourceTree = "<group>"; };
-		AA200006 /* TencentRTCLaunchImage@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "TencentRTCLaunchImage@3x.png"; sourceTree = "<group>"; };
 		AA7ED23089D0DDFD83E22C26 /* KikiDemoRootView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiDemoRootView.swift; sourceTree = "<group>"; };
 		AF17FBC07B097DAE35202DBD /* KikiIncidents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiIncidents.swift; sourceTree = "<group>"; };
 		BD4E154A32FB7F1B3EBE3606 /* KikiDemoStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiDemoStoreTests.swift; sourceTree = "<group>"; };
-		BE2F17A301E90C47556E4D3E /* Pods-KikiTalk.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-KikiTalk.debug.xcconfig"; path = "Target Support Files/Pods-KikiTalk/Pods-KikiTalk.debug.xcconfig"; sourceTree = "<group>"; };
 		C01717000000000000000001 /* KikiLegal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiLegal.swift; sourceTree = "<group>"; };
 		C01717000000000000000002 /* KikiLegalViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiLegalViews.swift; sourceTree = "<group>"; };
-		C01717000000000000000003 /* Resources/KikiLegalDocuments.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Resources/KikiLegalDocuments.json; sourceTree = "<group>"; };
+		C01717000000000000000003 /* KikiLegalDocuments.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Resources/KikiLegalDocuments.json; sourceTree = "<group>"; };
 		C01717000000000000000004 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		C01717000000000000000005 /* KikiConsentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiConsentTests.swift; sourceTree = "<group>"; };
 		C0A35AC2F088BD23CB2AA674 /* KikiRealtimeIntegrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiRealtimeIntegrationTests.swift; sourceTree = "<group>"; };
 		C1B3CE0785CA8D1A6E73949E /* KikiRoomRuntimeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiRoomRuntimeTests.swift; sourceTree = "<group>"; };
-		C657D1002F5AD40200D01990 /* GenerateTestUserSig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerateTestUserSig.swift; sourceTree = "<group>"; };
-		C657EE2C2F61698F00D01990 /* ResolvedModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResolvedModule.swift; sourceTree = "<group>"; };
-		C657EE312F61698F00D01990 /* MainLocalized.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainLocalized.swift; sourceTree = "<group>"; };
-		C657EE342F61698F00D01990 /* ModulePermissionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModulePermissionService.swift; sourceTree = "<group>"; };
-		C657EE362F61698F00D01990 /* EntranceCollectionCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntranceCollectionCell.swift; sourceTree = "<group>"; };
-		C657EE372F61698F00D01990 /* EntranceFooterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntranceFooterView.swift; sourceTree = "<group>"; };
-		C657EE382F61698F00D01990 /* EntranceReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntranceReportView.swift; sourceTree = "<group>"; };
-		C657EE392F61698F00D01990 /* LeftAlignedFlowLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeftAlignedFlowLayout.swift; sourceTree = "<group>"; };
-		C657EE3A2F61698F00D01990 /* MainNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainNavigationView.swift; sourceTree = "<group>"; };
-		C657EE3C2F61698F00D01990 /* EntranceState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntranceState.swift; sourceTree = "<group>"; };
-		C657EE3D2F61698F00D01990 /* EntranceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntranceStore.swift; sourceTree = "<group>"; };
-		C657EE3E2F61698F00D01990 /* EntranceViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntranceViewController.swift; sourceTree = "<group>"; };
-		C657EE3F2F61698F00D01990 /* ModuleRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModuleRegistry.swift; sourceTree = "<group>"; };
-		C6E1A8602F6A4CAB0047AD91 /* LayoutDefine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutDefine.swift; sourceTree = "<group>"; };
-		C6E1BE6B2F7137B00047AD91 /* MineViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MineViewModel.swift; sourceTree = "<group>"; };
-		C6E1BE6C2F7137B00047AD91 /* ProfileInfoModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileInfoModel.swift; sourceTree = "<group>"; };
-		C6E1BE712F7137B00047AD91 /* MineLocalized.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MineLocalized.swift; sourceTree = "<group>"; };
-		C6E1BE742F7137B00047AD91 /* MineAboutResignViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MineAboutResignViewController.swift; sourceTree = "<group>"; };
-		C6E1BE752F7137B00047AD91 /* MineAboutViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MineAboutViewController.swift; sourceTree = "<group>"; };
-		C6E1BE762F7137B00047AD91 /* MineRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MineRootView.swift; sourceTree = "<group>"; };
-		C6E1BE772F7137B00047AD91 /* MineViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MineViewController.swift; sourceTree = "<group>"; };
-		C6E1BE782F7137B00047AD91 /* ProfileController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileController.swift; sourceTree = "<group>"; };
-		C6E1BE792F7137B00047AD91 /* ProfileDatePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileDatePickerView.swift; sourceTree = "<group>"; };
-		C6E1BE7A2F7137B00047AD91 /* ProfileTableViewCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileTableViewCell.swift; sourceTree = "<group>"; };
-		C6E1BE7B2F7137B00047AD91 /* ProfileUpdateInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileUpdateInfoView.swift; sourceTree = "<group>"; };
-		C6E1BE7D2F7137B00047AD91 /* MineEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MineEntry.swift; sourceTree = "<group>"; };
-		C6E1CD3F2F73E9380047AD91 /* SafetyReminderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafetyReminderView.swift; sourceTree = "<group>"; };
-		C6E1D74A2F7BA7BF0047AD91 /* EnvironmentOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvironmentOperation.swift; sourceTree = "<group>"; };
-		C6E1DEA12F7E447B0047AD91 /* RTCExperienceRoomButtonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RTCExperienceRoomButtonView.swift; sourceTree = "<group>"; };
-		C6E4026A2F67FCD0003F5BAF /* CGFloat+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CGFloat+Extension.swift"; sourceTree = "<group>"; };
-		C6E4026B2F67FCD0003F5BAF /* Double+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Double+Extension.swift"; sourceTree = "<group>"; };
-		C6E4026C2F67FCD0003F5BAF /* Int+Extension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Int+Extension.swift"; sourceTree = "<group>"; };
-		C6LANG0032F5B000000D01990 /* LanguageEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageEntry.swift; sourceTree = "<group>"; };
-		C6LANG0042F5B000000D01990 /* LanguageSelectViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSelectViewController.swift; sourceTree = "<group>"; };
-		C6LOG0052F7B000000000001 /* LogUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogUploadView.swift; sourceTree = "<group>"; };
-		C6LOG0052F7B000000000002 /* LogUploadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogUploadManager.swift; sourceTree = "<group>"; };
-		C6LOG0052F7B000000000003 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
-		C6MA00042F6BEE0000D01990 /* MainAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = MainAssets.xcassets; sourceTree = "<group>"; };
-		C6PU00002FA200000047AD91 /* PushLifecycleHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushLifecycleHandler.swift; sourceTree = "<group>"; };
 		C78FE734DAC221D8418D57EC /* KikiLoginView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiLoginView.swift; sourceTree = "<group>"; };
 		C8D8A7DD9AEF50739450B570 /* KikiCreateRoomView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiCreateRoomView.swift; sourceTree = "<group>"; };
-		C97618C3ACB8696944DEA829 /* MineLocalized.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.json.xcstrings; path = MineLocalized.xcstrings; sourceTree = "<group>"; };
-		CD4ADCA4B9FE7C9ADB83FD68 /* AppAnalytics.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppAnalytics.swift; sourceTree = "<group>"; };
-		CDC7C4D6B36F7392AEC4F01C /* KikiSDKAvatarTrust.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiSDKAvatarTrust.swift; sourceTree = "<group>"; };
-		CFBF8BC97DF9F5B79D949FDE /* KikiProfileView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiProfileView.swift; sourceTree = "<group>"; };
-		D2000010 /* RTCubeLab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RTCubeLab.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		D2POD001 /* Pods_RTCubeLab.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RTCubeLab.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		D2XCC001 /* Pods-RTCubeLab.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RTCubeLab.debug.xcconfig"; path = "Target Support Files/Pods-RTCubeLab/Pods-RTCubeLab.debug.xcconfig"; sourceTree = "<group>"; };
-		D2XCC002 /* Pods-RTCubeLab.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RTCubeLab.release.xcconfig"; path = "Target Support Files/Pods-RTCubeLab/Pods-RTCubeLab.release.xcconfig"; sourceTree = "<group>"; };
-		D478E3E5A4565F9CDE9ABAEC /* KikiDemoRootView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiDemoRootView.swift; sourceTree = "<group>"; };
 		D4A43C686CB31556D53F97EF /* KikiSocialModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiSocialModels.swift; sourceTree = "<group>"; };
 		E02020000000000000000001 /* KikiGiftViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiGiftViews.swift; sourceTree = "<group>"; };
-		E2RP0001 /* SampleHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SampleHandler.h; sourceTree = "<group>"; };
-		E2RP0002 /* SampleHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SampleHandler.m; sourceTree = "<group>"; };
-		E2RP0003 /* ReplayKit2Define.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ReplayKit2Define.h; sourceTree = "<group>"; };
-		E2RP0004 /* ReplayKitLocalized.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ReplayKitLocalized.m; sourceTree = "<group>"; };
-		E2RP0005A /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		E2RP0005B /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
-		E2RP0006 /* ReplayKitLocalized.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ReplayKitLocalized.h; sourceTree = "<group>"; };
-		E2RP0009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		E2RP0010 /* ReplayKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ReplayKit.framework; path = System/Library/Frameworks/ReplayKit.framework; sourceTree = SDKROOT; };
 		E5B162B839EFE438CD43AF6C /* KikiDirectMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiDirectMessages.swift; sourceTree = "<group>"; };
-		ED8B60ABC44BCB74060FAF72 /* LaunchAnimationPlayerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LaunchAnimationPlayerView.swift; sourceTree = "<group>"; };
-		EF4E3F31AB81DA4F9762EED4 /* LaunchAnimationPlaybackRecord.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LaunchAnimationPlaybackRecord.swift; sourceTree = "<group>"; };
 		F01818000000000000000001 /* KikiGifts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiGifts.swift; sourceTree = "<group>"; };
-		F01818000000000000000002 /* Resources/Gifts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/Gifts; sourceTree = "<group>"; };
+		F01818000000000000000002 /* Gifts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/Gifts; sourceTree = "<group>"; };
 		F01818000000000000000003 /* KikiGiftTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiGiftTests.swift; sourceTree = "<group>"; };
-		F01818000000000000000004 /* KikiGiftRealtimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiGiftRealtimeTests.swift; sourceTree = "<group>"; };
-		F3F773FC25E56CC1ED8DD312 /* KikiAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiAPIClient.swift; sourceTree = "<group>"; };
-		FB0E736CA96EC2173C773277 /* MainLocalized.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.json.xcstrings; path = MainLocalized.xcstrings; sourceTree = "<group>"; };
-		FE037D22B116E78C267CD926 /* 69babfea7b12a1a7d89502bc918f480b.mov */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = video.quicktime; path = 69babfea7b12a1a7d89502bc918f480b.mov; sourceTree = "<group>"; };
-		G2LR0011 /* RTCubeLabReplayExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RTCubeLabReplayExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		G2LRPOD1 /* Pods_RTCubeLabReplayExtension.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RTCubeLabReplayExtension.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		G2LRXCC1 /* Pods-RTCubeLabReplayExtension.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RTCubeLabReplayExtension.debug.xcconfig"; path = "Target Support Files/Pods-RTCubeLabReplayExtension/Pods-RTCubeLabReplayExtension.debug.xcconfig"; sourceTree = "<group>"; };
-		G2LRXCC2 /* Pods-RTCubeLabReplayExtension.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RTCubeLabReplayExtension.release.xcconfig"; path = "Target Support Files/Pods-RTCubeLabReplayExtension/Pods-RTCubeLabReplayExtension.release.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -358,42 +159,9 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D3000001 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				D1POD001 /* Pods_RTCubeLab.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		G3LR0010 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				G1LR0003 /* ReplayKit.framework in Frameworks */,
-				G1LRPOD1 /* Pods_RTCubeLabReplayExtension.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		0DE851F200664628990E3BF6 /* CN */ = {
-			isa = PBXGroup;
-			children = (
-				D9E9758F47BFA8556C9281DF /* InfoPlist.strings */,
-			);
-			path = CN;
-			sourceTree = "<group>";
-		};
-		31F0F95CF19D2FFACCDEBA4D /* Info */ = {
-			isa = PBXGroup;
-			children = (
-				0DE851F200664628990E3BF6 /* CN */,
-			);
-			path = Info;
-			sourceTree = "<group>";
-		};
 		3C2FCE50C5CE6E54783B14A4 /* Demo */ = {
 			isa = PBXGroup;
 			children = (
@@ -401,7 +169,7 @@
 				30442ADCE3A3C4DDB29CEDCF /* KikiDemoApp.swift */,
 				C01717000000000000000001 /* KikiLegal.swift */,
 				C01717000000000000000002 /* KikiLegalViews.swift */,
-				C01717000000000000000003 /* Resources/KikiLegalDocuments.json */,
+				C01717000000000000000003 /* KikiLegalDocuments.json */,
 				F01818000000000000000001 /* KikiGifts.swift */,
 				E02020000000000000000001 /* KikiGiftViews.swift */,
 				A020E0000000000000000012 /* KikiInboxConversationRow.swift */,
@@ -411,7 +179,7 @@
 				A020D0000000000000000032 /* KikiRoomMessageInput.swift */,
 				A020D0000000000000000022 /* KikiRoomKeyboardDismissal.swift */,
 				A020D0000000000000000012 /* KikiSeatRequestSheet.swift */,
-				F01818000000000000000002 /* Resources/Gifts */,
+				F01818000000000000000002 /* Gifts */,
 				C01717000000000000000004 /* PrivacyInfo.xcprivacy */,
 				AA7ED23089D0DDFD83E22C26 /* KikiDemoRootView.swift */,
 				5857ABCDB7751D39725EE21A /* KikiDemoStore.swift */,
@@ -420,10 +188,8 @@
 				37E86C4063B886D07A199A55 /* KikiRTCService.swift */,
 				7E4883B41EE1A2A8656709CD /* KikiAPIClient.swift */,
 				C78FE734DAC221D8418D57EC /* KikiLoginView.swift */,
-				868FC342D3C8E49CAFEA828C /* Configuration */,
 				A82ACFB226B4EFDFB112ABDE /* KikiInfo.plist */,
 				8F8E93C5B3749360CD7C39D8 /* KikiTalk.entitlements */,
-				CDC7C4D6B36F7392AEC4F01C /* KikiSDKAvatarTrust.swift */,
 				2EA976C6751A3BE0CB8AD5AD /* KikiLaunchScreen.storyboard */,
 				85EC875B0927AF0E14C439AE /* KikiVoiceRoomFloatingOverlay.swift */,
 				4C191B94ED9DBF69D185AD6A /* KikiAccountAPIClient.swift */,
@@ -440,16 +206,6 @@
 			path = Demo;
 			sourceTree = "<group>";
 		};
-		4A60DD0DE29E303A6D7308C3 /* LaunchAnimation */ = {
-			isa = PBXGroup;
-			children = (
-				ED8B60ABC44BCB74060FAF72 /* LaunchAnimationPlayerView.swift */,
-				66C9F2D121C87825726C4CF9 /* LaunchAnimationCoordinator.swift */,
-				EF4E3F31AB81DA4F9762EED4 /* LaunchAnimationPlaybackRecord.swift */,
-			);
-			path = LaunchAnimation;
-			sourceTree = "<group>";
-		};
 		568409ABF5E78C602970C876 /* iOS */ = {
 			isa = PBXGroup;
 			children = (
@@ -457,47 +213,6 @@
 				222468891BB2144371D09557 /* Foundation.framework */,
 			);
 			name = iOS;
-			sourceTree = "<group>";
-		};
-		8555B580658FBDED03118B18 /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				D2XCC001 /* Pods-RTCubeLab.debug.xcconfig */,
-				D2XCC002 /* Pods-RTCubeLab.release.xcconfig */,
-				G2LRXCC1 /* Pods-RTCubeLabReplayExtension.debug.xcconfig */,
-				G2LRXCC2 /* Pods-RTCubeLabReplayExtension.release.xcconfig */,
-				5EFB7937FEB2D9FBB3A74945 /* Pods-KikiTalk.release.xcconfig */,
-				BE2F17A301E90C47556E4D3E /* Pods-KikiTalk.debug.xcconfig */,
-				897E10B7F68F9E65CCE0C19B /* Pods-KikiTalkTests.release.xcconfig */,
-				88BD0E52BAB9FE9019CD9F01 /* Pods-KikiTalkTests.debug.xcconfig */,
-			);
-			path = Pods;
-			sourceTree = "<group>";
-		};
-		868FC342D3C8E49CAFEA828C /* Configuration */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = Configuration;
-			sourceTree = "<group>";
-		};
-		8EFAAB4AD4C87F10BAF389C9 /* LegacyTencent */ = {
-			isa = PBXGroup;
-			children = (
-				882FF0C801776CB40F81492F /* KikiCreateRoomView.swift */,
-				D478E3E5A4565F9CDE9ABAEC /* KikiDemoRootView.swift */,
-				2934405D9BF120EEBC17B6C6 /* KikiDemoStore.swift */,
-				CFBF8BC97DF9F5B79D949FDE /* KikiProfileView.swift */,
-				63B43D1AAA724BA5442F1B9C /* KikiRTCService.swift */,
-				71B5D3B932A8151A55182D2E /* KikiGifts.swift */,
-				F3F773FC25E56CC1ED8DD312 /* KikiAPIClient.swift */,
-				0F75B0A42490CDB953E1FE81 /* KikiLoginView.swift */,
-				66EA237A199D1EC5C02ACDE6 /* KikiSDKAvatarTrust.swift */,
-				851BB306D9881B98E0EF8387 /* KikiLegal.swift */,
-				6399EEB7A348C99C0A7B3D55 /* KikiLegalViews.swift */,
-				64D3C262054A349625AD9A29 /* KikiVoiceRoomFloatingOverlay.swift */,
-			);
-			path = LegacyTencent;
 			sourceTree = "<group>";
 		};
 		905F9224C80B110D68DC6DCD /* DemoTests */ = {
@@ -508,7 +223,6 @@
 				C01717000000000000000005 /* KikiConsentTests.swift */,
 				C0A35AC2F088BD23CB2AA674 /* KikiRealtimeIntegrationTests.swift */,
 				F01818000000000000000003 /* KikiGiftTests.swift */,
-				F01818000000000000000004 /* KikiGiftRealtimeTests.swift */,
 				C1B3CE0785CA8D1A6E73949E /* KikiRoomRuntimeTests.swift */,
 				A020C0000000000000000002 /* KikiRoomPresentationTests.swift */,
 				A020E0000000000000000032 /* KikiInboxActionsTests.swift */,
@@ -530,340 +244,31 @@
 		A4000001 = {
 			isa = PBXGroup;
 			children = (
-				C6E1BE7F2F7137B00047AD91 /* mine */,
-				C657EE412F61698F00D01990 /* main */,
-				C657D1012F5AD40200D01990 /* Debug */,
-				C6LANG0052F5B000000D01990 /* language */,
-				A4000002 /* RTCube */,
-				E4RPGRP1 /* RTCubeReplayExtension */,
 				A4000003 /* Products */,
-				8555B580658FBDED03118B18 /* Pods */,
 				E6F5DFA6ECF5DFB603D78B10 /* Frameworks */,
 				3C2FCE50C5CE6E54783B14A4 /* Demo */,
 				905F9224C80B110D68DC6DCD /* DemoTests */,
-				8EFAAB4AD4C87F10BAF389C9 /* LegacyTencent */,
 			);
-			sourceTree = "<group>";
-		};
-		A4000002 /* RTCube */ = {
-			isa = PBXGroup;
-			children = (
-				C6E1CD472F7509FA0047AD91 /* Resource */,
-				A2000001 /* AppDelegate.swift */,
-				A2000002 /* SceneDelegate.swift */,
-				C6E1D74A2F7BA7BF0047AD91 /* EnvironmentOperation.swift */,
-				A400000E /* Extension */,
-				C6LOG0062F7B000000000000 /* Log */,
-				A2000004 /* Assets.xcassets */,
-				A2000005 /* LaunchScreen.storyboard */,
-				A4000020 /* Privacy */,
-				AA8F5A67E0678288044DFB20 /* Analytics */,
-				4A60DD0DE29E303A6D7308C3 /* LaunchAnimation */,
-				31F0F95CF19D2FFACCDEBA4D /* Info */,
-			);
-			path = RTCube;
 			sourceTree = "<group>";
 		};
 		A4000003 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				D2000010 /* RTCubeLab.app */,
-				G2LR0011 /* RTCubeLabReplayExtension.appex */,
 				1F4D2BC5D0DEB9091B19082F /* KikiTalk.app */,
 				A7BA9D480FA2EA37E88AA0BF /* KikiTalkTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		A400000E /* Extension */ = {
-			isa = PBXGroup;
-			children = (
-				C6E1A8602F6A4CAB0047AD91 /* LayoutDefine.swift */,
-				C6E4026A2F67FCD0003F5BAF /* CGFloat+Extension.swift */,
-				C6E4026B2F67FCD0003F5BAF /* Double+Extension.swift */,
-				C6E4026C2F67FCD0003F5BAF /* Int+Extension.swift */,
-				C6PU00002FA200000047AD91 /* PushLifecycleHandler.swift */,
-			);
-			path = Extension;
-			sourceTree = "<group>";
-		};
-		A4000020 /* Privacy */ = {
-			isa = PBXGroup;
-			children = (
-				A4000021 /* CN */,
-			);
-			path = Privacy;
-			sourceTree = "<group>";
-		};
-		A4000021 /* CN */ = {
-			isa = PBXGroup;
-			children = (
-				A2000008 /* Privacy.plist */,
-			);
-			path = CN;
-			sourceTree = "<group>";
-		};
-		AA8F5A67E0678288044DFB20 /* Analytics */ = {
-			isa = PBXGroup;
-			children = (
-				CD4ADCA4B9FE7C9ADB83FD68 /* AppAnalytics.swift */,
-				A0DE0A1B0F0E0AAA00BBCCDD /* ModuleAnalytics.swift */,
-			);
-			path = Analytics;
-			sourceTree = "<group>";
-		};
-		B5E82A771EE4D3891332B222 /* Resource */ = {
-			isa = PBXGroup;
-			children = (
-				5B1412993B998075E3CEA419 /* ReplayKitLocalized.xcstrings */,
-			);
-			path = Resource;
-			sourceTree = "<group>";
-		};
-		C657D1012F5AD40200D01990 /* Debug */ = {
-			isa = PBXGroup;
-			children = (
-				C657D1002F5AD40200D01990 /* GenerateTestUserSig.swift */,
-			);
-			path = Debug;
-			sourceTree = "<group>";
-		};
-		C657EE2D2F61698F00D01990 /* Shared */ = {
-			isa = PBXGroup;
-			children = (
-				C6SH00012F61698F00D01990 /* Model */,
-				C6SH00022F61698F00D01990 /* Views */,
-				C657EE3F2F61698F00D01990 /* ModuleRegistry.swift */,
-			);
-			path = Shared;
-			sourceTree = "<group>";
-		};
-		C657EE322F61698F00D01990 /* Localized */ = {
-			isa = PBXGroup;
-			children = (
-				C657EE312F61698F00D01990 /* MainLocalized.swift */,
-			);
-			path = Localized;
-			sourceTree = "<group>";
-		};
-		C657EE332F61698F00D01990 /* Resource */ = {
-			isa = PBXGroup;
-			children = (
-				C6MA00052F6BEE0000D01990 /* Assets */,
-				C657EE322F61698F00D01990 /* Localized */,
-				FB0E736CA96EC2173C773277 /* MainLocalized.xcstrings */,
-			);
-			path = Resource;
-			sourceTree = "<group>";
-		};
-		C657EE352F61698F00D01990 /* Service */ = {
-			isa = PBXGroup;
-			children = (
-				C657EE342F61698F00D01990 /* ModulePermissionService.swift */,
-			);
-			path = Service;
-			sourceTree = "<group>";
-		};
-		C657EE3B2F61698F00D01990 /* Domestic */ = {
-			isa = PBXGroup;
-			children = (
-				C657EE352F61698F00D01990 /* Service */,
-				C6DM00012F61698F00D01990 /* Views */,
-				C657EE3C2F61698F00D01990 /* EntranceState.swift */,
-				C657EE3D2F61698F00D01990 /* EntranceStore.swift */,
-			);
-			path = Domestic;
-			sourceTree = "<group>";
-		};
-		C657EE412F61698F00D01990 /* main */ = {
-			isa = PBXGroup;
-			children = (
-				C657EE2D2F61698F00D01990 /* Shared */,
-				C657EE3B2F61698F00D01990 /* Domestic */,
-				C657EE332F61698F00D01990 /* Resource */,
-				C657EE3E2F61698F00D01990 /* EntranceViewController.swift */,
-			);
-			path = main;
-			sourceTree = SOURCE_ROOT;
-		};
-		C6DM00012F61698F00D01990 /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				C6E1CD3F2F73E9380047AD91 /* SafetyReminderView.swift */,
-				C657EE362F61698F00D01990 /* EntranceCollectionCell.swift */,
-				C657EE372F61698F00D01990 /* EntranceFooterView.swift */,
-				C657EE382F61698F00D01990 /* EntranceReportView.swift */,
-				C657EE392F61698F00D01990 /* LeftAlignedFlowLayout.swift */,
-			);
-			path = Views;
-			sourceTree = "<group>";
-		};
-		C6E1BE6D2F7137B00047AD91 /* Model */ = {
-			isa = PBXGroup;
-			children = (
-				C6E1BE6B2F7137B00047AD91 /* MineViewModel.swift */,
-				C6E1BE6C2F7137B00047AD91 /* ProfileInfoModel.swift */,
-			);
-			path = Model;
-			sourceTree = "<group>";
-		};
-		C6E1BE722F7137B00047AD91 /* Localized */ = {
-			isa = PBXGroup;
-			children = (
-				C6E1BE712F7137B00047AD91 /* MineLocalized.swift */,
-			);
-			path = Localized;
-			sourceTree = "<group>";
-		};
-		C6E1BE732F7137B00047AD91 /* Resource */ = {
-			isa = PBXGroup;
-			children = (
-				C6E1BE722F7137B00047AD91 /* Localized */,
-				C97618C3ACB8696944DEA829 /* MineLocalized.xcstrings */,
-			);
-			path = Resource;
-			sourceTree = "<group>";
-		};
-		C6E1BE7C2F7137B00047AD91 /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				C6E1DEA12F7E447B0047AD91 /* RTCExperienceRoomButtonView.swift */,
-				C6E1BE742F7137B00047AD91 /* MineAboutResignViewController.swift */,
-				C6E1BE752F7137B00047AD91 /* MineAboutViewController.swift */,
-				C6E1BE762F7137B00047AD91 /* MineRootView.swift */,
-				C6E1BE772F7137B00047AD91 /* MineViewController.swift */,
-				C6E1BE782F7137B00047AD91 /* ProfileController.swift */,
-				C6E1BE792F7137B00047AD91 /* ProfileDatePickerView.swift */,
-				C6E1BE7A2F7137B00047AD91 /* ProfileTableViewCell.swift */,
-				C6E1BE7B2F7137B00047AD91 /* ProfileUpdateInfoView.swift */,
-				0F7536B416CDE69AACA73EA8 /* AvatarPickerViewController.swift */,
-			);
-			path = Views;
-			sourceTree = "<group>";
-		};
-		C6E1BE7F2F7137B00047AD91 /* mine */ = {
-			isa = PBXGroup;
-			children = (
-				C6E1BE6D2F7137B00047AD91 /* Model */,
-				C6E1BE732F7137B00047AD91 /* Resource */,
-				C6E1BE7C2F7137B00047AD91 /* Views */,
-				C6E1BE7D2F7137B00047AD91 /* MineEntry.swift */,
-			);
-			path = mine;
-			sourceTree = SOURCE_ROOT;
-		};
-		C6E1CD472F7509FA0047AD91 /* Resource */ = {
-			isa = PBXGroup;
-			children = (
-				AA200001 /* LaunchImage@2x.png */,
-				AA200002 /* LaunchImage@3x.png */,
-				AA200003 /* LaunchImage_en@2x.png */,
-				AA200004 /* LaunchImage_en@3x.png */,
-				AA200005 /* TencentRTCLaunchImage@2x.png */,
-				AA200006 /* TencentRTCLaunchImage@3x.png */,
-				FE037D22B116E78C267CD926 /* 69babfea7b12a1a7d89502bc918f480b.mov */,
-				008566B2B072CF7DA5A69344 /* Localizable.xcstrings */,
-			);
-			path = Resource;
-			sourceTree = "<group>";
-		};
-		C6LANG0052F5B000000D01990 /* language */ = {
-			isa = PBXGroup;
-			children = (
-				C6LANG0032F5B000000D01990 /* LanguageEntry.swift */,
-				C6LANG0042F5B000000D01990 /* LanguageSelectViewController.swift */,
-			);
-			path = language;
-			sourceTree = SOURCE_ROOT;
-		};
-		C6LOG0062F7B000000000000 /* Log */ = {
-			isa = PBXGroup;
-			children = (
-				C6LOG0052F7B000000000001 /* LogUploadView.swift */,
-				C6LOG0052F7B000000000002 /* LogUploadManager.swift */,
-				C6LOG0052F7B000000000003 /* AppLogger.swift */,
-			);
-			path = Log;
-			sourceTree = "<group>";
-		};
-		C6MA00052F6BEE0000D01990 /* Assets */ = {
-			isa = PBXGroup;
-			children = (
-				C6MA00042F6BEE0000D01990 /* MainAssets.xcassets */,
-			);
-			path = Assets;
-			sourceTree = "<group>";
-		};
-		C6SH00012F61698F00D01990 /* Model */ = {
-			isa = PBXGroup;
-			children = (
-				C657EE2C2F61698F00D01990 /* ResolvedModule.swift */,
-			);
-			path = Model;
-			sourceTree = "<group>";
-		};
-		C6SH00022F61698F00D01990 /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				C657EE3A2F61698F00D01990 /* MainNavigationView.swift */,
-			);
-			path = Views;
-			sourceTree = "<group>";
-		};
-		E4RPGRP1 /* RTCubeReplayExtension */ = {
-			isa = PBXGroup;
-			children = (
-				E2RP0001 /* SampleHandler.h */,
-				E2RP0002 /* SampleHandler.m */,
-				E2RP0003 /* ReplayKit2Define.h */,
-				E2RP0009 /* Info.plist */,
-				E4RPGRP2 /* Localized */,
-				E2RP0005 /* InfoPlist.strings */,
-				B5E82A771EE4D3891332B222 /* Resource */,
-			);
-			path = RTCubeReplayExtension;
-			sourceTree = SOURCE_ROOT;
-		};
-		E4RPGRP2 /* Localized */ = {
-			isa = PBXGroup;
-			children = (
-				E2RP0006 /* ReplayKitLocalized.h */,
-				E2RP0004 /* ReplayKitLocalized.m */,
-			);
-			path = Localized;
-			sourceTree = "<group>";
-		};
 		E6F5DFA6ECF5DFB603D78B10 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				D2POD001 /* Pods_RTCubeLab.framework */,
-				G2LRPOD1 /* Pods_RTCubeLabReplayExtension.framework */,
-				E2RP0010 /* ReplayKit.framework */,
 				568409ABF5E78C602970C876 /* iOS */,
-				8360C8846222B8368EF6994E /* Pods_KikiTalk.framework */,
-				99FBE66C7C8D76E767B2ADA0 /* Pods_KikiTalkTests.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
-
-/* Begin PBXHeadersBuildPhase section */
-		AAA3A92BA414DEBE504EF37E /* Headers */ = {
-			isa = PBXHeadersBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		E760054B7314910D173441A4 /* Headers */ = {
-			isa = PBXHeadersBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
 		CCCF126C72F51A0740486171 /* KikiTalkTests */ = {
@@ -887,29 +292,6 @@
 			productReference = A7BA9D480FA2EA37E88AA0BF /* KikiTalkTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		D5000001 /* RTCubeLab */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = D7000003 /* Build configuration list for PBXNativeTarget "RTCubeLab" */;
-			buildPhases = (
-				D6SCP001 /* [CP] Check Pods Manifest.lock */,
-				D6000001 /* Sources */,
-				D3000001 /* Frameworks */,
-				D6000002 /* Resources */,
-				D6SCP002 /* [CP] Embed Pods Frameworks */,
-				D6SCP003 /* [CP] Copy Pods Resources */,
-				E3RP0003 /* Embed App Extensions */,
-				AAA3A92BA414DEBE504EF37E /* Headers */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				E4RPDEP3 /* PBXTargetDependency */,
-			);
-			name = RTCubeLab;
-			productName = RTCubeLab;
-			productReference = D2000010 /* RTCubeLab.app */;
-			productType = "com.apple.product-type.application";
-		};
 		D67015E2A500000C872DA019 /* KikiTalk */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = F472599A49E02EC4E08C3E23 /* Build configuration list for PBXNativeTarget "KikiTalk" */;
@@ -930,25 +312,6 @@
 			productReference = 1F4D2BC5D0DEB9091B19082F /* KikiTalk.app */;
 			productType = "com.apple.product-type.application";
 		};
-		G5LR0001 /* RTCubeLabReplayExtension */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = G7LR0001 /* Build configuration list for PBXNativeTarget "RTCubeLabReplayExtension" */;
-			buildPhases = (
-				G6LRSCP1 /* [CP] Check Pods Manifest.lock */,
-				G6LR0001 /* Sources */,
-				G3LR0010 /* Frameworks */,
-				G6LR0002 /* Resources */,
-				E760054B7314910D173441A4 /* Headers */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = RTCubeLabReplayExtension;
-			productName = RTCubeLabReplayExtension;
-			productReference = G2LR0011 /* RTCubeLabReplayExtension.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -963,9 +326,6 @@
 						CreatedOnToolsVersion = 26.0;
 						TestTargetID = D67015E2A500000C872DA019;
 					};
-					D5000001 = {
-						CreatedOnToolsVersion = 15.4;
-					};
 					D67015E2A500000C872DA019 = {
 						CreatedOnToolsVersion = 26.0;
 						SystemCapabilities = {
@@ -976,9 +336,6 @@
 								enabled = 1;
 							};
 						};
-					};
-					G5LR0001 = {
-						CreatedOnToolsVersion = 15.4;
 					};
 				};
 			};
@@ -999,8 +356,6 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				D5000001 /* RTCubeLab */,
-				G5LR0001 /* RTCubeLabReplayExtension */,
 				D67015E2A500000C872DA019 /* KikiTalk */,
 				CCCF126C72F51A0740486171 /* KikiTalkTests */,
 			);
@@ -1014,29 +369,9 @@
 			files = (
 				EEE3B91D8CF54397B18132BD /* Assets.xcassets in Resources */,
 				ADF16338E8461FCD89632C98 /* KikiLaunchScreen.storyboard in Resources */,
-				C01717000000000000000013 /* Resources/KikiLegalDocuments.json in Resources */,
-				F01818000000000000000013 /* Resources/Gifts in Resources */,
+				C01717000000000000000013 /* KikiLegalDocuments.json in Resources */,
+				F01818000000000000000013 /* Gifts in Resources */,
 				C01717000000000000000014 /* PrivacyInfo.xcprivacy in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		D6000002 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				D1000004 /* Assets.xcassets in Resources */,
-				D1000005 /* LaunchScreen.storyboard in Resources */,
-				D1000008 /* Privacy.plist in Resources */,
-				C6MA00032F6BEE0000D01990 /* MainAssets.xcassets in Resources */,
-				DD100001 /* LaunchImage@2x.png in Resources */,
-				DD100002 /* LaunchImage@3x.png in Resources */,
-				DD100003 /* LaunchImage_en@2x.png in Resources */,
-				DD100004 /* LaunchImage_en@3x.png in Resources */,
-				1C45AE9DE900680E62B6C921 /* InfoPlist.strings in Resources */,
-				48A8A75CBC5526E8F4AF15C9 /* 69babfea7b12a1a7d89502bc918f480b.mov in Resources */,
-				56052174246E6C515AC43FAB /* MainLocalized.xcstrings in Resources */,
-				E67DCD8C9D834BF2E632160C /* MineLocalized.xcstrings in Resources */,
-				37AD2BDEA6146BF524057164 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1047,104 +382,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		G6LR0002 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				0851A5EEFD60B871FEACB4C1 /* ReplayKitLocalized.xcstrings in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		D6SCP001 /* [CP] Check Pods Manifest.lock */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
-				"${PODS_ROOT}/Manifest.lock",
-			);
-			name = "[CP] Check Pods Manifest.lock";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-RTCubeLab-checkManifestLockResult.txt",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
-			showEnvVarsInLog = 0;
-		};
-		D6SCP002 /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-RTCubeLab/Pods-RTCubeLab-frameworks-${CONFIGURATION}-input-files.xcfilelist",
-			);
-			inputPaths = (
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-RTCubeLab/Pods-RTCubeLab-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-RTCubeLab/Pods-RTCubeLab-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
-		D6SCP003 /* [CP] Copy Pods Resources */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-RTCubeLab/Pods-RTCubeLab-resources-${CONFIGURATION}-input-files.xcfilelist",
-			);
-			inputPaths = (
-			);
-			name = "[CP] Copy Pods Resources";
-			outputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-RTCubeLab/Pods-RTCubeLab-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-RTCubeLab/Pods-RTCubeLab-resources.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
-		G6LRSCP1 /* [CP] Check Pods Manifest.lock */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
-				"${PODS_ROOT}/Manifest.lock",
-			);
-			name = "[CP] Check Pods Manifest.lock";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-RTCubeLabReplayExtension-checkManifestLockResult.txt",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
-			showEnvVarsInLog = 0;
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		473B535BDCEDB5047275ED47 /* Sources */ = {
@@ -1168,7 +406,6 @@
 				A020D0000000000000000011 /* KikiSeatRequestSheet.swift in Sources */,
 				99F4087F0706926E11FCC971 /* KikiAPIClient.swift in Sources */,
 				082366E0A67F4BE67756CF3D /* KikiLoginView.swift in Sources */,
-				97C05E29ECC13CAD5C5083F1 /* KikiSDKAvatarTrust.swift in Sources */,
 				C01717000000000000000011 /* KikiLegal.swift in Sources */,
 				C01717000000000000000012 /* KikiLegalViews.swift in Sources */,
 				E731E2AFF9EFDF9055E5E071 /* KikiVoiceRoomFloatingOverlay.swift in Sources */,
@@ -1207,91 +444,13 @@
 				DC8B8ABDD6EBFC230819BDF1 /* KikiKeychainRuntimeTests.swift in Sources */,
 				AD79C944179E9680D46F1562 /* KikiProductionVoiceIntegrationTests.swift in Sources */,
 				E02020000000000000000012 /* KikiGiftTests.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		D6000001 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				D1000001 /* AppDelegate.swift in Sources */,
-				C6E1A8662F6A52330047AD91 /* LanguageSelectViewController.swift in Sources */,
-				D1000002 /* SceneDelegate.swift in Sources */,
-				C6E402702F67FCD0003F5BAF /* Double+Extension.swift in Sources */,
-				C6E402712F67FCD0003F5BAF /* CGFloat+Extension.swift in Sources */,
-				C6E402752F67FCD0003F5BAF /* Int+Extension.swift in Sources */,
-				C6LOG0022F7B000000000001 /* LogUploadView.swift in Sources */,
-				C6E1CD412F73E9380047AD91 /* SafetyReminderView.swift in Sources */,
-				C6LOG0022F7B000000000002 /* LogUploadManager.swift in Sources */,
-				C6LOG0022F7B000000000003 /* AppLogger.swift in Sources */,
-				C657EE552F61698F00D01990 /* EntranceStore.swift in Sources */,
-				C6E1D74B2F7BA7BF0047AD91 /* EnvironmentOperation.swift in Sources */,
-				C657EE562F61698F00D01990 /* EntranceState.swift in Sources */,
-				C657EE572F61698F00D01990 /* ResolvedModule.swift in Sources */,
-				C657EE592F61698F00D01990 /* LeftAlignedFlowLayout.swift in Sources */,
-				C6E1BE9C2F7137B00047AD91 /* ProfileUpdateInfoView.swift in Sources */,
-				C6E1BE9D2F7137B00047AD91 /* ProfileInfoModel.swift in Sources */,
-				C6E1BE9E2F7137B00047AD91 /* ProfileDatePickerView.swift in Sources */,
-				C6E1BE9F2F7137B00047AD91 /* MineAboutResignViewController.swift in Sources */,
-				C6E1BEA02F7137B00047AD91 /* MineViewController.swift in Sources */,
-				C6E1BEA12F7137B00047AD91 /* MineEntry.swift in Sources */,
-				C6E1BEA22F7137B00047AD91 /* ProfileController.swift in Sources */,
-				C6E1BEA32F7137B00047AD91 /* MineLocalized.swift in Sources */,
-				C6E1BEA42F7137B00047AD91 /* MineRootView.swift in Sources */,
-				C6E1BEA52F7137B00047AD91 /* MineViewModel.swift in Sources */,
-				C6E1BEA62F7137B00047AD91 /* MineAboutViewController.swift in Sources */,
-				C6E1BEA72F7137B00047AD91 /* ProfileTableViewCell.swift in Sources */,
-				C657EE5A2F61698F00D01990 /* EntranceReportView.swift in Sources */,
-				C657EE5B2F61698F00D01990 /* EntranceViewController.swift in Sources */,
-				C657EE5C2F61698F00D01990 /* EntranceCollectionCell.swift in Sources */,
-				C657EE5E2F61698F00D01990 /* EntranceFooterView.swift in Sources */,
-				C6E1A8642F6A521D0047AD91 /* GenerateTestUserSig.swift in Sources */,
-				C6E1A8632F6A4CAB0047AD91 /* LayoutDefine.swift in Sources */,
-				C6PU00032FA200000047AD91 /* PushLifecycleHandler.swift in Sources */,
-				C6E1A8682F6A523E0047AD91 /* LanguageEntry.swift in Sources */,
-				C657EE5F2F61698F00D01990 /* MainNavigationView.swift in Sources */,
-				C6E1DEA42F7E56D60047AD91 /* RTCExperienceRoomButtonView.swift in Sources */,
-				C657EE602F61698F00D01990 /* MainLocalized.swift in Sources */,
-				C657EE612F61698F00D01990 /* ModuleRegistry.swift in Sources */,
-				C657EE622F61698F00D01990 /* ModulePermissionService.swift in Sources */,
-				971D2F196DEE3C8BC470FC04 /* AvatarPickerViewController.swift in Sources */,
-				49F98C61FE3BBDC6C36FF195 /* AppAnalytics.swift in Sources */,
-				A0DE0A1A0F0E0AAA00BBCCDD /* ModuleAnalytics.swift in Sources */,
-				31D1185C3DC2A20C4E93FF69 /* LaunchAnimationPlayerView.swift in Sources */,
-				68318AD0AE7C005F916FB535 /* LaunchAnimationCoordinator.swift in Sources */,
-				5B0070D3829C72416680CFBB /* LaunchAnimationPlaybackRecord.swift in Sources */,
-				64BBE4C5B54E66077AA665BD /* KikiCreateRoomView.swift in Sources */,
-				ACC8B082055E87747518C91D /* KikiDemoRootView.swift in Sources */,
-				CCDD71C58C5F55C31F4A4A15 /* KikiDemoStore.swift in Sources */,
-				9D449D70447381AAA6647E74 /* KikiProfileView.swift in Sources */,
-				735D1A2DADACE9AA9199481A /* KikiRTCService.swift in Sources */,
-				F01818000000000000000012 /* KikiGifts.swift in Sources */,
-				A4E4828686F7069B27ACCDAA /* KikiAPIClient.swift in Sources */,
-				4EF055B37A579691C7935E3D /* KikiLoginView.swift in Sources */,
-				A97D40E9BF989536D7E67EFD /* KikiSDKAvatarTrust.swift in Sources */,
-				C01717000000000000000016 /* KikiLegal.swift in Sources */,
-				C01717000000000000000017 /* KikiLegalViews.swift in Sources */,
-				0957006F958A6A7D637FC300 /* KikiVoiceRoomFloatingOverlay.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		G6LR0001 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				G1LR0001 /* SampleHandler.m in Sources */,
-				G1LR0002 /* ReplayKitLocalized.m in Sources */,
+				419EE0B7C50496A0804F54E1 /* KikiRealtimeIntegrationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		E4RPDEP3 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = G5LR0001 /* RTCubeLabReplayExtension */;
-			targetProxy = E4RP0003 /* PBXContainerItemProxy */;
-		};
 		EDD4AB9D63DA9E681C00F1CD /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = KikiTalk;
@@ -1299,27 +458,6 @@
 			targetProxy = 32AE5E7873D0DA21D79421E6 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
-
-/* Begin PBXVariantGroup section */
-		D9E9758F47BFA8556C9281DF /* InfoPlist.strings */ = {
-			isa = PBXVariantGroup;
-			children = (
-				2F46C58F911A2981D01067C6 /* en */,
-				762AC652DB6CB4E52398BD0A /* zh-Hans */,
-			);
-			name = InfoPlist.strings;
-			sourceTree = "<group>";
-		};
-		E2RP0005 /* InfoPlist.strings */ = {
-			isa = PBXVariantGroup;
-			children = (
-				E2RP0005A /* en */,
-				E2RP0005B /* zh-Hans */,
-			);
-			name = InfoPlist.strings;
-			sourceTree = "<group>";
-		};
-/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		3AD8C297937BFA93751855CD /* Debug */ = {
@@ -1331,7 +469,7 @@
 				CODE_SIGN_ENTITLEMENTS = Demo/KikiTalk.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_LANGUAGE = "zh-Hans";
 				DEVELOPMENT_TEAM = A82X46N3WS;
 				ENABLE_PREVIEWS = YES;
@@ -1352,7 +490,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.7;
+				MARKETING_VERSION = 1.0.8;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kikitalk.demo;
 				PRODUCT_NAME = KikiTalk;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1360,7 +498,6 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) KIKI_DEMO_STANDALONE";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -1467,7 +604,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -1524,7 +661,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
@@ -1542,7 +679,7 @@
 				CODE_SIGN_ENTITLEMENTS = Demo/KikiTalk.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 5;
 				DEVELOPMENT_LANGUAGE = "zh-Hans";
 				DEVELOPMENT_TEAM = A82X46N3WS;
 				ENABLE_PREVIEWS = YES;
@@ -1563,7 +700,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.7;
+				MARKETING_VERSION = 1.0.8;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kikitalk.demo;
 				PRODUCT_NAME = KikiTalk;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1571,152 +708,9 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) KIKI_DEMO_STANDALONE";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_PRODUCT = YES;
-			};
-			name = Release;
-		};
-		D9000003 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = D2XCC001 /* Pods-RTCubeLab.debug.xcconfig */;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = A82X46N3WS;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"$(inherited)",
-					"RTCUBE_LOCAL_BUILD=1",
-					"RTCUBE_LAB=1",
-					"OPEN_SOURCE=1",
-				);
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = RTCube/Info/CN/Info.plist;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.aby.livekit.demo;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited) RTCUBE_LOCAL_BUILD RTCUBE_LAB OPEN_SOURCE";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-			};
-			name = Debug;
-		};
-		D9000004 /* Release */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = D2XCC002 /* Pods-RTCubeLab.release.xcconfig */;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = A82X46N3WS;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"$(inherited)",
-					"RTCUBE_LOCAL_BUILD=1",
-					"RTCUBE_LAB=1",
-					"OPEN_SOURCE=1",
-				);
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = RTCube/Info/CN/Info.plist;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.aby.livekit.demo;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) RTCUBE_LOCAL_BUILD RTCUBE_LAB OPEN_SOURCE";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-			};
-			name = Release;
-		};
-		G9LR0001 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = G2LRXCC1 /* Pods-RTCubeLabReplayExtension.debug.xcconfig */;
-			buildSettings = {
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = F8A3GH6Q4W;
-				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = F8A3GH6Q4W;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = RTCubeReplayExtension/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = TRTC;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.aby.livekit.demo.replay;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "All-In-One-APP";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "All-In-One-APP";
-				SKIP_INSTALL = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = 1;
-			};
-			name = Debug;
-		};
-		G9LR0002 /* Release */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = G2LRXCC2 /* Pods-RTCubeLabReplayExtension.release.xcconfig */;
-			buildSettings = {
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = F8A3GH6Q4W;
-				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = F8A3GH6Q4W;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = RTCubeReplayExtension/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = TRTC;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 13.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.aby.livekit.demo.replay;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "All-In-One-APP";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "All-In-One-APP";
-				SKIP_INSTALL = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -1728,15 +722,6 @@
 			buildConfigurations = (
 				A9000001 /* Debug */,
 				A9000002 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		D7000003 /* Build configuration list for PBXNativeTarget "RTCubeLab" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				D9000003 /* Debug */,
-				D9000004 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -1755,15 +740,6 @@
 			buildConfigurations = (
 				71D5C62E93BBB3C580A0BE1B /* Release */,
 				A15595D11DA40F54D9E936EF /* Debug */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		G7LR0001 /* Build configuration list for PBXNativeTarget "RTCubeLabReplayExtension" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				G9LR0001 /* Debug */,
-				G9LR0002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -1,99 +1,34 @@
-# RTCube
+# KikiTalk iOS
 
-English | [简体中文](README.cn.md)
+[简体中文](README.cn.md) · [Repository overview](../README.md) · [Architecture](../docs/ARCHITECTURE.zh-CN.md) · [Project handover](../docs/PROJECT_HANDOVER.zh-CN.md)
 
-## Overview
+Open `RTCube.xcworkspace` in Xcode and select **KikiTalk**. The project requires iOS 17 or later, supports iPhone/iPad, and keeps its historical RTCube filename. Its application and test targets are KikiTalk and KikiTalkTests.
 
-RTCube is a powerful UI component library built on top of the Tencent Cloud `AtomicXCore` SDK. `AtomicXCore` consolidates the core capabilities of Tencent Cloud Real-Time Communication (TRTC), Instant Messaging (IM), Audio/Video Calling (TUICallEngine), and Room Management (TUIRoomEngine), offering a state-driven API design.
+## Dependencies and signing
 
-On top of the core capabilities provided by `AtomicXCore`, RTCube delivers a set of ready-to-use user interfaces (UI), allowing you to quickly integrate interactive video live streaming, voice chat rooms, audio/video calling, and more into your iOS application—without worrying about complex backend logic or state management.
+Xcode resolves LiveKit through Swift Package Manager. The workspace's `xcshareddata/swiftpm/Package.resolved` records exact package versions. CocoaPods and Tencent SDK configuration have been removed; do not run the former pod-install or UserSig setup instructions.
 
-## Features
+Use the existing simulator signing configuration so system Keychain remains available. For a physical device, select an authorized development team and review the Apple sign-in, push notification, and background-audio capabilities.
 
-Based on `AtomicXCore`, RTCube provides complete UI implementations for the following core business scenarios:
+## Source layout
 
-  * **Video/Voice Live Streaming:**
+| Path | Responsibility |
+| --- | --- |
+| `Demo/KikiDemoApp.swift`, `KikiDemoRootView.swift` | App entry, consent/startup/login gates, four tabs |
+| `Demo/KikiDemoStore.swift` | Shared account and product state, service orchestration, session teardown |
+| `Demo/KikiAccountAPIClient.swift` | Account/social HTTPS requests to kiki.group |
+| `Demo/KikiAPIClient.swift` | Voice business HTTPS requests to furby.top and shared models |
+| `Demo/KikiRTCService.swift`, `KikiRoomRuntime.swift` | LiveKit connection, room/audio lifecycle, chat synchronization |
+| `Demo/KikiLiveKitRoomView.swift`, `KikiRoom*.swift` | Voice-room UI and interaction components |
+| `Demo/KikiSocial*.swift`, `KikiMomentsViews.swift`, `KikiDirectMessages.swift` | People/relationships, feed/comments, inbox/private conversations |
+| `Demo/KikiProfileView.swift`, `KikiSettingsLayout.swift` | Profile, account settings, room collections, safety entry points |
+| `Demo/KikiGifts.swift`, `KikiGiftViews.swift` | Experience balance, gifts, decorations, presentation |
+| `Demo/KikiLegal*.swift`, `KikiPush.swift`, `KikiStartupPermissions.swift` | Consent, notifications, startup permissions |
+| `Demo/Resources/`, `Demo/Assets.xcassets/` | App resources, gifts, legal-document copy, brand assets |
+| `DemoTests/` | Current app tests; select KikiTalk's Test action |
 
-      * **Live List Management:** Fetch the list of live streams.
-      * **Go Live & Watch:** Create live rooms and join live streams.
-      * **Seat Management:** Manage seats; audience members can take or leave the mic.
-      * **Co-hosting:** Support cross-room co-hosting between hosts.
-      * **Host Battle (PK):** Support interactive PK between hosts.
-      * **Interactive Features:**
-          * **Gifts:** Send and receive gifts.
-          * **Likes:** Send likes in the live room.
-          * **Barrage (Danmaku):** Send and receive barrage messages.
+The `Demo` names identify the current product source, not a second sample application. The old Tencent app/extension, components, reference targets, Pods, and separate LiveKit lab client have been removed. KikiVoiceOps remains an independent project at `../experiments/livekit/admin-ios/`.
 
-  * **Audio/Video Calling:**
+## Validation scope
 
-      * **Basic Calls:** Support 1v1 and multi-party audio/video calls.
-      * **Call Management:** Support answering, rejecting, and hanging up calls.
-      * **Device Management:** Control the camera and microphone during calls.
-      * **Call History:** Query and delete call records.
-
-  * **Multi-party Meetings (Room):**
-
-      * **Quick Meetings:** One-click creation and joining of multi-party meetings.
-      * **Invite to Meeting:** Invite members to join the current meeting.
-      * **In-meeting Controls:** Hosts can manage members' audio/video, seats, and member list.
-      * **Screen Sharing:** Support screen sharing during meetings.
-
-## Quick Start
-
-### 1. Prerequisites
-
-  * Xcode 14.0 or later
-  * iOS 14.0 or later
-  * CocoaPods (please ensure it is installed)
-
-### 2. Clone the Repository
-
-```bash
-git clone https://github.com/Tencent-RTC/TUIKit_iOS.git
-```
-
-### 3. Install Dependencies
-
-`RTCube` depends on several component libraries including `TUILiveKit`, `TUICallKit`, and `TUIRoomKit`. You need to use CocoaPods to install these dependencies.
-
-```bash
-cd TUIKit_iOS/application
-pod install
-```
-
-### 4. Run the Project
-
-Open the generated `RTCube.xcworkspace` file with Xcode, configure your Tencent Cloud `SDKAPPID`, `UserID`, and `UserSig` in `application/Debug/GenerateTestUserSig.swift`, then build and run the `RTCubeLab` scheme.
-
-## Architecture
-
-The architecture of `RTCube` follows a layered design:
-
-1.  **TUILiveKit / TUICallKit / TUIRoomKit (UI Layer):**
-
-      * Provides prebuilt, reusable UI components.
-      * Handles view presentation and user interaction.
-      * Subscribes to `Store`s in `AtomicXCore` to retrieve state and update the UI.
-      * Calls `Store` methods in `AtomicXCore` to respond to user actions.
-
-2.  **AtomicXCore (Core Layer):**
-
-      * **Stores:** (e.g., `LiveListStore`, `CallListStore`, `ConversationListStore`) Manage business logic and state.
-      * **Core Views:** (e.g., `LiveCoreView`, `ParticipantView`) Provide UI-less view containers that drive video rendering.
-      * **Engine Wrappers:** Wrap the underlying `RTCRoomEngine`, `TUICallEngine`, and `IMSDK`, providing a unified API.
-
-3.  **Tencent Cloud SDK (Engine Layer):**
-
-      * `RTCRoomEngine` & `TUICallEngine`: Provide low-level real-time audio/video capabilities.
-      * `IMSDK`: Provides instant messaging capabilities.
-
-## Documentation
-
-* [AtomicXCore Documentation](https://tencent-rtc.github.io/TUIKit_iOS/documentation/atomicxcore)
-* [Official Documentation - Quick Integration Guide](https://cloud.tencent.com/document/product/647/106536)
-
-## License
-
-This project is licensed under the [MIT License](https://www.google.com/search?q=LICENSE).
-
------
+Most tests use local fixtures. Public-service and device/media integration tests require their explicitly documented environment flags and credentials; review each test before enabling it. A skipped integration test does not establish production behavior. This cleanup changes neither backend deployments nor published legal documents.

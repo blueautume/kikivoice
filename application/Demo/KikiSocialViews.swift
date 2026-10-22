@@ -1,14 +1,5 @@
 import SwiftUI
 
-/// Shared restrained surfaces keep social pages consistent without decorative banners.
-struct KikiSurface<Content: View>: View {
-    @ViewBuilder let content: Content
-    var body: some View {
-        content.padding(18).frame(maxWidth: .infinity, alignment: .leading)
-            .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 18))
-    }
-}
-
 struct KikiEmptyState: View {
     let symbol: String
     let title: String

@@ -21,8 +21,7 @@ final class KikiAccountAPIClientTests: XCTestCase {
             XCTAssertEqual(legal["accepted"] as? Bool, true)
             XCTAssertEqual(legal["adultConfirmed"] as? Bool, true)
             return (200, try jsonData([
-                "token": "test-access-token", "user": userFixture,
-                "sdk": ["sdkAppID": 12345, "userID": "sdk-island", "userSig": "test-signature", "expiresAt": 1_900_000_000]
+                "token": "test-access-token", "user": userFixture
             ]))
         }
 
@@ -41,8 +40,7 @@ final class KikiAccountAPIClientTests: XCTestCase {
             user["needsNickname"] = true
             user["avatarURL"] = "https://kiki.group/v1/avatars/abc123.jpg"
             return (200, try jsonData([
-                "token": "test-access-token", "user": user,
-                "sdk": ["sdkAppID": 12345, "userID": "sdk-island", "userSig": "test-signature", "expiresAt": 1_900_000_000]
+                "token": "test-access-token", "user": user
             ]))
         }
 

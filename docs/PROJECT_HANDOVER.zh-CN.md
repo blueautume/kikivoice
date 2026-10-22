@@ -1,12 +1,12 @@
 # KikiTalk 项目结构与接手指南
 
-整理日期：2026-10-20。面向准备逐步接手开发和运维的项目所有者。
+更新日期：2026-10-22（iOS 旧实现清理）。面向准备逐步接手开发和运维的项目所有者。
 
 当前 KikiTalk 由 **iOS 用户客户端、iOS 管理客户端、账号与社交服务、语聊业务服务、LiveKit 媒体服务、静态官网** 组成。两个 Python 后端分别运行在两台主机上；语聊业务 API 与 LiveKit 媒体进程运行在同一台语聊主机上。
 
-项目最初基于腾讯 TUIKit，当前主 App 已切换为 **Apple 登录、自建业务 API、开源 LiveKit 语音**。仓库保留大量腾讯示例、组件、SDK 配置和实验副本，不能把整个仓库中的依赖都当作当前 App 的依赖。尤其要区分腾讯 **TUILiveKit** 与开源 **LiveKit**，它们是不同项目。
+项目最初基于腾讯 TUIKit，当前主 App 使用 **Apple 登录、自建业务 API、开源 LiveKit 语音**。2026-10-22 已移除腾讯组件/示例、旧 target 与 Pods、LegacyTencent、独立实验 iOS 副本及 vendor 快照；清理前版本可从 Git 快照追溯。当前代码结构见[架构说明](ARCHITECTURE.zh-CN.md)。
 
-本指南描述当前工作区源码。现有部署记录用于说明服务分工；本次没有连接生产主机。主 App 工程当前版本为 **1.0.7（4）**，部分功能与协议变更仍标为本地待发布，不能据此推定现网已经运行相同版本。
+本指南描述当前工作区源码。现有部署记录用于说明服务分工；本次 iOS 清理没有发布后端或修改正式协议。应用版本以工程 MARKETING_VERSION / CURRENT_PROJECT_VERSION 及实际 App 产物为准；部分功能与协议变更仍标为本地待发布，不能据此推定现网已经运行相同版本。
 
 ## 1 项目全景
 
@@ -55,13 +55,10 @@ flowchart TB
 TUIKit_iOS/
 ├── application/
 │   ├── RTCube.xcworkspace       日常打开的工作区，选择 KikiTalk scheme
-│   ├── RTCube.xcodeproj         用户 App、测试及腾讯参考 target 的构建配置
-│   ├── Demo/                   当前 KikiTalk 主业务源码
-│   ├── DemoTests/              当前主 App 测试
-│   ├── LegacyTencent/          旧腾讯版本实现，供对照
-│   ├── RTCube/                 原腾讯示例 App 入口
-│   ├── main/ mine/ login/ assembly/  原腾讯示例模块
-│   └── Pods/ Podfile Podfile.lock    腾讯参考 target 的 CocoaPods 依赖
+│   ├── RTCube.xcodeproj         KikiTalk 与 KikiTalkTests 的构建配置
+│   ├── Demo/                   当前用户 App 源码、资源与隐私清单
+│   ├── DemoTests/              当前客户端测试
+│   └── README.md / README.cn.md 当前 iOS 开发入口
 ├── backend/                    当前账号、社交、APNs、中央运维身份服务
 │   ├── app/                    Python 应用
 │   ├── tests/                  单元及 API、跨服务测试
@@ -71,27 +68,16 @@ TUIKit_iOS/
 │   ├── admin-ios/              当前独立 iOS 管理 App
 │   ├── infra/                  媒体和 API 部署、代理、维护、备份、探针
 │   ├── shared/                 跨服务契约、协议副本
-│   ├── ios/                    独立 LiveKit 实验 App，非日常主 App
-│   ├── vendor/                 腾讯代码参考快照，不参与实验 App 当前构建
-│   └── validation/             按功能和日期保存的验收记录
-├── live/                       腾讯 TUILiveKit，非当前主 App 的 LiveKit SDK
-├── atomic_x/                   腾讯 AtomicX 公共 UI、主题与工具
-├── call/                       腾讯 TUICallKit 通话 UI
-├── chat/                       腾讯聊天组件和独立示例工程
-├── room/                       腾讯会议及多人房间 UI
-├── api-example/                腾讯 AtomicXCore API 示例
-├── TEBeautyKit/                腾讯美颜相关参考组件
-├── TCEffectPlayerKit/          腾讯特效播放器相关参考组件
-├── VideoAdvanceExtension/      原腾讯视频能力扩展参考
+│   └── validation/             本地生成验收证据，未纳入 Git
 ├── website/dist/               可直接部署的静态官网
 ├── legal/documents.json        正式主线协议源文件
 ├── tools/                      协议、礼物、品牌资源和说明材料生成工具
-├── docs/                       项目说明及原腾讯生成的 API 文档
-├── output/                     截图、构建或资料输出，不是运行时代码入口
+├── docs/                       当前说明与按日期归档的规划/交付记录
+├── output/                     本地生成资料输出，未纳入 Git
 └── AGENTS.md                   项目协作及版本递增约定
 ```
 
-**`experiments/livekit` 的名字仍来自实验阶段，但其中的后端、管理端和基础设施已被正式主线使用。** 日常先关注 `application/Demo`、`backend`、`experiments/livekit/backend`、`experiments/livekit/admin-ios` 和 `infra`；腾讯参考组件可在需要追溯旧实现时再读。
+**`experiments/livekit` 的名字仍来自实验阶段，但其中的后端、管理端和基础设施已被正式主线使用。** 日常关注 `application/Demo`、`backend`、`experiments/livekit/backend`、`experiments/livekit/admin-ios` 和 `infra`。独立实验 App 与腾讯参考组件已删除，目录名本身不能作为删除剩余服务的依据。
 
 ## 3 iOS 用户客户端
 
@@ -103,7 +89,7 @@ TUIKit_iOS/
 
 界面以 SwiftUI 为主，房间呈现、窗口和浮层等场景使用 UIKit。状态通过 `ObservableObject`、`@Published` 和 Combine 驱动；网络和生命周期逻辑使用 `async/await`、Task、`@MainActor`。HTTP 使用系统 `URLSession`，JSON 使用 `Codable`；本地会话使用 Keychain。
 
-当前主 target 直接用 **Swift Package Manager** 引入 LiveKit。`Podfile` 中的腾讯依赖属于 **RTCubeLab** 参考 target，开发 KikiTalk 主线无需为新增业务再引入这些 Pods。参见 [Podfile](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Podfile:48) 和 [SPM 锁文件](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/RTCube.xcworkspace/xcshareddata/swiftpm/Package.resolved)。
+主 target 通过 **Swift Package Manager** 引入 LiveKit，精确版本见[SPM 锁文件](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/RTCube.xcworkspace/xcshareddata/swiftpm/Package.resolved)。旧腾讯参考 target、CocoaPods 配置及工作区 Pods 引用已移除，开发和测试使用 KikiTalk scheme。
 
 ### 主要业务代码
 
@@ -245,7 +231,7 @@ LiveKit Server 是下载运行的外部开源服务，源码本身没有完整�
 
 ## 7 第三方开源项目与依赖
 
-版本来自本地锁文件和 requirements；它们是本项目锁定的版本，不表示上游最新版本。依赖分为当前主线、基础设施、腾讯参考层，阅读时先确认作用范围。
+版本来自本地 SPM 锁文件和 requirements；它们是本项目锁定的版本，不表示上游最新版本。当前依赖分为 iOS 主线、两套后端与基础设施。
 
 ### 当前 iOS 主线
 
@@ -297,27 +283,9 @@ requirements 还锁定如下支撑包，后续升级应一起检查对应依赖�
 
 Apple 登录、APNs、系统 Passkey、开发者签名和域名证书属于外部平台或系统服务，不能算作仓库自有代码。当前媒体按自建 LiveKit 部署配置运行。
 
-### 腾讯参考工程仍保留的依赖
+### 已移除的参考依赖
 
-以下版本来自 [application/Podfile.lock](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Podfile.lock)，属于原组件及 RTCubeLab 参考层，并非当前 KikiTalk 主 target 的全量清单。
-
-| 项目 | 版本 | 原来的用途 |
-| --- | --- | --- |
-| Alamofire | 5.0.0 | HTTP 网络 |
-| SnapKit / Masonry | 5.7.1 / 1.1.0 | Swift / Objective-C 自动布局 |
-| Kingfisher / SDWebImage | 7.12.0 / 5.21.7 | 图片下载、缓存和显示 |
-| Toast-Swift | 5.1.1 | 提示 |
-| MJRefresh | 3.7.5 | 下拉刷新 |
-| JXPagingView / JXSegmentedView | 2.1.2 / 1.3.0 | 分页与分段导航 |
-| AtomicX / TUILiveKit / TUIChatKit | 各 1.0.0 | 腾讯公共 UI、直播语聊 UI、聊天 UI，本地 podspec 标为 MIT |
-| TUIRoomKit | 4.0.0 | 腾讯会议 UI，本地 podspec 标为 MIT |
-| TUICallKit_Swift | 1.0.0 | 腾讯通话 UI，本地 podspec 标为 Proprietary |
-| AtomicXCore / RTCRoomEngine | 4.3.10 / 4.3.10 | 腾讯场景核心和房间引擎 |
-| TXLiteAVSDK_Professional | 13.4.21067 | 腾讯音视频 SDK，含原 ReplayKit 扩展依赖 |
-| TXIMSDK_Plus_iOS_XCFramework / TUICore | 9.0.7662 / 9.0.7660 | 腾讯 IM 与组件基础 |
-| AlbumPicker / AlbumPickerCore、RTCCommon | 1.0.8 / 1.0.8、1.3.6 | 原相册组件及腾讯示例公共能力 |
-
-前九个通用库（Alamofire 至 JXSegmentedView）的本地 LICENSE 为 MIT。仓库根 LICENSE 也为 MIT，但腾讯商业引擎与二进制 SDK、各组件自己的许可不能由根 LICENSE 一概覆盖。完整发布时应按实际打入包内的组件保留其许可证和声明；本指南是依赖盘点，不替代发行包的完整依赖及许可清单。
+旧腾讯组件、二进制 SDK 与示例的 Podfile/lock 已随 iOS 清理移除，其历史版本可在清理前 Git 快照查阅。当前依赖盘点应以保留的 SPM、后端 requirements 和实际发行包为准；历史依赖或根目录 LICENSE 不能代替各实际分发组件的许可声明。
 
 ## 8 登录与主要业务调用链
 
@@ -397,17 +365,16 @@ Apple 登录、APNs、系统 Passkey、开发者签名和域名证书属于外�
 | --- | --- |
 | 正式源、主 App、账号服务 | `2026-10-20-r12` |
 | `experiments/livekit/shared/legal_documents.json` | `2026-10-20-r11` |
-| 实验 App 的协议资源 | `2026-10-20-r11` |
 
-语聊后端默认从 `shared/legal_documents.json` 读取，部署可通过 `LEGAL_DOCUMENTS_PATH` 指定。**主线生成脚本不自动覆盖语聊 shared 或实验 App 副本**；其 `--check` 通过也不能证明这些副本已同步。下一次相关发布需要按选定版本同步两端、客户端和网页，并保留已发布的历史协议。
+语聊后端默认从 `shared/legal_documents.json` 读取，部署可通过 `LEGAL_DOCUMENTS_PATH` 指定。**主线生成脚本不自动覆盖语聊 shared 副本**；其 `--check` 通过不能证明两端协议已同步。独立实验 App 的协议资源随该客户端移除；本次清理没有修改上述正式文本及版本。下一次相关发布需要按选定版本同步两端、客户端和网页，并保留已发布的历史协议。
 
-### 历史说明与参考工程
+### 当前入口与历史材料
 
-根 README、`application/README`、[旧架构分析](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/ARCHITECTURE.zh-CN.md) 中仍有腾讯、ID 登录或两页签描述。[商业版总体方案](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/COMMERCIAL_ARCHITECTURE.zh-CN.md) 和 [商业模块规划](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/COMMERCIAL_MODULES.zh-CN.md) 是规划资料，不代表所列收费、多端或扩容功能已实现。
+根 README、application README 与[架构说明](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/ARCHITECTURE.zh-CN.md) 已更新为清理后的 KikiTalk 入口。[旧腾讯版说明](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/KIKI_DEMO.zh-CN.md)、切换与交付记录保留原日期的背景和验收，历史路径及运行命令不再代表当前可用工程。[商业版总体方案](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/COMMERCIAL_ARCHITECTURE.zh-CN.md) 和[商业模块规划](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/COMMERCIAL_MODULES.zh-CN.md) 已标记归档；所列收费、多端及扩容能力不代表已实现。
 
-实验 App 的邀请码登录只适合明确配置的 `lab` 环境，不能照旧连接已切换 `account` 模式的正式服务。RTCubeLab 及其他腾讯示例属于参考工程，其当前可构建状态应独立验证。
+独立邀请码实验 App、RTCubeLab 及其他腾讯示例已移除。语聊后端保留 account/lab 模式的历史支持和配置名称，本次 iOS 清理不修改后端行为；正式主线继续使用 account 桥接。后端、管理 App、infra、shared 及历史验收资料仍保留。
 
-当前工作区包含大量未提交和未跟踪的应用、后端及资料文件，Git 的旧提交不能完整代表本地最新状态。建立接手基线时应一并核对这些文件；清理 `experiments` 或“看起来是生成物”的目录前，先确认是否被当前部署、构建或契约引用。
+清理前源码已另存 Git 快照，`output/`、`experiments/livekit/validation/` 和缓存未纳入该源码提交，后续也由 .gitignore 排除。文中这些路径及截图/结果链接指本地归档，克隆仓库不会自动取得。后续根据当前工程、实际服务契约与发布批次核对状态；本地生成物或历史验收不能替代当前构建、签名包或现网验证。
 
 ## 11 建议按这个顺序接手
 

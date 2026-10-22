@@ -5,29 +5,12 @@ import LiveKit
 import SwiftUI
 import UIKit
 
-/// Live room information returned by the real RTC service, rather than a local seed list.
-struct KikiRTCListing: Identifiable, Equatable {
-    let id: String
-    let title: String
-    let host: String
-    let hostID: String
-    let audience: Int
-    let isLive: Bool
-    let category: String
-    let theme: Int
-    let coverURL: String
-    let avatarURL: String
-    let startTime: Int
-}
-
 enum KikiRTCError: Foundation.LocalizedError {
     case unavailable(String)
-    case sdk(Int, String)
 
     var errorDescription: String? {
         switch self {
         case .unavailable(let message): return message
-        case .sdk(let code, let message): return "\(message)（\(code)）"
         }
     }
 }
@@ -79,7 +62,6 @@ protocol KikiRTCServicing: AnyObject {
     func stopMediaForPrivacy()
     func logoutForPrivacy() async throws
     func updateProfile(userID: String, name: String, bio: String, avatarURL: String) async throws
-    func fetchRooms() async throws -> [KikiRTCListing]
     func createRoom(roomID: String, title: String, category: String, isLive: Bool, theme: Int) async throws
     func presentRoom(roomID: String, isLive: Bool, isOwner: Bool) async throws
     func configureGifts(_ gifts: KikiGiftStore?)
@@ -88,11 +70,6 @@ protocol KikiRTCServicing: AnyObject {
 extension KikiRTCServicing {
     func configureGifts(_ gifts: KikiGiftStore?) { }
     var roomPresentationChanges: AnyPublisher<Bool, Never>? { nil }
-}
-
-extension Notification.Name {
-    static let kikiRTCRoomClosed = Notification.Name("KikiRTCRoomClosed")
-    static let kikiRTCSessionExpired = Notification.Name("KikiRTCSessionExpired")
 }
 
 struct KikiVoiceParticipant: Identifiable, Equatable {
@@ -120,38 +97,6 @@ extension KikiVoiceMessage {
         self.init(id: message.id, senderID: message.senderUserID, senderName: message.senderName,
                   text: message.text, isLocal: message.senderUserID == localUserID,
                   createdAt: message.createdAt, sequence: message.seq, senderAvatarIndex: message.senderAvatarIndex)
-    }
-}
-
-/// This envelope contains no claimed sender. The authenticated LiveKit participant
-/// attached to each data packet is the sole source of sender identity and name.
-struct KikiVoiceChatPacket: Codable {
-    let version: Int
-    let id: String
-    let text: String
-
-    static let topic = "kiki.chat"
-    static let maximumTextBytes = 2_000
-    static let maximumPacketBytes = 4_096
-
-    static func encode(_ text: String) throws -> (KikiVoiceChatPacket, Data) {
-        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, text.utf8.count <= maximumTextBytes else {
-            throw KikiRTCError.unavailable("消息不能为空，且不能超过 2000 字节。")
-        }
-        let packet = KikiVoiceChatPacket(version: 1, id: UUID().uuidString, text: text)
-        let data = try JSONEncoder().encode(packet)
-        guard data.count <= maximumPacketBytes else { throw KikiRTCError.unavailable("消息过长。") }
-        return (packet, data)
-    }
-
-    static func decode(_ data: Data) -> KikiVoiceChatPacket? {
-        guard data.count <= maximumPacketBytes,
-              let packet = try? JSONDecoder().decode(Self.self, from: data),
-              packet.version == 1, UUID(uuidString: packet.id) != nil,
-              !packet.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              packet.text.utf8.count <= maximumTextBytes else { return nil }
-        return packet
     }
 }
 
@@ -242,9 +187,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
     private var loginAttemptGeneration = 0
     private var privacySuspended = false
     private var hasConnected = false
-    private var profileName = ""
     private var lastMessageTime = Date.distantPast
-    private var messageKeys: Set<String> = []
     private var pendingPrivacyDisconnect: Task<Void, Never>?
     private var privacyRoom: (id: String, token: String)?
     private var roomStateTask: Task<Void, Never>?
@@ -374,19 +317,6 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
         guard credentials?.userID == userID else { throw KikiRTCError.unavailable("账号状态已变化，请重新登录。") }
         // The Store saves profile changes through HTTPS first. Participant names
         // inside an active room remain the server-authenticated LiveKit name.
-        profileName = name
-    }
-
-    func fetchRooms() async throws -> [KikiRTCListing] {
-        let token = try requireLogin()
-        let generation = lifecycleGeneration
-        let rooms = try await observed(.roomAPI) { try await api.rtcRooms(token: token) }
-        try checkLifecycle(generation)
-        return rooms.map {
-            KikiRTCListing(id: $0.id, title: $0.title, host: $0.host, hostID: $0.hostID,
-                           audience: $0.audience, isLive: $0.isLive, category: $0.category,
-                           theme: $0.theme, coverURL: "", avatarURL: $0.hostAvatarURL ?? "", startTime: $0.createdAt)
-        }
     }
 
     func createRoom(roomID: String, title: String, category: String, isLive: Bool, theme: Int) async throws {
@@ -435,7 +365,6 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
             messageDraft = ""
             announcement = .empty
             chatSyncNotice = nil
-            messageKeys = []
             lastMessageTime = .distantPast
             try AudioManager.shared.setEngineAvailability(.default)
             AudioManager.shared.isSpeakerOutputPreferred = speakerPreferred
@@ -817,15 +746,14 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
         privacyRoom = nil
         credentials = nil
         sessionToken = nil
-        profileName = ""
         safetyState = .empty; safetyLoaded = false; safetyError = nil; myReports = []
         safetyMutationGeneration += 1
         isLoadingSafety = false; isUpdatingBlock = false
         await pendingPrivacyDisconnect?.value
         pendingPrivacyDisconnect = nil
-        KikiSDKAvatarTrust.clearPrivateImages()
+        URLCache.shared.removeAllCachedResponses()
         if let previousRoom {
-            // The server releases this member and transfers ownership when needed.
+            // The server releases this member; an owner's departure closes the room.
             // Account logout / withdrawal separately revoke its session and room grants.
             try? await api.leaveRoom(roomID: previousRoom.id, token: previousRoom.token)
         }
@@ -1187,7 +1115,6 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
     private func expireSession() {
         stopMediaForPrivacy()
         onSessionExpired?()
-        NotificationCenter.default.post(name: .kikiRTCSessionExpired, object: nil)
     }
 
     private func present(liveRoom: Room, generation: Int) async throws {
@@ -1452,7 +1379,6 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
         diagnosticsError = nil
         participants = []
         messages = []
-        messageKeys = []
         microphoneEnabled = false
         isChangingMicrophone = false
         isSendingMessage = false
@@ -1464,7 +1390,6 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
         UIApplication.shared.isIdleTimerDisabled = false
         if notify, let closedID {
             onRoomClosed?(closedID)
-            NotificationCenter.default.post(name: .kikiRTCRoomClosed, object: closedID)
         }
     }
 

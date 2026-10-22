@@ -1,107 +1,34 @@
-# Kiki语聊：真实功能版
+# KikiTalk iOS
 
-在本目录执行 `pod install` 后，使用 Xcode 打开 **RTCube.xcworkspace**，选择 **KikiTalk** scheme，在 iOS 17+ 模拟器或真机运行。模拟器需要正常本地签名以访问 Keychain；真机需选择自己的开发团队。
+[English](README.md) · [仓库总览](../README.cn.md) · [当前架构](../docs/ARCHITECTURE.zh-CN.md) · [项目接手指南](../docs/PROJECT_HANDOVER.zh-CN.md)
 
-提供中文的「语聊 / 直播」「我」两个模块。ID 登录、资料、收藏、足迹和房间登记使用已部署服务器，语聊和直播使用真实腾讯云 SDK。客户端不包含腾讯云 SecretKey，没有本地模拟房间和消息。
+用 Xcode 打开 **RTCube.xcworkspace**，选择 **KikiTalk** scheme。最低 iOS 17，支持 iPhone/iPad；工程文件沿用 RTCube 历史名称，当前应用和测试 target 分别为 KikiTalk、KikiTalkTests。
 
-详见 [方案与使用说明](../docs/KIKI_DEMO.zh-CN.md) 和 [服务端说明](../backend/README.zh-CN.md)。以下保留原腾讯 SDK 工程的参考说明，日常运行请选择 KikiTalk。
+## 依赖与签名
 
-# RTCube（SDK 原工程）
+Xcode 通过 Swift Package Manager 解析 LiveKit，工作区的 `xcshareddata/swiftpm/Package.resolved` 记录精确版本。CocoaPods 及腾讯 SDK 配置已移除，不再执行旧 pod 安装或 UserSig 配置步骤。
 
-[English](README.md) | 简体中文
+模拟器沿用工程签名配置，以便访问系统 Keychain；真机选择有权限的开发团队，并核对 Apple 登录、推送通知及后台音频能力。
 
-## 概述
+## 源码分布
 
-RTCube 是一款功能强大的 UI 组件库，它基于腾讯云 `AtomicXCore` SDK 构建。`AtomicXCore` 整合了腾讯云实时音视频（TRTC）、即时通信（IM）、音视频通话（TUICallEngine） 和房间管理（TUIRoomEngine） 的核心能力，提供了状态驱动的（State-driven）API 设计。
+| 位置 | 职责 |
+| --- | --- |
+| `Demo/KikiDemoApp.swift`、`KikiDemoRootView.swift` | App 入口、协议/启动/登录门禁和四页签 |
+| `Demo/KikiDemoStore.swift` | 共享业务状态、服务编排、会话及退出清理 |
+| `Demo/KikiAccountAPIClient.swift` | 访问 kiki.group 的账号和社交 HTTPS 接口 |
+| `Demo/KikiAPIClient.swift` | 访问 furby.top 的语聊业务 HTTPS 接口及共享模型 |
+| `Demo/KikiRTCService.swift`、`KikiRoomRuntime.swift` | LiveKit 连接、房间/音频生命周期、聊天同步 |
+| `Demo/KikiLiveKitRoomView.swift`、`KikiRoom*.swift` | 语聊房 UI 与交互组件 |
+| `Demo/KikiSocial*.swift`、`KikiMomentsViews.swift`、`KikiDirectMessages.swift` | 用户/关系、动态/评论、收件箱/私聊 |
+| `Demo/KikiProfileView.swift`、`KikiSettingsLayout.swift` | 个人页、账户设置、房间收藏/足迹和安全入口 |
+| `Demo/KikiGifts.swift`、`KikiGiftViews.swift` | 体验余额、礼物、装扮和效果 |
+| `Demo/KikiLegal*.swift`、`KikiPush.swift`、`KikiStartupPermissions.swift` | 协议确认、通知和启动权限 |
+| `Demo/Resources/`、`Demo/Assets.xcassets/` | 礼物、协议副本、品牌等 App 资源 |
+| `DemoTests/` | 当前客户端测试，使用 KikiTalk 的 Test action |
 
-RTCube 在 `AtomicXCore` 提供的核心能力之上，为您提供了一套预制的用户界面（UI），使您无需关心复杂的后端逻辑和状态管理，即可快速为您的 iOS 应用集成视频互动直播、语音聊天室、音视频通话等功能。
+`Demo` 文件名属于当前产品源码。旧腾讯 App/广播扩展、组件、参考 target、Pods 和独立 LiveKit 实验客户端均已移除；KikiVoiceOps 管理端继续独立保留在 `../experiments/livekit/admin-ios/`。
 
-## 功能特性
+## 验证范围
 
-RTCube 基于 `AtomicXCore` 提供了以下核心业务场景的完整 UI 实现：
-
-  * **视频/语音直播 (Live Streaming):**
-
-      * **直播列表管理:** 拉取直播列表。
-      * **开播与观看:** 创建直播间、加入直播。
-      * **麦位管理:** 支持麦位管理，观众上麦/下麦。
-      * **主播连麦 (Co-hosting):** 支持主播与主播（跨房）连麦。
-      * **主播 PK (Battle):** 支持主播间 PK 互动。
-      * **互动功能:**
-          * **礼物:** 支持发送和接收礼物。
-          * **点赞:** 支持直播间点赞。
-          * **弹幕:** 支持发送和接收弹幕消息。
-
-  * **音视频通话 (Calling):**
-
-      * **基础通话:** 支持 1v1 及多人音视频通话。
-      * **通话管理:** 支持接听、拒绝、挂断。
-      * **设备管理:** 支持通话中的摄像头和麦克风控制。
-      * **通话记录:** 支持查询和删除通话记录。
-
-  * **多人会议 (Room):**
-
-      * **快速会议:** 支持一键创建/加入多人会议。
-      * **邀请入会:** 支持邀请成员加入当前会议。
-      * **会中管控:** 支持主持人对成员的音视频、麦位、成员列表进行管理。
-      * **共享屏幕:** 支持会中屏幕共享。
-
-## 快速开始
-
-### 1. 环境准备
-
-  * Xcode 14.0 或更高版本
-  * iOS 14.0 或更高版本
-  * CocoaPods（请确保已安装）
-
-### 2. 克隆仓库
-
-```bash
-git clone https://github.com/Tencent-RTC/TUIKit_iOS.git
-```
-
-### 3. 安装依赖
-
-`RTCube` 依赖 `TUILiveKit`、`TUICallKit`、`TUIRoomKit` 等多个组件库。您需要使用 CocoaPods 来安装这些依赖。
-
-```bash
-cd TUIKit_iOS/application
-pod install
-```
-
-### 4. 运行项目
-
-使用 Xcode 打开生成的 `RTCube.xcworkspace` 文件，在 `application/Debug/GenerateTestUserSig.swift` 中配置您的腾讯云 `SDKAPPID`、`UserID` 和 `UserSig`，然后编译并运行 `RTCubeLab` scheme。
-
-## 架构
-
-`RTCube` 的架构设计遵循分层原则：
-
-1.  **TUILiveKit / TUICallKit / TUIRoomKit (UI 层):**
-
-      * 提供预制的、可复用的 UI 组件。
-      * 负责视图（View）的展示和用户交互。
-      * 订阅 `AtomicXCore` 中的 `Store` 来获取状态并更新 UI。
-      * 调用 `AtomicXCore` 中的 `Store` 方法来响应用户操作。
-
-2.  **AtomicXCore (核心层):**
-
-      * **Stores:** (如 `LiveListStore`, `CallListStore`, `ConversationListStore`) 负责管理业务逻辑和状态（State）。
-      * **Core Views:** (如 `LiveCoreView`, `ParticipantView`) 提供了驱动视频渲染的无 UI 视图容器。
-      * **Engine 封装:** 封装了底层的 `RTCRoomEngine`, `TUICallEngine` 和 `IMSDK`，提供统一的 API。
-
-3.  **Tencent Cloud SDK (引擎层):**
-
-      * `RTCRoomEngine` & `TUICallEngine`: 提供底层的实时音视频能力。
-      * `IMSDK`: 提供即时通讯能力。
-
-## 文档
-
-* [AtomicXCore 文档](https://tencent-rtc.github.io/TUIKit_iOS/documentation/atomicxcore)
-* [官方文档 - 快速集成指南](https://cloud.tencent.com/document/product/647/106536)
-
-## 许可证
-
-本项目遵循 [MIT 许可证](https://www.google.com/search?q=LICENSE)。
-
------
+常规测试以本地 fixture 为主。公网服务、真机和媒体集成测试需要显式环境开关及相应凭据，开启前阅读对应测试的约定；跳过集成测试不代表线上行为已通过。本次 iOS 清理不发布后端，也不修改正式协议正文。

@@ -1,10 +1,30 @@
-# LiveKit 独立实验
+# KikiTalk 语聊服务与运维目录
 
-> **当前切换（2026-10-19）：** 当前工作区正在将本目录已验证的语聊能力移植至原 `application/RTCube.xcworkspace` 的 KikiTalk。正式应用保留 Apple 登录，账号服务为 `kiki.group`（`43.138.219.160`），自建语聊为 `furby.top`（`139.224.50.108`）；语聊使用 `VOICE_AUTH_MODE=account`，64 人总准入上限、最多4房且每房32人。独立运维 App 已实现两台服务器分别登录及分别展示指标。 服务器实际部署、备份、协议及真机待验状态见 [LiveKit 停机切换](../../docs/LIVEKIT_CUTOVER.zh-CN.md)。
+更新日期：2026-10-22。目录名沿用 LiveKit 实验阶段，但下列代码仍被当前产品使用。
 
-> **当前运维认证：** 运维 App 现在只向 `kiki.group` 进行 Passkey 注册/登录，由中央运维身份的独立 ACL 决定能否查看账号或语聊看板；新身份及第一位注册者均无默认权限。生产两端设置 `ADMIN_AUTH_MODE=passkey`，旧口令和 `/admin/v1` 会话不可用于生产，也没有密码回退。`furby.top` 只接收账号服务器签名的只读聚合请求，不另存运维姓名或权限。操作步骤与验收见 [运维 Passkey 说明](../../docs/OPS_PASSKEYS.zh-CN.md)。
+| 目录 | 当前职责 |
+| --- | --- |
+| `backend/` | 正式语聊业务 API、房间准入/麦位/聊天/礼物、LiveKit 信令网关 |
+| `admin-ios/` | 独立 KikiVoiceOps 管理 App；Passkey 运维身份、看板和社区治理 |
+| `infra/` | 语聊媒体/API 配置、部署、维护、备份与探针 |
+| `shared/` | 跨服务契约、语聊协议副本 |
+| `validation/` | 本地生成、按日期归档的验收证据，未纳入 Git |
 
-## 历史版本说明
+用户 App 的唯一主线在 `application/Demo/`。打开仓库根目录的 `application/RTCube.xcworkspace`，选择 **KikiTalk**；管理端打开 `admin-ios/KikiVoiceOps.xcworkspace`，选择 **KikiVoiceOps**。用户端依赖通过 SPM 管理，管理端使用系统框架。
+
+旧 `ios/KikiLiveKitLab` 实验客户端和 `vendor/` 腾讯参考快照已在本次 iOS 清理移除。正式 Apple 账号由 `kiki.group` 认证，再桥接到 `furby.top` 的独立语聊会话；生产使用 `VOICE_AUTH_MODE=account`。运维只向 `kiki.group` 进行 Passkey 登录，由中央身份的逐项 ACL 授权。此清理没有部署后端、变更生产配置或修改正式协议。
+
+当前开发入口见[项目接手指南](../../docs/PROJECT_HANDOVER.zh-CN.md)和[架构说明](../../docs/ARCHITECTURE.zh-CN.md)；服务及管理端各自说明见[语聊后端](backend/README.zh-CN.md)、[管理 App](admin-ios/README.zh-CN.md)。
+
+## 归档范围
+
+**以下保留 2026-10-19 独立实验阶段的原始配置、运行步骤及验收。** 其中旧 iOS 路径、邀请码身份、vendor、双口令运维、固定协议版本和当时的功能限制已不构成当前入口；相关工程已移除，不能执行旧客户端命令。实验后台、infra、shared 仍保留，具体行为以其当前代码与生产配置为准。历史通过数量、截图、证书及部署状态不代表 2026-10-22 重新验证。下文 `validation/` 链接指本地归档证据，该目录与根 `output/` 均未纳入 Git，克隆仓库不会自动取得。
+
+> **归档：切换初期说明（2026-10-19）：** 当前工作区正在将本目录已验证的语聊能力移植至原 `application/RTCube.xcworkspace` 的 KikiTalk。正式应用保留 Apple 登录，账号服务为 `kiki.group`（`43.138.219.160`），自建语聊为 `furby.top`（`139.224.50.108`）；语聊使用 `VOICE_AUTH_MODE=account`，64 人总准入上限、最多4房且每房32人。独立运维 App 已实现两台服务器分别登录及分别展示指标。 服务器实际部署、备份、协议及真机待验状态见 [LiveKit 停机切换](../../docs/LIVEKIT_CUTOVER.zh-CN.md)。
+
+> **归档：后续运维认证说明：** 运维 App 现在只向 `kiki.group` 进行 Passkey 注册/登录，由中央运维身份的独立 ACL 决定能否查看账号或语聊看板；新身份及第一位注册者均无默认权限。生产两端设置 `ADMIN_AUTH_MODE=passkey`，旧口令和 `/admin/v1` 会话不可用于生产，也没有密码回退。`furby.top` 只接收账号服务器签名的只读聚合请求，不另存运维姓名或权限。操作步骤与验收见 [运维 Passkey 说明](../../docs/OPS_PASSKEYS.zh-CN.md)。
+
+## 归档：独立实验阶段说明
 
 下文保留独立实验阶段的配置、功能与历史验收。切换后原 iOS 和账号后台已接入自建语聊，不再适用“原项目不变”的历史边界；生产 `account` 模式也不接受下文实验昵称/邀请码登录。独立实验 App 若需继续使用，必须另配明确的 lab 环境，不能按旧步骤登录已切换的正式语聊服务。旧历史测试与图片不作为本轮发布验收。
 
@@ -34,7 +54,7 @@ P1 提供房间最小化和返回同一连接、HTTP 权威聊天与幂等发送
 
 实验 App 使用独立 Bundle ID、Keychain service、协议确认和用户偏好存储，不覆盖正式 App 或恢复其账号。实验后台不导入正式后台代码、环境文件或数据库。
 
-## 在 Xcode 运行
+## 归档：实验客户端运行步骤（工程已移除）
 
 在仓库根目录执行：
 

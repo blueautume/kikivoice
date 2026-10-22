@@ -1,5 +1,7 @@
 # 房间错误与警告诊断
 
+> **证据位置：** 下文 `output/`、`experiments/livekit/validation/` 的截图和结果为本地归档，未纳入 Git，克隆仓库不会自动取得；保留链接用于追溯当时记录。
+
 2026-10-19。面向 KikiTalk 正式 iOS 目标及独立 KikiVoiceOps；账号服务 `kiki.group` 与语聊服务 `furby.top` 保持分开。此次不调整承载上限、媒体参数或超时策略。
 
 ## 本次问题与证据边界

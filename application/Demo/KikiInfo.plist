@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSCameraUsageDescription</key>
-	<string>仅在你主动使用视频功能时用于采集并发送画面。当前版本未开放视频功能，不会申请相机权限或采集图像。</string>
     <key>CFBundleDevelopmentRegion</key>
     <string>zh-Hans</string>
     <key>UILaunchStoryboardName</key>
