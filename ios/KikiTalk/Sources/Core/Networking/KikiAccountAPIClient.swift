@@ -155,6 +155,11 @@ final class KikiAccountAPIClient: @unchecked Sendable {
         return try await send("/v1/me", method: "PATCH", body: Body(notificationsEnabled: enabled), token: token)
     }
 
+    func updateNotificationContent(hidden: Bool, token: String) async throws -> KikiUser {
+        struct Body: Encodable { let hideNotificationContent: Bool }
+        return try await send("/v1/me", method: "PATCH", body: Body(hideNotificationContent: hidden), token: token)
+    }
+
     func pushStatus(token: String) async throws -> KikiPushStatus {
         try await request("/v1/push/status", token: token)
     }

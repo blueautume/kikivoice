@@ -14,6 +14,11 @@ import Combine
     @Published private(set) var favoriteIDs: Set<String> = []
     @Published private(set) var recentRoomIDs: [String] = []
     @Published private(set) var notificationsEnabled = false
+    @Published private(set) var hideNotificationContent = false
+    @Published private(set) var isUpdatingNotificationContent = false
+    private var notificationContentRevision = 0
+    private var notificationContentRequest: UUID?
+    var notificationContentHiddenForPresentation: Bool { hideNotificationContent || isUpdatingNotificationContent }
     weak var pushController: KikiPushController?
     @Published private(set) var rooms: [KikiRoom] = []
     @Published private(set) var lastSuccessfulRoomTitle: String?
@@ -809,14 +814,16 @@ import Combine
     func updateProfile(name: String, bio: String, avatarIndex: Int, jpegData: Data? = nil, clearCustomAvatar: Bool = false) async throws {
         try requireAccess()
         guard let token else { throw KikiAPIError.server(401, "请先登录。") }
+        let contentRevision = notificationContentRevision
         let updated = try await performAPI { try await api.updateProfile(name: name, bio: bio, avatarIndex: clearCustomAvatar && jpegData == nil ? avatarIndex : nil, token: token) }
         try requireAccess(token: token)
-        apply(updated)
+        apply(updated, contentRevision: contentRevision)
         profileNeedsRTCSync = true
         if let jpegData {
+            let contentRevision = notificationContentRevision
             let uploaded = try await performAPI { try await api.uploadAvatar(jpegData: jpegData, token: token) }
             try requireAccess(token: token)
-            apply(uploaded)
+            apply(uploaded, contentRevision: contentRevision)
         }
         // Profile is already committed to our server. Retry SDK synchronization
         // at next login if its transient request fails rather than losing edits.
@@ -831,14 +838,48 @@ import Combine
     func setNotificationsEnabled(_ value: Bool) async throws {
         try requireAccess()
         guard let token else { throw KikiAPIError.server(401, "请先登录。") }
+        let contentRevision = notificationContentRevision
         let updated = try await performAPI { try await api.updateNotifications(value, token: token) }
         try requireAccess(token: token)
-        apply(updated)
+        apply(updated, contentRevision: contentRevision)
+    }
+
+    func setHideNotificationContent(_ value: Bool) async throws {
+        try requireAccess()
+        guard let token else { throw KikiAPIError.server(401, "请先登录。") }
+        guard !isUpdatingNotificationContent else { throw CancellationError() }
+        let generation = sessionGeneration, request = UUID()
+        notificationContentRevision &+= 1
+        notificationContentRequest = request
+        isUpdatingNotificationContent = true
+        // While saving, incoming previews stay generic. Cancellation/failure
+        // never restores a detailed banner that was already on screen.
+        pushController?.notificationContentPreferenceDidChange()
+        defer {
+            if notificationContentRequest == request {
+                notificationContentRevision &+= 1
+                notificationContentRequest = nil
+                isUpdatingNotificationContent = false
+            }
+        }
+        let updated = try await performAPI { try await api.updateNotificationContent(hidden: value, token: token) }
+        try requireAccess(generation: generation, token: token)
+        guard notificationContentRequest == request else { throw CancellationError() }
+        hideNotificationContent = updated.hideNotificationContent
+        user?.hideNotificationContent = updated.hideNotificationContent
     }
 
     func pushStatus() async throws -> KikiPushStatus {
+        let contentRevision = notificationContentRevision
         let status = try await socialRequest { try await self.api.pushStatus(token: $0) }
         notificationsEnabled = status.enabled
+        if contentRevision == notificationContentRevision, !isUpdatingNotificationContent,
+           hideNotificationContent != status.hideNotificationContent {
+            hideNotificationContent = status.hideNotificationContent
+            user?.hideNotificationContent = status.hideNotificationContent
+            notificationContentRevision &+= 1
+            pushController?.notificationContentPreferenceDidChange()
+        }
         return status
     }
     func registerPush(installationID: String, revision: Int64, deviceToken: String, environment: String, permission: String) async throws -> KikiPushReceipt {
@@ -977,10 +1018,15 @@ import Combine
         return closed
     }
 
-    private func apply(_ user: KikiUser) {
+    private func apply(_ user: KikiUser, contentRevision: Int? = nil) {
         if userID != user.id {
             lastSuccessfulRoomTitle = identity.read(roomTitleStorageKey(for: user.id)).flatMap { try? KikiRoomTitlePolicy.validated($0) }
         }
+        var user = user
+        if isUpdatingNotificationContent || (contentRevision != nil && contentRevision != notificationContentRevision) {
+            user.hideNotificationContent = hideNotificationContent
+        }
+        let contentChanged = hideNotificationContent != user.hideNotificationContent
         self.user = user
         if let token { incidents.bind(userID: user.id, token: token) }
         userID = user.id
@@ -990,6 +1036,11 @@ import Combine
         customAvatarURL = user.avatarURL
         needsNickname = user.needsNickname
         notificationsEnabled = user.notificationsEnabled
+        hideNotificationContent = user.hideNotificationContent
+        if contentChanged {
+            notificationContentRevision &+= 1
+            pushController?.notificationContentPreferenceDidChange()
+        }
     }
 
     private func ensureSDKSession() async throws {
@@ -1007,10 +1058,11 @@ import Combine
         guard let token else { throw KikiAPIError.server(401, "登录已过期，请重新登录。") }
         let generation = sessionGeneration
         let task = Task { @MainActor in
+            let contentRevision = notificationContentRevision
             let refreshed = try await performAPI { try await api.refresh(token: token) }
             try Task.checkCancellation()
             try requireAccess(generation: generation, token: token)
-            apply(refreshed.user)
+            apply(refreshed.user, contentRevision: contentRevision)
             let session = try await performAPI { try await api.voiceSession(token: token) }
             try requireAccess(generation: generation, token: token)
             guard session.user.id == refreshed.user.id, !session.token.isEmpty,
@@ -1229,7 +1281,8 @@ import Combine
                 notificationForegroundScope = scope
                 let candidates = result.notifications.filter(\.isUnread)
                     .sorted { $0.createdAt < $1.createdAt }
-                    .map { KikiForegroundNotificationCandidate(id: $0.id, kind: .notifications) }
+                    .map { KikiForegroundNotificationCandidate(id: $0.id, kind: .notifications,
+                        preview: .init(title: $0.actor?.name ?? $0.title, message: $0.text)) }
                 push.receiveForegroundCandidates(candidates, scope: scope, baseline: baseline)
             }
         }
@@ -1360,7 +1413,9 @@ import Combine
                     .compactMap { conversation -> KikiForegroundNotificationCandidate? in
                         guard conversation.unreadCount > 0, let message = conversation.lastMessage,
                               message.senderID != userID else { return nil }
-                        return .init(id: message.id, kind: .direct(personID: conversation.person.id))
+                        let preview: KikiForegroundNotificationPreview? = message.senderID == conversation.person.id
+                            ? .init(title: conversation.person.name, message: message.text) : nil
+                        return .init(id: message.id, kind: .direct(personID: conversation.person.id), preview: preview)
                     }
                 push.receiveForegroundCandidates(candidates, scope: scope, baseline: baseline)
             }
@@ -1623,6 +1678,10 @@ import Combine
         isAuthenticated = false
         profileName = ""; bio = ""; avatarIndex = 0; customAvatarURL = nil; needsNickname = false; userID = ""
         notificationsEnabled = false
+        notificationContentRevision &+= 1
+        notificationContentRequest = nil
+        isUpdatingNotificationContent = false
+        hideNotificationContent = false
         lastSuccessfulRoomTitle = nil
         favoriteIDs = []; recentRoomIDs = []; rooms = []
         roomMetadata = []; library = KikiLibrary(favorites: [], recents: [], created: [])

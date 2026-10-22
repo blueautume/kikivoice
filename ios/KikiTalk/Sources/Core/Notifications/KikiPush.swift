@@ -21,6 +21,17 @@ struct KikiPushStatus: Decodable {
     let registered: Bool
     let badgeCount: Int
     let accountTag: String
+    let hideNotificationContent: Bool
+
+    private enum CodingKeys: String, CodingKey { case enabled, registered, badgeCount, accountTag, hideNotificationContent }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try values.decode(Bool.self, forKey: .enabled)
+        registered = try values.decode(Bool.self, forKey: .registered)
+        badgeCount = try values.decode(Int.self, forKey: .badgeCount)
+        accountTag = try values.decode(String.self, forKey: .accountTag)
+        hideNotificationContent = try values.decodeIfPresent(Bool.self, forKey: .hideNotificationContent) ?? false
+    }
 }
 struct KikiPushReceipt: Decodable { let ok: Bool; let accountTag: String; let registered: Bool }
 struct KikiPushRoute: Decodable {
@@ -63,6 +74,7 @@ struct KikiForegroundNotificationCandidate: Equatable {
     enum Kind: Equatable { case direct(personID: String), notifications }
     let id: String
     let kind: Kind
+    var preview: KikiForegroundNotificationPreview? = nil
 
     fileprivate var key: String {
         switch kind {
@@ -77,12 +89,29 @@ struct KikiForegroundNotificationCandidate: Equatable {
     }
 }
 
+/// Only accepted HTTPS inbox DTOs construct this preview. Missing names or
+/// content retain the generic fallback rather than using a remote push body.
+struct KikiForegroundNotificationPreview: Equatable {
+    let title: String
+    let message: String
+
+    init?(title: String, message: String) {
+        let title = title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        let message = message.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !title.isEmpty, !message.isEmpty else { return nil }
+        self.title = String(title.prefix(80))
+        self.message = String(message.prefix(240))
+    }
+}
+
 struct KikiForegroundNotice: Identifiable, Equatable {
     let id = UUID()
     let scope: KikiForegroundNotificationScope
     let candidate: KikiForegroundNotificationCandidate
-    var title: String { "收到新消息" }
+    var hideContent = false
+    var title: String { hideContent ? "收到新消息" : candidate.preview?.title ?? "收到新消息" }
     var message: String {
+        if !hideContent, let preview = candidate.preview { return preview.message }
         if case .direct = candidate.kind { return "收到一条新私信，可在消息页查看。" }
         return "有新的互动消息，可在消息页查看。"
     }
@@ -342,7 +371,8 @@ enum KikiPushEnvironment {
         for candidate in candidates {
             if foregroundGate.accepts(candidate, scope: scope, currentScope: current, context: context,
                                       notificationsEnabled: enabled, baseline: baseline) {
-                foregroundNotice = .init(scope: scope, candidate: candidate)
+                foregroundNotice = .init(scope: scope, candidate: candidate,
+                                         hideContent: store?.notificationContentHiddenForPresentation ?? true)
             }
         }
     }
@@ -355,6 +385,16 @@ enum KikiPushEnvironment {
             foregroundNotice = nil; return
         }
         if context.isReading(notice.candidate) { foregroundNotice = nil }
+    }
+
+    /// Preference changes remove an already visible preview without resetting
+    /// event deduplication or replaying it when details are enabled again.
+    func notificationContentPreferenceDidChange() {
+        foregroundNotice = nil
+        if let store, store.notificationContentHiddenForPresentation {
+            system.clearNotifications()
+            system.setBadge(store.notificationsEnabled && permission.permitsDelivery ? store.unreadMessageCount : 0)
+        }
     }
 
     func dismissForegroundNotice(_ id: UUID? = nil) {
@@ -520,18 +560,29 @@ struct KikiPushPreferencesView: View {
     @ObservedObject var store: KikiAppStore
     @ObservedObject var push: KikiPushController
     @Environment(\.dismiss) private var dismiss
+    @State private var contentPreferenceError: String?
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     Label("消息提醒", systemImage: "bell.badge").font(.title3.weight(.semibold))
-                    Text("收到私信或新的社区互动时，及时提醒你。通知预览不显示对方姓名和消息正文。")
+                    Text("收到私信或新的社区互动时，及时提醒你。开启隐藏消息内容后，通知将不显示对方姓名和消息正文。")
                         .foregroundStyle(KikiPalette.secondary)
                 }
                 Section("提醒设置") {
                     Toggle("允许账号接收通知", isOn: Binding(get: { store.notificationsEnabled }, set: { enabled in
                         Task { if enabled { await push.enable() } else { await push.disable() } }
                     })).disabled(push.isBusy).accessibilityIdentifier("push.accountToggle")
+                    Toggle("隐藏消息内容", isOn: Binding(get: { store.hideNotificationContent }, set: { hidden in
+                        contentPreferenceError = nil
+                        let account = store.pushSessionKey
+                        Task {
+                            guard account != nil, account == store.pushSessionKey else { return }
+                            do { try await store.setHideNotificationContent(hidden) }
+                            catch is CancellationError { }
+                            catch { if account == store.pushSessionKey { contentPreferenceError = error.localizedDescription } }
+                        }
+                    })).disabled(store.isUpdatingNotificationContent).accessibilityIdentifier("push.hideContentToggle")
                     LabeledContent("本机系统权限", value: push.permission.label)
                     if push.permission == .denied {
                         Link("前往系统设置允许通知", destination: URL(string: UIApplication.openSettingsURLString)!)
@@ -542,6 +593,7 @@ struct KikiPushPreferencesView: View {
                             .foregroundStyle(KikiPalette.secondary)
                     }
                     if let message = push.message { Text(message).font(.footnote).foregroundStyle(KikiPalette.secondary) }
+                    if let contentPreferenceError { Text(contentPreferenceError).font(.footnote).foregroundStyle(KikiPalette.secondary) }
                 }
                 Section {
                     Text("账号开关会同步到你登录的其他设备。关闭通知不影响 App 内的私信和互动记录。系统是否展示横幅、声音或角标，还取决于本机的通知设置和专注模式。")
@@ -551,6 +603,7 @@ struct KikiPushPreferencesView: View {
                 .navigationTitle("通知设置").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
                 .task { await push.refresh() }
+                .onChange(of: store.pushSessionKey) { _ in contentPreferenceError = nil }
         }.tint(KikiPalette.purple)
     }
 }

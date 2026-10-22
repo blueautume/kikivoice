@@ -8,11 +8,12 @@ struct KikiUser: Codable, Equatable {
     var bio: String
     var avatarIndex: Int
     var notificationsEnabled: Bool
+    var hideNotificationContent: Bool
     var avatarURL: String?
     var needsNickname: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case id, sdkUserID, name, bio, avatarIndex, notificationsEnabled, avatarURL, needsNickname
+        case id, sdkUserID, name, bio, avatarIndex, notificationsEnabled, hideNotificationContent, avatarURL, needsNickname
     }
 
     init(from decoder: Decoder) throws {
@@ -23,6 +24,7 @@ struct KikiUser: Codable, Equatable {
         bio = try values.decode(String.self, forKey: .bio)
         avatarIndex = try values.decode(Int.self, forKey: .avatarIndex)
         notificationsEnabled = try values.decode(Bool.self, forKey: .notificationsEnabled)
+        hideNotificationContent = try values.decodeIfPresent(Bool.self, forKey: .hideNotificationContent) ?? false
         avatarURL = try values.decodeIfPresent(String.self, forKey: .avatarURL)
         needsNickname = try values.decodeIfPresent(Bool.self, forKey: .needsNickname) ?? false
     }

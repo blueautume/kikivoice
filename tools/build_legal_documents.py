@@ -140,6 +140,7 @@ def outputs(source: dict) -> tuple[dict[Path, bytes], str]:
     result = {
         ROOT / "ios/KikiTalk/Resources/KikiLegalDocuments.json": resource,
         ROOT / "backend/app/legal_documents.json": resource,
+        ROOT / "experiments/livekit/shared/legal_documents.json": resource,
     }
     for document in source["documents"]:
         result[WEB_ROOT / ROUTES[document["id"]].strip("/") / "index.html"] = page_html(document, source, digest, False)

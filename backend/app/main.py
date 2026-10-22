@@ -213,6 +213,7 @@ class ProfileUpdate(Model):
     bio: str | None = Field(default=None, max_length=80)
     avatarIndex: int | None = Field(default=None, strict=True, ge=0, le=11)
     notificationsEnabled: bool | None = Field(default=None, strict=True)
+    hideNotificationContent: bool = Field(default=False, strict=True)
 
     @field_validator("name")
     @classmethod
@@ -272,6 +273,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   avatar_filename TEXT,
   needs_nickname INTEGER NOT NULL DEFAULT 1,
   notifications INTEGER NOT NULL DEFAULT 1,
+  hide_notification_content INTEGER NOT NULL DEFAULT 0 CHECK(hide_notification_content IN (0,1)),
   created_at INTEGER NOT NULL
 );
 -- Apple subject is never exposed as the public profile ID or Tencent SDK ID.
@@ -399,7 +401,8 @@ def serialize_user(row, settings):
             "name": row["name"], "bio": row["bio"], "avatarIndex": row["avatar_index"],
             "avatarURL": avatar_url(row["avatar_filename"], settings),
             "needsNickname": bool(row["needs_nickname"]),
-            "notificationsEnabled": bool(row["notifications"])}
+            "notificationsEnabled": bool(row["notifications"]),
+            "hideNotificationContent": bool(row["hide_notification_content"])}
 
 
 def serialize_room(row, account_id, settings):
@@ -593,6 +596,8 @@ def create_app(settings: Settings | None = None):
             if settings.qa_gifts_enabled and db.execute("""SELECT 1 FROM identities WHERE provider!='qa' LIMIT 1""").fetchone():
                 raise RuntimeError("礼物测试数据库不能包含正式账号")
             account_columns = {row["name"] for row in db.execute("PRAGMA table_info(accounts)")}
+            if "hide_notification_content" not in account_columns:
+                db.execute("ALTER TABLE accounts ADD COLUMN hide_notification_content INTEGER NOT NULL DEFAULT 0 CHECK(hide_notification_content IN (0,1))")
             if "avatar_filename" not in account_columns:
                 db.execute("ALTER TABLE accounts ADD COLUMN avatar_filename TEXT")
             if "needs_nickname" not in account_columns:
@@ -1067,6 +1072,9 @@ def create_app(settings: Settings | None = None):
             session = db.execute("SELECT * FROM sessions WHERE token_hash=?", (user["token_hash"],)).fetchone()
             current = db.execute("SELECT * FROM accounts WHERE account_id=?", (user["account_id"],)).fetchone()
             profile = serialize_user(current, settings)
+            # This account-only privacy preference is not part of the strict
+            # account-to-voice public profile contract.
+            profile.pop("hideNotificationContent")
             consent_epoch = latest_consent(db, user["account_id"])["event_id"]
             last_withdrawal_epoch = db.execute("""SELECT COALESCE(MAX(event_id),0) FROM legal_consent_events
                 WHERE account_id=? AND accepted=0""", (user["account_id"],)).fetchone()[0]
@@ -1174,7 +1182,7 @@ def create_app(settings: Settings | None = None):
         fields = payload.model_dump(exclude_unset=True, exclude_none=True)
         public_text.check_profile(name=fields.get("name"), bio=fields.get("bio"))
         columns = {"name": "name", "bio": "bio", "avatarIndex": "avatar_index",
-                   "notificationsEnabled": "notifications"}
+                   "notificationsEnabled": "notifications", "hideNotificationContent": "hide_notification_content"}
         old_avatar = None
         with database(settings) as db:
             db.execute("BEGIN IMMEDIATE")

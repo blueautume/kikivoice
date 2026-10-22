@@ -1,8 +1,10 @@
 # KikiTalk 项目结构与接手指南
 
-更新日期：2026-10-22（iOS 清理、工程更名与职责分组）。面向准备逐步接手开发和运维的项目所有者。
+更新日期：2026-10-22（iOS 清理、工程分组及通知内容偏好发布）。面向准备逐步接手开发和运维的项目所有者。
 
-> 2026-10-22 服务端补齐发布：语聊 API 已同步当前 `main.py` 与新增 `room_catalog.py`，上线房主修改房间名称、默认房间名称及房间目录变更等待接口。账号业务源码、两端 r12 协议与官网 68 个文件均与本地一致；账号 HTTP/2 依赖声明已同步，已安装包版本一致，无需升级依赖或重启账号服务。主 App 当前为 `1.0.16 (13)`，iOS 界面变更仍需安装新版 App。
+> 当前通知内容偏好已发布：账号代码、两端 `2026-10-22-r13` 协议与官网八个配套页面上线，18 项正常 TLS 公网核验通过。主 App `1.0.21 (18)` 的 Debug 与 Release device（未签名）构建通过，iPhone 全量 353 项（9 跳过、0 失败）、iPad 通知专项 40 项通过；新增开关及前台内容需要安装新版 App，现有用户需重新确认 r13，本轮未进行真机通知发送验证。完整版本、测试与部署证据见 [系统通知记录](APNS.zh-CN.md)。
+
+> 历史：2026-10-22 较早服务端补齐发布，语聊 API 同步当时 `main.py` 与新增 `room_catalog.py`，上线房主修改房间名称、默认房间名称及房间目录变更等待接口。账号业务源码、两端 r12 协议与官网 68 个文件当时均与本地一致；账号 HTTP/2 依赖声明已同步，已安装包版本一致，无需升级依赖或重启账号服务。当时主 App 为 `1.0.16 (13)`，iOS 界面变更仍需安装新版 App。
 >
 > 发布前本地账号 423 项、语聊 453 项测试通过。发布后语聊源码、两端公网健康、目录接口匿名 401、数据库完整性与外键、目录表及触发器均通过；Nginx 配置与环境凭据保持原值。语聊回滚源码位于服务器私有目录 `/root/kiki-p0-releases/20261022T082603720297Z/previous`；账号依赖声明备份位于 `/root/kiki-source-sync/20261022T082603720297Z/previous`。未回灌数据库或用真实账号发送测试消息。
 
@@ -383,16 +385,16 @@ Apple 登录、APNs、系统 Passkey、开发者签名和域名证书属于外�
 
 ### 协议源文件与多个副本
 
-正式主线源文件为 [legal/documents.json](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/legal/documents.json)，[build_legal_documents.py](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/tools/build_legal_documents.py) 生成主 App 资源、账号后端资源和官网当前页及版本归档。
+正式主线源文件为 [legal/documents.json](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/legal/documents.json)，[build_legal_documents.py](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/tools/build_legal_documents.py) 统一生成主 App、账号后端、语聊 shared 资源，以及官网四份当前页与四份版本归档；`--check` 同时检查全部 11 份输出。
 
-当前本地版本为：
+推送预览偏好版本 `2026-10-22-r13` 已配套发布，hash `d4df1fe9c3c9726e236a1fb99f447f8c53770154fa298264f3f1a937644688d3`。账号、语聊 shared 及 App 三份资源字节一致；双 API 公开完整文本与官网当前／r13 留存页均已核验，官网全部 72 文件与预期一致。发布前 r12 [基线](../output/push-preview-2026-10-22/preflight.json) 和 [发布后只读检查](../output/push-preview-2026-10-22/postdeploy.json) 为本地生成记录，不纳入 Git。
 
-| 位置 | 协议版本 |
+| 位置 | 当前协议版本 |
 | --- | --- |
-| 正式源、主 App、账号服务 | `2026-10-20-r12` |
-| `experiments/livekit/shared/legal_documents.json` | `2026-10-20-r11` |
+| 正式源、主 App、账号服务 | `2026-10-22-r13` |
+| `experiments/livekit/shared/legal_documents.json` | `2026-10-22-r13` |
 
-语聊后端默认从 `shared/legal_documents.json` 读取，部署可通过 `LEGAL_DOCUMENTS_PATH` 指定。**主线生成脚本不自动覆盖语聊 shared 副本**；其 `--check` 通过不能证明两端协议已同步。独立实验 App 的协议资源随该客户端移除；本次清理没有修改上述正式文本及版本。下一次相关发布需要按选定版本同步两端、客户端和网页，并保留已发布的历史协议。
+语聊后端默认读取 shared，部署可通过 `LEGAL_DOCUMENTS_PATH` 指定。升级需要协调账号、语聊 API 启动时协议快照和官网；现有用户需重新确认。保留已发布 r12 及更早归档，不能以文件覆盖冒充旧版本同意或恢复旧数据库覆盖新同意记录。独立实验 App 的协议资源已随该客户端移除。
 
 ### 当前入口与历史材料
 

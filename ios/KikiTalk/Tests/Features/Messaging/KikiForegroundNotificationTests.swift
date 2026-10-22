@@ -121,6 +121,25 @@ final class KikiForegroundNotificationTests: XCTestCase {
         XCTAssertFalse((notice.title + notice.message).contains("private"))
     }
 
+    func testAuthenticatedPreviewIsVisibleByDefaultAndHiddenPreferenceUsesGenericContent() throws {
+        let candidate = KikiForegroundNotificationCandidate(id: "verified-event", kind: .direct(personID: "friend"),
+            preview: .init(title: "消息好友 👨‍👩‍👧‍👦", message: "今晚一起听歌吗？🎵"))
+        let visible = KikiForegroundNotice(scope: account, candidate: candidate)
+        XCTAssertEqual(visible.title, "消息好友 👨‍👩‍👧‍👦")
+        XCTAssertEqual(visible.message, "今晚一起听歌吗？🎵")
+        let hidden = KikiForegroundNotice(scope: account, candidate: candidate, hideContent: true)
+        XCTAssertEqual(hidden.title, "收到新消息")
+        XCTAssertEqual(hidden.message, "收到一条新私信，可在消息页查看。")
+        XCTAssertFalse((hidden.title + hidden.message).contains("消息好友"))
+        XCTAssertFalse((hidden.title + hidden.message).contains("听歌"))
+        XCTAssertNil(KikiForegroundNotificationPreview(title: "  ", message: "body"))
+        XCTAssertNil(KikiForegroundNotificationPreview(title: "name", message: "\n\t"))
+        let emoji = "👨‍👩‍👧‍👦"
+        let bounded = try XCTUnwrap(KikiForegroundNotificationPreview(title: "好友\n昵称", message: String(repeating: emoji, count: 300)))
+        XCTAssertEqual(bounded.title, "好友 昵称")
+        XCTAssertEqual(bounded.message, String(repeating: emoji, count: 240), "Preview bounds must preserve whole extended grapheme clusters")
+    }
+
     @MainActor
     func testUnattachedControllerRejectsForegroundEventsAndCannotNavigate() async {
         let push = KikiPushController()
@@ -164,7 +183,8 @@ final class KikiForegroundNotificationTests: XCTestCase {
         try await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertTrue(textField.becomeFirstResponder())
         XCTAssertTrue(sheet.view.window === fixtureWindow)
-        let notice = KikiForegroundNotice(scope: account, candidate: direct("fixture-event"))
+        let notice = KikiForegroundNotice(scope: account, candidate: .init(id: "fixture-event", kind: .direct(personID: "friend"),
+            preview: .init(title: "消息好友的较长昵称 👨‍👩‍👧‍👦 Long display name", message: String(repeating: "今晚一起听歌吗？ Let's listen together 🎵👨‍👩‍👧‍👦 ", count: 30))))
 
         @MainActor func verifyNotice(_ scheme: ColorScheme) async throws {
             fixtureWindow.overrideUserInterfaceStyle = scheme == .dark ? .dark : .light
@@ -188,6 +208,7 @@ final class KikiForegroundNotificationTests: XCTestCase {
             let banner = overlay.bannerFrame
             XCTAssertGreaterThan(banner.width, 0)
             XCTAssertGreaterThan(banner.height, 0)
+            XCTAssertLessThan(banner.height, 200, "A long bilingual/emoji preview must remain a compact banner")
             XCTAssertNotNil(overlay.hitTest(CGPoint(x: banner.midX, y: banner.midY), with: nil))
             let outside = CGPoint(x: overlay.bounds.midX, y: overlay.bounds.maxY - 4)
             XCTAssertNil(overlay.hitTest(outside, with: nil), "Touches outside the banner must reach the sheet below")

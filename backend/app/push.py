@@ -1,8 +1,9 @@
 """Native APNs with account/session scoped bindings and a durable bounded outbox.
 
-Only opaque routing references leave this service. No message text or APNs tokens
-are stored in notification metadata or emitted in logs. APNs acceptance is not a
-read/delivery receipt; retries may duplicate alerts after an ambiguous timeout.
+Routing metadata contains only opaque references. Alert previews are resolved
+from current authorized content and the recipient's latest privacy preference;
+message text and APNs tokens are never stored in the outbox or emitted in logs.
+APNs acceptance is not a read/delivery receipt; ambiguous retries may duplicate alerts.
 """
 import hashlib
 import hmac
@@ -45,6 +46,10 @@ BINDING_TTL = 30 * DAY
 PENDING_TTL = DAY
 RECEIPT_TTL = 7 * DAY
 HOSTS = {"sandbox":"https://api.sandbox.push.apple.com", "production":"https://api.push.apple.com"}
+GENERIC_ALERT = {"title":"Kiki语聊","body":"你有新的消息，请打开应用查看。"}
+MAX_ALERT_TITLE_BYTES = 160
+MAX_ALERT_BODY_BYTES = 2048
+MAX_PAYLOAD_BYTES = 4096
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS push_installations (
  installation_hash TEXT PRIMARY KEY, revision INTEGER NOT NULL, request_hash TEXT NOT NULL,
@@ -90,6 +95,12 @@ def identifier(value):
         return str(uuid.UUID(value))
     except (ValueError, TypeError, AttributeError):
         raise HTTPException(422,"通知标识格式不正确") from None
+
+
+def preview_text(value, maximum):
+    encoded=value.encode("utf-8")
+    if len(encoded)<=maximum:return value
+    return encoded[:max(0,maximum-3)].decode("utf-8",errors="ignore")+"…"
 
 
 def validate_settings(settings):
@@ -274,12 +285,36 @@ class PushService:
             if item["login_id"] not in policy.blockedUserIDs:count+=item["n"]
         return min(9999,count)
 
+    def notification_payload(self,db,user,row,badge):
+        # Called only after destination authorization, in the same DB snapshot.
+        # No preview is cached with the queued delivery or its retry receipt.
+        alert=dict(GENERIC_ALERT)
+        if not user["hide_notification_content"]:
+            actor=db.execute("SELECT name FROM accounts WHERE account_id=?",(row["actor_id"],)).fetchone() if row["actor_id"] else None
+            if actor:alert["title"]=actor["name"]
+            if row["event_kind"]=="direct_message":
+                source=db.execute("SELECT text FROM social_messages WHERE id=? AND recipient_id=?",(row["source_id"],user["account_id"])).fetchone()
+                if source:alert["body"]=source["text"]
+            else:
+                notice=db.execute("SELECT * FROM social_notifications WHERE id=? AND recipient_id=?",(row["source_id"],user["account_id"])).fetchone()
+                if notice:
+                    alert["body"]=notice["text"]
+                    if notice["dedupe_key"] and notice["dedupe_key"].startswith("comment:"):
+                        comment=db.execute("SELECT text FROM social_comments WHERE id=? AND moment_id=? AND author_id=?",(notice["dedupe_key"][8:],notice["moment_id"],row["actor_id"])).fetchone()
+                        if comment:alert["body"]+="："+comment["text"]
+        alert={"title":preview_text(alert["title"],MAX_ALERT_TITLE_BYTES),"body":preview_text(alert["body"],MAX_ALERT_BODY_BYTES)}
+        payload={"aps":{"alert":alert,"sound":"default","badge":badge},"deliveryID":row["id"],"accountTag":self.account_tag(row["recipient_id"])}
+        # JSON escaping also consumes APNs' byte budget (quotes, newlines, etc.).
+        while len(json.dumps(payload,ensure_ascii=False,separators=(",",":"),allow_nan=False).encode("utf-8"))>MAX_PAYLOAD_BYTES:
+            alert["body"]=preview_text(alert["body"],max(3,len(alert["body"].encode("utf-8"))-128))
+        return payload
+
     def status(self,user):
         policy=self.social.policy(user)
         with self.database(self.settings) as db:
             current=self.social.check(db,user)
             registered=db.execute("SELECT 1 FROM push_devices WHERE session_hash=? AND last_seen>? AND permission IN ('authorized','provisional')",(user["token_hash"],int(self.clock())-BINDING_TTL)).fetchone()
-            return {"enabled":bool(current["notifications"]),"registered":bool(registered),"badgeCount":self.badge(db,user,policy),"accountTag":self.account_tag(user["account_id"])}
+            return {"enabled":bool(current["notifications"]),"registered":bool(registered),"badgeCount":self.badge(db,user,policy),"accountTag":self.account_tag(user["account_id"]),"hideNotificationContent":bool(current["hide_notification_content"])}
 
     def resolve(self,user,delivery_id):
         delivery_id=identifier(delivery_id)
@@ -338,6 +373,15 @@ class PushService:
             policy=self.social.policy(user)
         except Exception:
             self.finish(row,"pending","privacy_unavailable");return
+        try:
+            environment=user["environment"]
+            provider=self.provider_token(environment)
+            token=self.cipher.decrypt(user["token_encrypted"].encode()).decode()
+            if self.http is None:self.http=httpx.Client(http2=True,timeout=httpx.Timeout(8,connect=3),trust_env=False,follow_redirects=False)
+        except (OSError,ValueError,TypeError):
+            self.finish(row,"pending","provider_auth");return
+        except Exception:
+            self.finish(row,"pending","transport_error");return
         with self.database(self.settings) as db:
             now=int(self.clock())
             purge(db,now)
@@ -346,19 +390,14 @@ class PushService:
             valid = binding is not None and active is not None and self.destination(db,user,row,policy) is not None
             if valid:
                 badge=self.badge(db,user,policy)
-                encrypted=binding["token_encrypted"]
-                environment=binding["environment"]
+                payload=self.notification_payload(db,binding,row,badge)
         if not valid:
             if row["expires_at"]<=int(self.clock()):self.finish(row,"failed","expired")
             elif row["lease_until"]>int(self.clock()):self.finish(row,"cancelled")
             return
         # No SQLite transaction or lock spans policy/APNs network operations.
-        payload={"aps":{"alert":{"title":"Kiki语聊","body":"你有新的消息，请打开应用查看。"},"sound":"default","badge":badge},"deliveryID":row["id"],"accountTag":self.account_tag(row["recipient_id"])}
         collapse=self.hashed("collapse:"+row["recipient_id"]+":"+str(row["actor_id"]) if row["event_kind"]=="direct_message" else "event:"+row["event_id"])
         try:
-            provider=self.provider_token(environment)
-            token=self.cipher.decrypt(encrypted.encode()).decode()
-            if self.http is None:self.http=httpx.Client(http2=True,timeout=httpx.Timeout(8,connect=3),trust_env=False,follow_redirects=False)
             response=self.http.post(HOSTS[environment]+"/3/device/"+token,headers={"authorization":"bearer "+provider,"apns-topic":TOPIC,"apns-push-type":"alert","apns-priority":"10","apns-id":row["id"],"apns-expiration":str(row["expires_at"]),"apns-collapse-id":collapse},json=payload)
         except (OSError,ValueError,TypeError):
             self.finish(row,"pending","provider_auth");return

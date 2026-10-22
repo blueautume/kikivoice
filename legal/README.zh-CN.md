@@ -11,11 +11,17 @@ python3 tools/build_legal_documents.py
 python3 tools/build_legal_documents.py --check
 ```
 
-构建器按 UTF-8 的 `json.dumps(source, sort_keys=True, separators=(',', ':'), ensure_ascii=False)` 结果计算 SHA-256，向生成资源增加顶层 `documentHash`。iOS 和后端的资源字节完全一致；文末保留一个换行，不参与源文档哈希。
+构建器按 UTF-8 的 `json.dumps(source, sort_keys=True, separators=(',', ':'), ensure_ascii=False)` 结果计算 SHA-256，向生成资源增加顶层 `documentHash`。iOS、账号后端和语聊 shared 的资源字节完全一致；文末保留一个换行，不参与源文档哈希。
 
-输出包括 iOS 本地资源 `ios/KikiTalk/Resources/KikiLegalDocuments.json`、后端资源 `backend/app/legal_documents.json`、官网 4 个当前页面与 4 个版本留存页面。网站只依赖本站 CSS/SVG，不加载第三方字体、脚本、分析或表单。正文中的 HTTPS 链接仅供用户主动查阅参考规则。
+输出共 11 份，包括 iOS 本地资源 `ios/KikiTalk/Resources/KikiLegalDocuments.json`、账号后端资源 `backend/app/legal_documents.json`、语聊资源 `experiments/livekit/shared/legal_documents.json`、官网 4 个当前页面与 4 个版本留存页面。`--check` 同时核对三份 JSON 资源和八份当前版本网页；历史留存页不会被新版本覆盖。网站只依赖本站 CSS/SVG，不加载第三方字体、脚本、分析或表单。正文中的 HTTPS 链接仅供用户主动查阅参考规则。
 
 主体、联系邮箱、年龄条件、版本和协议结构缺失，或含常见待填占位词时会终止构建。构建成功仅表示内容结构及资源一致，不等于法律审查、云端配置核验或 App Store 审核已完成。
+
+## 2026-10-22 推送内容偏好（r13，已部署）
+
+当前主源及本地生成物为 `2026-10-22-r13`，文档集合 SHA-256 为 `d4df1fe9c3c9726e236a1fb99f447f8c53770154fa298264f3f1a937644688d3`。仅调整推送内容披露：默认提醒可含发送者昵称、私聊文字正文或互动摘要；在应用通知设置开启“隐藏消息内容”后，之后发送的提醒改用通用文案。推送不包含照片或图片内容，iOS 系统预览设置仍决定设备展示范围。
+
+账号服务、语聊协议资源和官网八个页面已配套发布，56 份旧归档保留。版本和集合 hash 变化会使旧协议确认失效，现有用户需重新确认后恢复业务；不能只更新包内 JSON 或一套服务。11 份资源检查和发布后 18 项正常 TLS 公网核验通过；两套公开完整协议均匹配 r13，官网全部 72 个文件精确匹配本地。`1.0.21 (18)` 的新增应用内开关需安装新版 App，本轮未进行真机通知发送验证。实际发布与只读基线记录见 `output/push-preview-2026-10-22/`（本地生成资料，不纳入 Git），测试和部署摘要见 [系统通知记录](../docs/APNS.zh-CN.md)。
 
 ## 版本管理
 

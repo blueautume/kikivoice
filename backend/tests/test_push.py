@@ -3,6 +3,7 @@ from dataclasses import replace
 import hashlib
 import json
 import logging
+import sqlite3
 from types import SimpleNamespace
 import uuid
 from cryptography.hazmat.primitives import serialization
@@ -11,11 +12,15 @@ from fastapi import HTTPException
 import httpx
 import jwt
 import pytest
-from app.main import database
+from fastapi.testclient import TestClient
+from app.main import SCHEMA,Settings,create_app,database
 from app import push
 from app.social import Policy
 from test_api import client,login,authorization
 from test_social_api import setup,rid
+from conftest import apple_settings
+
+MESSAGE_TEXT = '私聊预览测试正文'
 
 @pytest.fixture
 def env(client,monkeypatch,tmp_path):
@@ -42,14 +47,171 @@ def follow(e,a,b,on=True):
     assert r.status_code==200,r.text
 
 def friends(e,a,b):follow(e,a,b);follow(e,b,a)
-def send(e,a,b,request_id=None):
-    r=e.c.post('/v1/social/conversations/'+b['user']['id']+'/messages',headers=authorization(a),json={'requestID':request_id or rid(),'text':'私聊正文不能出现在锁屏'})
+def send(e,a,b,request_id=None,text=MESSAGE_TEXT):
+    r=e.c.post('/v1/social/conversations/'+b['user']['id']+'/messages',headers=authorization(a),json={'requestID':request_id or rid(),'text':text})
     assert r.status_code==200,r.text
     return r.json()
 def rows(e,table='push_outbox'):
     with database(e.c.settings) as db:return [dict(r) for r in db.execute('SELECT * FROM '+table)]
 def clear(e):
     with database(e.c.settings) as db:db.execute('DELETE FROM push_outbox')
+
+
+def test_preview_preference_roundtrips_privately_and_survives_logout_and_withdrawal(env):
+    e=env;a,b=login(e.c,'preview-owner'),login(e.c,'preview-other')
+    assert a['user']['hideNotificationContent'] is False
+    assert e.c.get('/v1/push/status',headers=authorization(a)).json()['hideNotificationContent'] is False
+    changed=e.c.patch('/v1/me',headers=authorization(a),json={'hideNotificationContent':True})
+    assert changed.status_code==200 and changed.json()['hideNotificationContent'] is True
+    assert changed.json()['notificationsEnabled'] is True
+    renamed=e.c.patch('/v1/me',headers=authorization(a),json={'name':'新的昵称'})
+    assert renamed.json()['hideNotificationContent'] is True, 'An unrelated profile edit cannot reset the preference'
+    assert e.c.patch('/v1/me',headers=authorization(a),json={'notificationsEnabled':False}).json()['hideNotificationContent'] is True
+    assert e.c.patch('/v1/me',headers=authorization(a),json={'notificationsEnabled':True}).json()['hideNotificationContent'] is True
+    assert e.c.get('/v1/push/status',headers=authorization(a)).json()['hideNotificationContent'] is True
+    assert e.c.get('/v1/me',headers=authorization(b)).json()['hideNotificationContent'] is False
+    public=e.c.get('/v1/social/people/'+a['user']['id'],headers=authorization(b))
+    assert public.status_code==200 and 'hideNotificationContent' not in public.json()['person']
+    assert e.c.post('/v1/auth/refresh',headers=authorization(a)).json()['user']['hideNotificationContent'] is True
+    assert e.c.post('/v1/auth/logout',headers=authorization(a)).status_code==200
+    again=login(e.c,'preview-owner')
+    assert again['user']['hideNotificationContent'] is True
+    assert e.c.delete('/v1/me/legal-consent',headers=authorization(again)).status_code==200
+    renewed=login(e.c,'preview-owner')
+    assert renewed['user']['hideNotificationContent'] is True
+    assert e.c.delete('/v1/account',headers=authorization(renewed)).status_code==200
+    replacement=login(e.c,'preview-owner')
+    assert replacement['user']['id']!=a['user']['id'] and replacement['user']['hideNotificationContent'] is False
+
+
+@pytest.mark.parametrize('invalid',[None,0,1,'true','false',[],{}])
+def test_preview_preference_requires_boolean_and_never_resets_on_invalid_input(env,invalid):
+    e=env;a=login(e.c)
+    assert e.c.patch('/v1/me',headers=authorization(a),json={'hideNotificationContent':True}).status_code==200
+    response=e.c.patch('/v1/me',headers=authorization(a),json={'hideNotificationContent':invalid})
+    assert response.status_code==422
+    assert e.c.get('/v1/me',headers=authorization(a)).json()['hideNotificationContent'] is True
+
+
+def test_existing_accounts_migrate_to_visible_previews_once_without_resetting_a_saved_choice(tmp_path):
+    settings=apple_settings(Settings(str(tmp_path/'previous.sqlite3'),1234567890,'a'*64,False))
+    column='  hide_notification_content INTEGER NOT NULL DEFAULT 0 CHECK(hide_notification_content IN (0,1)),\n'
+    with sqlite3.connect(settings.db_path) as db:
+        db.executescript(SCHEMA.replace(column,''))
+        for index in range(2):
+            db.execute('INSERT INTO accounts(account_id,login_id,sdk_user_id,name,notifications,created_at) VALUES(?,?,?,?,?,1)',
+                       (str(index),'legacy_'+str(index),'sdk_'+str(index),'旧昵称',index))
+    for restart in range(2):
+        with TestClient(create_app(settings)):
+            with database(settings) as db:
+                saved=db.execute('SELECT hide_notification_content FROM accounts ORDER BY account_id').fetchall()
+                assert [row[0] for row in saved]==([0,0] if restart==0 else [1,0])
+                assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
+                if restart==0:db.execute("UPDATE accounts SET hide_notification_content=1 WHERE account_id='0'")
+
+
+def test_default_preview_resolves_current_name_and_body_without_persisting_them_in_outbox(env,caplog):
+    e=env;a,b=login(e.c,'preview-sender'),login(e.c,'preview-recipient');register(e,b)
+    follow(e,a,b)
+    with caplog.at_level(logging.INFO):e.s.dispatch()
+    assert json.loads(e.requests[0].content)['aps']['alert']=={'title':a['user']['name'],'body':'关注了你'}
+    clear(e);e.requests.clear()
+    request_id=rid();send(e,a,b,request_id);send(e,a,b,request_id)
+    assert len(rows(e))==1
+    assert e.c.patch('/v1/me',headers=authorization(a),json={'name':'最新昵称'}).status_code==200
+    with caplog.at_level(logging.INFO):e.s.dispatch()
+    assert len(e.requests)==1
+    payload=json.loads(e.requests[0].content)
+    assert payload['aps']['alert']=={'title':'最新昵称','body':MESSAGE_TEXT}
+    assert set(payload)=={'aps','deliveryID','accountTag'} and a['user']['id'] not in e.requests[0].content.decode()
+    persisted=json.dumps(rows(e),ensure_ascii=False)
+    for private in ('最新昵称',MESSAGE_TEXT):
+        assert private not in persisted and private not in caplog.text
+
+
+def test_default_interaction_preview_contains_comment_text_and_specific_system_notice(env):
+    e=env;a,b=login(e.c,'commenter'),login(e.c,'moment-owner');register(e,b)
+    post=e.c.post('/v1/social/moments',headers=authorization(b),json={'requestID':rid(),'text':'动态','mediaIDs':[]}).json()['moment']
+    assert e.c.put('/v1/social/moments/'+post['id']+'/like',headers=authorization(a),json={'requestID':rid()}).status_code==200
+    comment=e.c.post('/v1/social/moments/'+post['id']+'/comments',headers=authorization(a),json={'requestID':rid(),'text':'这条动态很有意思'})
+    assert comment.status_code==200
+    e.s.dispatch()
+    alerts=[json.loads(request.content)['aps']['alert'] for request in e.requests]
+    assert {'title':a['user']['name'],'body':'赞了你的动态'} in alerts
+    assert {'title':a['user']['name'],'body':'评论了你的动态：这条动态很有意思'} in alerts
+    with database(e.c.settings) as db:
+        owner=db.execute('SELECT account_id FROM accounts WHERE login_id=?',(b['user']['id'],)).fetchone()[0]
+        e.social.notice(db,owner,'safety','你的社交发布限制已解除。')
+    e.s.dispatch()
+    assert json.loads(e.requests[-1].content)['aps']['alert']=={'title':'Kiki语聊','body':'你的社交发布限制已解除。'}
+
+
+@pytest.mark.parametrize('phase',['policy','provider'])
+@pytest.mark.parametrize('hidden',[False,True],ids=['show','hide'])
+def test_dispatch_reads_preference_after_policy_and_provider_preparation(env,monkeypatch,phase,hidden):
+    e=env;a,b=login(e.c,'sender'),login(e.c,'recipient');register(e,b)
+    assert e.c.patch('/v1/me',headers=authorization(b),json={'hideNotificationContent':not hidden}).status_code==200
+    send(e,a,b)
+    target=e.social if phase=='policy' else e.s
+    method='policy' if phase=='policy' else 'provider_token'
+    original=getattr(target,method)
+    def changed_before_final_validation(*args,**kwargs):
+        result=original(*args,**kwargs)
+        assert e.c.patch('/v1/me',headers=authorization(b),json={'hideNotificationContent':hidden}).status_code==200
+        assert e.c.patch('/v1/me',headers=authorization(a),json={'name':'发送前昵称'}).status_code==200
+        return result
+    monkeypatch.setattr(target,method,changed_before_final_validation)
+    e.s.dispatch()
+    alert=json.loads(e.requests[0].content)['aps']['alert']
+    assert alert==(push.GENERIC_ALERT if hidden else {'title':'发送前昵称','body':MESSAGE_TEXT})
+
+
+@pytest.mark.parametrize('first_hidden',[False,True])
+def test_ambiguous_retry_rechecks_preference_without_changing_delivery_id(env,first_hidden,caplog):
+    e=env;a,b=login(e.c,'retry-sender'),login(e.c,'retry-recipient');register(e,b)
+    assert e.c.patch('/v1/me',headers=authorization(b),json={'hideNotificationContent':first_hidden}).status_code==200
+    send(e,a,b)
+    e.responses.append(httpx.ReadTimeout(MESSAGE_TEXT))
+    with caplog.at_level(logging.INFO):e.s.dispatch()
+    assert rows(e)[0]['state']=='pending'
+    assert e.c.patch('/v1/me',headers=authorization(b),json={'hideNotificationContent':not first_hidden}).status_code==200
+    with database(e.c.settings) as db:db.execute('UPDATE push_outbox SET next_attempt_at=0')
+    with caplog.at_level(logging.INFO):e.s.dispatch()
+    assert len(e.requests)==2 and e.requests[0].headers['apns-id']==e.requests[1].headers['apns-id']
+    expected={'title':a['user']['name'],'body':MESSAGE_TEXT}
+    assert json.loads(e.requests[0].content)['aps']['alert']==(push.GENERIC_ALERT if first_hidden else expected)
+    assert json.loads(e.requests[1].content)['aps']['alert']==(expected if first_hidden else push.GENERIC_ALERT)
+    assert MESSAGE_TEXT not in json.dumps(rows(e)) and MESSAGE_TEXT not in caplog.text
+
+
+def test_deleted_comment_during_provider_preparation_never_leaks_preview(env,monkeypatch):
+    e=env;a,b=login(e.c,'late-commenter'),login(e.c,'late-recipient');register(e,b)
+    post=e.c.post('/v1/social/moments',headers=authorization(b),json={'requestID':rid(),'text':'动态','mediaIDs':[]}).json()['moment']
+    comment=e.c.post('/v1/social/moments/'+post['id']+'/comments',headers=authorization(a),json={'requestID':rid(),'text':'发送前已经删除的评论'}).json()['comment']
+    original=e.s.provider_token
+    def deleted_before_final_validation(environment):
+        result=original(environment)
+        assert e.c.delete('/v1/social/comments/'+comment['id'],headers=authorization(a)).status_code==200
+        return result
+    monkeypatch.setattr(e.s,'provider_token',deleted_before_final_validation)
+    e.s.dispatch()
+    assert e.requests==[] and rows(e)[0]['state']=='cancelled'
+
+
+@pytest.mark.parametrize('text',['🙂'*1000,'转义"\\\n'*1200],ids=['utf8-dm','escaped-system'])
+def test_preview_payload_is_utf8_bounded_and_outbox_remains_content_free(env,text):
+    e=env;a,b=login(e.c,'byte-sender'),login(e.c,'byte-recipient');register(e,b)
+    if text.startswith('🙂'):
+        send(e,a,b,text=text)
+    else:
+        with database(e.c.settings) as db:
+            owner=db.execute('SELECT account_id FROM accounts WHERE login_id=?',(b['user']['id'],)).fetchone()[0]
+            e.social.notice(db,owner,'safety',text)
+    e.s.dispatch()
+    request=e.requests[0];body=json.loads(request.content)['aps']['alert']['body']
+    assert body.endswith('…') and len(body.encode('utf-8'))<=push.MAX_ALERT_BODY_BYTES
+    assert len(request.content)<=4096
+    assert text[:12] not in json.dumps(rows(e),ensure_ascii=False)
 
 def test_registration_revision_encryption_variable_token_and_strict_shape(env):
     e=env;a,b=login(e.c,'alice'),login(e.c,'bob')
@@ -86,8 +248,10 @@ def test_multi_device_session_logout_only_removes_its_binding(env):
     e.c.post('/v1/auth/logout',headers=authorization(a));saved=rows(e,'push_devices')
     assert len(saved)==1 and saved[0]['session_hash']==hashlib.sha256(b['token'].encode()).hexdigest()
 
-def test_transactional_enqueue_idempotency_generic_alert_and_opaque_route(env):
-    e=env;a,b=login(e.c,'alice'),login(e.c,'bob');register(e,b);follow(e,a,b)
+def test_transactional_enqueue_idempotency_hidden_alert_and_opaque_route(env):
+    e=env;a,b=login(e.c,'alice'),login(e.c,'bob');register(e,b)
+    assert e.c.patch('/v1/me',headers=authorization(b),json={'hideNotificationContent':True}).status_code==200
+    follow(e,a,b)
     assert len(rows(e))==1;e.s.dispatch();assert len(e.requests)==1
     request=e.requests[0];payload=json.loads(request.content)
     assert set(payload)=={'aps','deliveryID','accountTag'}
@@ -117,6 +281,7 @@ def test_like_comment_safety_queue_and_deleted_content(env):
     assert len(rows(e))==2,(like.text,comment.text)
     e.c.request('DELETE','/v1/social/moments/'+post['id'],headers=authorization(b),json={'requestID':rid()})
     e.s.dispatch();assert e.requests==[] and all(r['state']=='cancelled' for r in rows(e))
+    assert e.c.patch('/v1/me',headers=authorization(b),json={'hideNotificationContent':True}).status_code==200
     with database(e.c.settings) as db:
         target=db.execute('SELECT account_id FROM accounts WHERE login_id=?',(b['user']['id'],)).fetchone()[0]
         e.social.notice(db,target,'safety','违规详情不能出现在锁屏')
@@ -163,7 +328,9 @@ def test_stranger_introductions_keep_push_routes_and_badges_after_follow_changes
         assert e.c.get('/v1/push/destinations/'+item['id'],headers=authorization(a)).status_code==404
     e.s.dispatch()
     assert len(e.requests)==5
-    assert all('stranger' not in request.content.decode() and '第六条' not in request.content.decode() for request in e.requests)
+    assert all(json.loads(request.content)['aps']['alert']=={'title':a['user']['name'],'body':MESSAGE_TEXT}
+               and a['user']['id'] not in request.content.decode() and '第六条' not in request.content.decode()
+               for request in e.requests)
     response=e.c.post('/v1/social/conversations/'+a['user']['id']+'/read',headers=authorization(b),json={'throughMessageID':sent[-1]['message']['id']})
     assert response.json()=={'unreadCount':0}
     assert e.c.get('/v1/push/status',headers=authorization(b)).json()['badgeCount']==1
@@ -313,3 +480,16 @@ def test_registration_is_rechecked_for_current_consent_and_apns_disabled_has_no_
     assert rows(e)==[]
     e.c.delete('/v1/me/legal-consent',headers=authorization(b))
     assert register(e,b,token='ab')[2].status_code==401
+
+
+def test_account_preview_preference_does_not_expand_actual_voice_exchange_profile(real_voice_service):
+    pair=real_voice_service;c=pair.account;a=login(c,'private-preview')
+    assert c.patch('/v1/me',headers=authorization(a),json={'hideNotificationContent':True}).status_code==200
+    exchanged=c.post('/v1/voice/session',headers=authorization(a))
+    assert exchanged.status_code==200,exchanged.text
+    request=next(request for request in reversed(pair.captured) if request.url.path=='/internal/v1/account/session')
+    profile=json.loads(request.content)['user']
+    assert set(profile)=={'id','sdkUserID','name','bio','avatarIndex','avatarURL','needsNickname','notificationsEnabled'}
+    assert 'hideNotificationContent' not in exchanged.json()['user']
+    assert pair.voice.get('/v1/me',headers=authorization(exchanged.json())).json()['id']==a['user']['id']
+    assert c.get('/v1/me',headers=authorization(a)).json()['hideNotificationContent'] is True

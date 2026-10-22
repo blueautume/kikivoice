@@ -32,6 +32,34 @@ final class KikiAccountAPIClientTests: XCTestCase {
         XCTAssertEqual(response.user.sdkUserID, "sdk-island")
         XCTAssertFalse(response.user.needsNickname)
         XCTAssertNil(response.user.avatarURL)
+        XCTAssertFalse(response.user.hideNotificationContent, "Older servers omit this preference; message details remain the default")
+    }
+
+    func testNotificationContentPreferenceUsesOnlyItsOwnAuthenticatedPatchField() async throws {
+        for hidden in [true, false] {
+            let server = KikiAPIMockServer { request in
+                XCTAssertEqual(request.url?.path, "/v1/me")
+                XCTAssertEqual(request.httpMethod, "PATCH")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-access-token")
+                let body = try requestBody(request)
+                XCTAssertEqual(Set(body.keys), ["hideNotificationContent"])
+                XCTAssertEqual(body["hideNotificationContent"] as? Bool, hidden)
+                var user = userFixture
+                user["hideNotificationContent"] = hidden
+                return (200, try jsonData(user))
+            }
+            let user = try await server.client.updateNotificationContent(hidden: hidden, token: "test-access-token")
+            XCTAssertEqual(user.hideNotificationContent, hidden)
+        }
+    }
+
+    func testPushStatusDecodesContentPreferenceAndDefaultsMissingFieldToVisible() throws {
+        for hidden in [Bool?.none, true, false] {
+            var status: [String: Any] = ["enabled": true, "registered": false, "badgeCount": 3, "accountTag": "fixture-account"]
+            if let hidden { status["hideNotificationContent"] = hidden }
+            let result = try JSONDecoder().decode(KikiPushStatus.self, from: jsonData(status))
+            XCTAssertEqual(result.hideNotificationContent, hidden ?? false)
+        }
     }
 
     func testDecodesFirstNicknameRequirementAndCustomAvatar() async throws {

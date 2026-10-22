@@ -27,7 +27,10 @@ final class KikiInboxRefreshTests: XCTestCase {
         XCTAssertEqual(store.unreadNotificationCount, 2)
         XCTAssertEqual(store.unreadDirectMessageCount, 6)
         XCTAssertEqual(store.unreadMessageCount, 8, "The tab badge uses server totals, not the visible page's row count")
-        XCTAssertEqual(push.foregroundNotice?.candidate, .init(id: "direct-new", kind: .direct(personID: InboxRefreshResponses.peer)))
+        XCTAssertEqual(push.foregroundNotice?.candidate.id, "direct-new")
+        XCTAssertEqual(push.foregroundNotice?.candidate.kind, .direct(personID: InboxRefreshResponses.peer))
+        XCTAssertEqual(push.foregroundNotice?.title, "消息好友")
+        XCTAssertEqual(push.foregroundNotice?.message, "新的私信内容")
         push.dismissForegroundNotice()
         await store.refreshInboxSummary()
         XCTAssertNil(push.foregroundNotice, "Repeated accepted pages cannot replay an alert")
@@ -40,6 +43,105 @@ final class KikiInboxRefreshTests: XCTestCase {
         XCTAssertTrue(pollRoutes.allSatisfy { ["/v1/social/notifications", "/v1/social/conversations"].contains($0) },
                       "Foreground inbox polling must not fetch profile or following metadata")
         await store.logout()
+    }
+
+    func testContentPreferenceDefaultsToDetailsHidesImmediatelyAndDoesNotReplayWhenRestored() async throws {
+        let fixture = try await fixture(), store = fixture.store, push = fixture.push
+        XCTAssertFalse(store.hideNotificationContent)
+        await store.refreshInboxSummary()
+        fixture.responses.conversation(messageID: "visible-details", unread: 1)
+        await store.refreshInboxSummary()
+        XCTAssertEqual(push.foregroundNotice?.title, "消息好友")
+        XCTAssertEqual(push.foregroundNotice?.message, "新的私信内容")
+
+        try await store.setHideNotificationContent(true)
+        XCTAssertTrue(store.hideNotificationContent)
+        XCTAssertNil(push.foregroundNotice, "Enabling privacy immediately removes a detailed banner")
+        XCTAssertTrue(store.notificationsEnabled, "Content privacy is independent of the account notification opt-in")
+        fixture.responses.conversation(messageID: "hidden-details", unread: 2)
+        await store.refreshInboxSummary()
+        XCTAssertEqual(push.foregroundNotice?.title, "收到新消息")
+        XCTAssertEqual(push.foregroundNotice?.message, "收到一条新私信，可在消息页查看。")
+        try await store.setHideNotificationContent(false)
+        XCTAssertNil(push.foregroundNotice)
+        await store.refreshInboxSummary()
+        XCTAssertNil(push.foregroundNotice, "Changing preview preferences never resets the event deduplication baseline")
+        fixture.responses.notifications(["new-community-details"], unread: 1)
+        await store.refreshInboxSummary()
+        XCTAssertEqual(push.foregroundNotice?.title, "消息好友")
+        XCTAssertEqual(push.foregroundNotice?.message, "收到一条互动消息")
+        XCTAssertEqual(fixture.responses.preferenceBodies.count, 2)
+        for body in fixture.responses.preferenceBodies { XCTAssertEqual(Set(body.keys), ["hideNotificationContent"]) }
+        await store.logout()
+    }
+
+    func testRemoteContentPreferenceRefreshClearsVisibleDetailsAndUsesLatestSettingForCandidates() async throws {
+        let fixture = try await fixture(), store = fixture.store, push = fixture.push
+        await store.refreshInboxSummary()
+        fixture.responses.conversation(messageID: "before-other-device-setting", unread: 1)
+        await store.refreshInboxSummary()
+        XCTAssertEqual(push.foregroundNotice?.title, "消息好友")
+        fixture.responses.setHiddenContent(true)
+        _ = try await store.pushStatus()
+        XCTAssertTrue(store.hideNotificationContent)
+        XCTAssertNil(push.foregroundNotice)
+        fixture.responses.conversation(messageID: "after-other-device-setting", unread: 2)
+        await store.refreshInboxSummary()
+        XCTAssertEqual(push.foregroundNotice?.title, "收到新消息")
+        XCTAssertEqual(push.foregroundNotice?.message, "收到一条新私信，可在消息页查看。")
+        await store.logout()
+    }
+
+    func testOlderProfileResponseCannotOverwriteNewerNotificationContentPreference() async throws {
+        let fixture = try await fixture(), store = fixture.store
+        let arrived = expectation(description: "older profile snapshot is waiting")
+        let gate = fixture.responses.holdNextProfilePatch(key: "notificationsEnabled") { arrived.fulfill() }
+        defer { gate.signal() }
+        let older = Task { try await store.setNotificationsEnabled(true) }
+        await fulfillment(of: [arrived], timeout: 2)
+        try await store.setHideNotificationContent(true)
+        XCTAssertTrue(store.hideNotificationContent)
+        gate.signal()
+        try await older.value
+        XCTAssertTrue(store.hideNotificationContent, "A pre-mutation whole-user snapshot must preserve the newer preference")
+        await store.logout()
+    }
+
+    func testCancelledFailedAndOldSessionPreferenceResponsesCannotCommitOrLeaveBusyState() async throws {
+        for switchSession in [false, true] {
+            let fixture = try await fixture(), store = fixture.store, push = fixture.push
+            await store.refreshInboxSummary()
+            let arrived = expectation(description: "content preference patch is waiting")
+            let gate = fixture.responses.holdNextProfilePatch(key: "hideNotificationContent") { arrived.fulfill() }
+            defer { gate.signal() }
+            let update = Task { try await store.setHideNotificationContent(true) }
+            await fulfillment(of: [arrived], timeout: 2)
+            XCTAssertTrue(store.isUpdatingNotificationContent)
+            fixture.responses.conversation(messageID: "while-privacy-saving", unread: 1)
+            await store.refreshInboxSummary()
+            XCTAssertEqual(push.foregroundNotice?.title, "收到新消息", "A late HTTPS candidate must stay generic during the privacy write")
+            if switchSession {
+                let previous = store.pushSessionKey
+                await store.logout()
+                fixture.responses.setHiddenContent(false)
+                try await store.loginWithApple()
+                XCTAssertNotEqual(store.pushSessionKey, previous)
+            } else { update.cancel() }
+            gate.signal()
+            if case .success = await update.result { XCTFail("Cancelled/old-session preference write must not commit to the current store") }
+            XCTAssertFalse(store.isUpdatingNotificationContent)
+            XCTAssertFalse(store.hideNotificationContent)
+            fixture.responses.setProfileStatus(503)
+            do { try await store.setHideNotificationContent(true); XCTFail("Rejected preference write unexpectedly succeeded") }
+            catch { }
+            XCTAssertFalse(store.isUpdatingNotificationContent)
+            XCTAssertFalse(store.hideNotificationContent)
+            fixture.responses.setProfileStatus(200)
+            try await store.setHideNotificationContent(false)
+            XCTAssertFalse(store.isUpdatingNotificationContent)
+            XCTAssertFalse(store.hideNotificationContent)
+            await store.logout()
+        }
     }
 
     func testUnifiedInboxTotalsAndBulkOperationsPreserveNewUnreadAndDrafts() async throws {
@@ -177,7 +279,10 @@ final class KikiInboxRefreshTests: XCTestCase {
         XCTAssertNil(push.foregroundNotice)
         fixture.responses.notifications(["notice-new", "notice-first"], unread: 2)
         _ = try await store.socialNotifications()
-        XCTAssertEqual(push.foregroundNotice?.candidate, .init(id: "notice-new", kind: .notifications))
+        XCTAssertEqual(push.foregroundNotice?.candidate.id, "notice-new")
+        XCTAssertEqual(push.foregroundNotice?.candidate.kind, .notifications)
+        XCTAssertEqual(push.foregroundNotice?.title, "消息好友")
+        XCTAssertEqual(push.foregroundNotice?.message, "收到一条互动消息")
         push.dismissForegroundNotice()
 
         fixture.responses.conversation(messageID: "first-direct-response", unread: 4)
@@ -233,14 +338,14 @@ final class KikiInboxRefreshTests: XCTestCase {
 @MainActor
 private final class InboxRefreshFixture {
     let responses = InboxRefreshResponses()
-    let server: KikiAPIMockServer
+    let server: InboxRefreshMockServer
     let store: KikiAppStore
     let push: KikiPushController
 
     init(defaults: UserDefaults) async throws {
         let documents = try XCTUnwrap(KikiLegalBundle.bundled)
         let responses = self.responses
-        server = KikiAPIMockServer { try responses.respond($0, documents: documents) }
+        server = InboxRefreshMockServer { try responses.respond($0, documents: documents) }
         let server = self.server
         let identity = InboxRefreshIdentity()
         let consent = KikiConsentStore(documents: documents, defaults: defaults, identity: identity,
@@ -259,6 +364,64 @@ private final class InboxRefreshFixture {
     }
 }
 
+/// Held profile responses run independently, so ordering/cancellation tests
+/// cannot block URLProtocol's loading thread or deliver after stopLoading.
+private final class InboxRefreshMockServer {
+    let client: KikiAccountAPIClient
+    let voiceClient: KikiAPIClient
+    private let host = UUID().uuidString.lowercased() + ".example.invalid"
+    private let session: URLSession
+
+    init(responder: @escaping InboxRefreshProtocol.Responder) {
+        InboxRefreshProtocol.install(responder, host: host)
+        InboxRefreshProtocol.install(responder, host: "voice-" + host)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [InboxRefreshProtocol.self]
+        session = URLSession(configuration: configuration)
+        client = KikiAccountAPIClient(baseURL: URL(string: "https://" + host)!, session: session)
+        voiceClient = KikiAPIClient(baseURL: URL(string: "https://voice-" + host)!, session: session)
+    }
+    deinit {
+        session.invalidateAndCancel()
+        InboxRefreshProtocol.remove(host: host)
+        InboxRefreshProtocol.remove(host: "voice-" + host)
+    }
+}
+
+private final class InboxRefreshProtocol: URLProtocol, @unchecked Sendable {
+    typealias Responder = (URLRequest) throws -> (Int, Data)
+    private static let lock = NSLock()
+    private static var responders: [String: Responder] = [:]
+    private let completionLock = NSRecursiveLock()
+    private var completed = false
+
+    static func install(_ responder: @escaping Responder, host: String) {
+        lock.lock(); defer { lock.unlock() }; responders[host] = responder
+    }
+    static func remove(host: String) { lock.lock(); defer { lock.unlock() }; responders[host] = nil }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lock.lock(); let responder = Self.responders[request.url?.host ?? ""]; Self.lock.unlock()
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let result = Result { try XCTUnwrap(responder)(request) }
+            completionLock.lock(); defer { completionLock.unlock() }
+            guard !completed else { return }
+            completed = true
+            switch result {
+            case .success(let (status, data)):
+                let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil,
+                                               headerFields: ["Content-Type": "application/json"])!
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: data)
+                client?.urlProtocolDidFinishLoading(self)
+            case .failure(let error): client?.urlProtocol(self, didFailWithError: error)
+            }
+        }
+    }
+    override func stopLoading() { completionLock.lock(); defer { completionLock.unlock() }; completed = true }
+}
+
 private final class InboxRefreshResponses: @unchecked Sendable {
     static let me = "kiki_inboxself00"
     static let peer = "kiki_inboxpeer00"
@@ -271,6 +434,19 @@ private final class InboxRefreshResponses: @unchecked Sendable {
     private var notificationStatus = 200
     private var bulkStatus = 200
     private var bulkRequests: [[String: Any]] = []
+    private var hideContent = false
+    private var profileStatus = 200
+    private var profileBodies: [[String: Any]] = []
+    private var profileHold: (key: String, gate: DispatchSemaphore, arrived: () -> Void)?
+    var preferenceBodies: [[String: Any]] { lock.lock(); defer { lock.unlock() }; return profileBodies }
+    func setHiddenContent(_ value: Bool) { lock.lock(); defer { lock.unlock() }; hideContent = value }
+    func setProfileStatus(_ value: Int) { lock.lock(); defer { lock.unlock() }; profileStatus = value }
+    func holdNextProfilePatch(key: String, arrived: @escaping () -> Void) -> DispatchSemaphore {
+        let gate = DispatchSemaphore(value: 0)
+        lock.lock(); defer { lock.unlock() }
+        profileHold = (key, gate, arrived)
+        return gate
+    }
     var bulkBodies: [[String: Any]] { lock.lock(); defer { lock.unlock() }; return bulkRequests }
     func setBulkStatus(_ value: Int) { lock.lock(); defer { lock.unlock() }; bulkStatus = value }
     var requests: [String] { lock.lock(); defer { lock.unlock() }; return paths }
@@ -304,11 +480,26 @@ private final class InboxRefreshResponses: @unchecked Sendable {
         let currentBulkStatus = bulkStatus
         if ["/v1/social/inbox/read", "/v1/social/inbox/clear"].contains(path) { bulkRequests.append(try requestBody(request)) }
         lock.unlock()
-        let user: [String: Any] = ["id": Self.me, "sdkUserID": Self.me, "name": "测试昵称", "bio": "", "avatarIndex": 0, "notificationsEnabled": true, "needsNickname": false]
+        lock.lock(); let hidden = hideContent; lock.unlock()
+        var user: [String: Any] = ["id": Self.me, "sdkUserID": Self.me, "name": "测试昵称", "bio": "", "avatarIndex": 0, "notificationsEnabled": true, "needsNickname": false,
+                                   "hideNotificationContent": hidden]
         let sdk: [String: Any] = ["provider": "livekit", "serverURL": "wss://furby.top", "userID": Self.me, "expiresAt": 2_000_000_000]
         let versions: [String: Any] = ["privacyVersion": documents.privacyVersion, "termsVersion": documents.termsVersion, "documentHash": documents.documentHash]
         let body: [String: Any]
         switch path {
+        case "/v1/me":
+            let input = try requestBody(request)
+            lock.lock()
+            profileBodies.append(input)
+            let currentStatus = profileStatus
+            if currentStatus == 200, let hidden = input["hideNotificationContent"] as? Bool { hideContent = hidden }
+            user["hideNotificationContent"] = hideContent
+            let held = profileHold.flatMap { input[$0.key] != nil ? $0 : nil }
+            if held != nil { profileHold = nil }
+            lock.unlock()
+            held?.arrived(); _ = held?.gate.wait(timeout: .now() + 5)
+            if currentStatus != 200 { return (currentStatus, Data(#"{"detail":"设置暂时无法保存"}"#.utf8)) }
+            body = user
         case "/v1/social/inbox":
             let noticePage = try XCTUnwrap(JSONSerialization.jsonObject(with: notifications) as? [String: Any])
             let directPage = try XCTUnwrap(JSONSerialization.jsonObject(with: conversations) as? [String: Any])
@@ -332,7 +523,7 @@ private final class InboxRefreshResponses: @unchecked Sendable {
         case "/v1/auth/logout": body = ["ok": true]
         case "/v1/rooms": body = ["rooms": []]
         case "/v1/library": body = ["favorites": [], "recents": [], "created": []]
-        case "/v1/push/status": body = ["enabled": true, "registered": false, "badgeCount": 0, "accountTag": "inbox-fixture-account"]
+        case "/v1/push/status": body = ["enabled": true, "registered": false, "badgeCount": 0, "accountTag": "inbox-fixture-account", "hideNotificationContent": hidden]
         default:
             if path.hasPrefix("/v1/push/devices/") { body = ["ok": true] }
             else { XCTFail("Unexpected inbox refresh request: \(path)"); body = ["detail": "Unexpected route"]; return (404, try JSONSerialization.data(withJSONObject: body)) }

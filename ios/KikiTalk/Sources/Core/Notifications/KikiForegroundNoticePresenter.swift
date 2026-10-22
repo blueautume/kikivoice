@@ -160,8 +160,9 @@ private struct KikiForegroundNoticeBanner: View {
                         .font(.title3).foregroundStyle(KikiPalette.purple)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(notice.title).font(.subheadline.weight(.semibold)).foregroundStyle(KikiPalette.text)
+                            .lineLimit(1)
                         Text(notice.message).font(.footnote).foregroundStyle(KikiPalette.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(3).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)
                 }.contentShape(Rectangle())
