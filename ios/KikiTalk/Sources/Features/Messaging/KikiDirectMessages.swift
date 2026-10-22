@@ -46,7 +46,7 @@ struct KikiDirectConversationView: View {
                             if nextCursor != nil { Button("更早的消息") { Task { await loadMore() } }.disabled(isLoading) }
                             if isLoading && visibleMessages.isEmpty { ProgressView().padding(30) }
                             if !isLoading && visibleMessages.isEmpty && error == nil {
-                                KikiEmptyState(symbol: "bubble.left.and.bubble.right", title: "从一句你好开始", message: "文字消息最多保留 30 天。")
+                                KikiEmptyState(symbol: "bubble.left.and.bubble.right", title: "这里什么都没有", message: "")
                             }
                             ForEach(visibleMessages) { message in
                                 VStack(spacing: 16) {

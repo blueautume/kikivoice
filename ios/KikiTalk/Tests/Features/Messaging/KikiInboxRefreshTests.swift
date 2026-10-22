@@ -42,6 +42,63 @@ final class KikiInboxRefreshTests: XCTestCase {
         await store.logout()
     }
 
+    func testUnifiedInboxTotalsAndBulkOperationsPreserveNewUnreadAndDrafts() async throws {
+        for clear in [false, true] {
+            let fixture = try await fixture()
+            let store = fixture.store
+            fixture.responses.notifications(["before-notice"], unread: 80)
+            fixture.responses.conversation(messageID: "before-direct", unread: 90)
+            let page = try await store.socialInbox()
+            XCTAssertEqual(page.entries.count, 2)
+            XCTAssertEqual(store.unreadMessageCount, 170, "Only one page is visible; total badges still cover every existing item")
+            store.updateDirectDraft("确认期间新输入的草稿", personID: InboxRefreshResponses.peer)
+            let snapshot = try await store.inboxSnapshot(), requestID = UUID()
+            // Model messages arriving after the signed snapshot but before the
+            // action's acknowledgement. The authoritative post-write total wins.
+            fixture.responses.notifications(["after-notice"], unread: 2)
+            fixture.responses.conversation(messageID: "after-direct", unread: 3)
+            try await store.mutateInbox(snapshot: snapshot, clear: clear, requestID: requestID)
+            XCTAssertEqual(store.unreadNotificationCount, 2)
+            XCTAssertEqual(store.unreadDirectMessageCount, 3)
+            XCTAssertEqual(store.unreadMessageCount, 5)
+            XCTAssertEqual(store.directDrafts[InboxRefreshResponses.peer], "确认期间新输入的草稿")
+            XCTAssertEqual(store.directContentRevision, clear ? 1 : 0)
+            XCTAssertEqual(store.notificationHistoryRevision, clear ? 1 : 0)
+            let body = try XCTUnwrap(fixture.responses.bulkBodies.last)
+            XCTAssertEqual(body["snapshot"] as? String, snapshot.snapshot)
+            XCTAssertEqual(UUID(uuidString: body["requestID"] as? String ?? ""), requestID)
+            await store.logout()
+        }
+    }
+
+    func testUncertainBulkClearKeepsItsOriginalSnapshotAndRequestIDForRetry() async throws {
+        let fixture = try await fixture(), requestID = UUID()
+        let store = fixture.store
+        store.updateDirectDraft("尚未发送", personID: InboxRefreshResponses.peer)
+        fixture.responses.notifications(["unread-notice"], unread: 7)
+        fixture.responses.conversation(messageID: "unread-direct", unread: 8)
+        _ = try await store.socialInbox()
+        let snapshot = try await store.inboxSnapshot()
+        fixture.responses.setBulkStatus(503)
+        do { try await store.mutateInbox(snapshot: snapshot, clear: true, requestID: requestID); XCTFail("Uncertain acknowledgement must remain a failure") }
+        catch { }
+        XCTAssertEqual(store.directContentRevision, 0)
+        XCTAssertEqual(store.unreadMessageCount, 15)
+        XCTAssertEqual(store.directDrafts[InboxRefreshResponses.peer], "尚未发送")
+        fixture.responses.setBulkStatus(200)
+        fixture.responses.notifications([], unread: 0)
+        fixture.responses.conversation(messageID: "new-after-cutoff", unread: 1)
+        try await store.mutateInbox(snapshot: snapshot, clear: true, requestID: requestID)
+        XCTAssertEqual(store.unreadMessageCount, 1, "A successful retry must refresh the surviving new message badge")
+        XCTAssertEqual(store.directContentRevision, 1)
+        XCTAssertEqual(fixture.responses.bulkBodies.count, 2)
+        for body in fixture.responses.bulkBodies {
+            XCTAssertEqual(body["snapshot"] as? String, snapshot.snapshot)
+            XCTAssertEqual(UUID(uuidString: body["requestID"] as? String ?? ""), requestID)
+        }
+        await store.logout()
+    }
+
     func testVisibleConversationSuppressesIncomingBannerWhileItsOverlayAllowsIt() async throws {
         let fixture = try await fixture()
         let store = fixture.store, push = fixture.push, owner = UUID()
@@ -212,6 +269,10 @@ private final class InboxRefreshResponses: @unchecked Sendable {
     private var notificationPage: Data?
     private var conversationPage: Data?
     private var notificationStatus = 200
+    private var bulkStatus = 200
+    private var bulkRequests: [[String: Any]] = []
+    var bulkBodies: [[String: Any]] { lock.lock(); defer { lock.unlock() }; return bulkRequests }
+    func setBulkStatus(_ value: Int) { lock.lock(); defer { lock.unlock() }; bulkStatus = value }
     var requests: [String] { lock.lock(); defer { lock.unlock() }; return paths }
 
     func notifications(_ ids: [String], unread: Int, isPage: Bool = false, status: Int = 200) {
@@ -240,12 +301,24 @@ private final class InboxRefreshResponses: @unchecked Sendable {
         let notifications = isPage ? notificationPage ?? notificationBody : notificationBody
         let status = isPage ? 200 : notificationStatus
         let conversations = isPage ? conversationPage ?? conversationBody : conversationBody
+        let currentBulkStatus = bulkStatus
+        if ["/v1/social/inbox/read", "/v1/social/inbox/clear"].contains(path) { bulkRequests.append(try requestBody(request)) }
         lock.unlock()
         let user: [String: Any] = ["id": Self.me, "sdkUserID": Self.me, "name": "测试昵称", "bio": "", "avatarIndex": 0, "notificationsEnabled": true, "needsNickname": false]
         let sdk: [String: Any] = ["provider": "livekit", "serverURL": "wss://furby.top", "userID": Self.me, "expiresAt": 2_000_000_000]
         let versions: [String: Any] = ["privacyVersion": documents.privacyVersion, "termsVersion": documents.termsVersion, "documentHash": documents.documentHash]
         let body: [String: Any]
         switch path {
+        case "/v1/social/inbox":
+            let noticePage = try XCTUnwrap(JSONSerialization.jsonObject(with: notifications) as? [String: Any])
+            let directPage = try XCTUnwrap(JSONSerialization.jsonObject(with: conversations) as? [String: Any])
+            let notices = (noticePage["notifications"] as? [[String: Any]] ?? []).map { ["kind": "notification", "notification": $0] as [String: Any] }
+            let direct = (directPage["conversations"] as? [[String: Any]] ?? []).map { ["kind": "direct", "conversation": $0] as [String: Any] }
+            body = ["entries": notices + direct, "nextCursor": NSNull(),
+                    "unreadNotificationCount": noticePage["unreadCount"] ?? 0, "unreadDirectMessageCount": directPage["unreadCount"] ?? 0]
+        case "/v1/social/inbox/snapshot": body = ["snapshot": "signed-owner-watermarks"]
+        case "/v1/social/inbox/read", "/v1/social/inbox/clear":
+            return currentBulkStatus == 200 ? (200, Data(#"{"ok":true}"#.utf8)) : (currentBulkStatus, Data(#"{"detail":"操作结果未确认"}"#.utf8))
         case "/v1/social/notifications":
             return status == 200 ? (200, notifications) : (status, Data(#"{"detail":"互动通知服务暂不可用"}"#.utf8))
         case "/v1/social/conversations": return (200, conversations)

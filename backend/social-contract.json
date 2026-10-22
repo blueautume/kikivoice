@@ -18,7 +18,7 @@
     "followerCount": "integer",
     "currentRoomID": "verified live lk_<32hex> ID or null; no room title or inferred online state"
   },
-  "pagination": "Opaque HMAC cursor derived from high-entropy account bridge material (legacy fixtures use Apple encryption key), bound to actor/filter/sort; expires24h. Conversations use pinned descending, updatedAt descending, id descending with strict conversations-v2 [pinFlag,updatedAt,id] cursor; legacy conversations two-key cursors continue the unpinned portion until refresh. Other lists preserve their existing two-key scopes; DM seq descending; operator reports ascending oldest first. Clear watermarks are applied before pagination and rechecked after policy fetch. List may be shorter after block filtering, follow nextCursor to exhaust.",
+  "pagination": "Opaque HMAC cursor derived from high-entropy account bridge material (legacy fixtures use Apple encryption key), bound to actor/filter/sort; expires24h. Conversations use pinned descending, updatedAt descending, id descending with strict conversations-v2 [pinFlag,updatedAt,id] cursor; legacy conversations two-key cursors continue the unpinned portion until refresh. Other lists preserve their existing two-key scopes; DM seq descending; operator reports ascending oldest first. Clear watermarks are applied before pagination and rechecked after policy fetch. List may be shorter after block filtering, follow nextCursor to exhaust. Unified inbox uses owner-bound inbox-v1 [pinFlag,activityAt,typedID], pinned private conversations first then descending activity and typedID; visibility and clear watermarks apply before LIMIT.",
   "endpoints": [
     {
       "method": "GET",
@@ -87,6 +87,49 @@
       "response": {
         "person": "Person"
       }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/inbox",
+      "query": {
+        "limit": "1..50 default20",
+        "cursor": "optional opaque owner-bound inbox-v1"
+      },
+      "response": {
+        "entries": [
+          "{kind:notification,notification:Notification} OR {kind:direct,conversation:Conversation}"
+        ],
+        "nextCursor": "string|null",
+        "unreadNotificationCount": "integer global visible unread",
+        "unreadDirectMessageCount": "integer global visible unread"
+      },
+      "behavior": "Each interaction is a separate row alongside private conversations. Server order is authoritative across all pages. Legacy notification aggregate pin does not affect this stream."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/inbox/snapshot",
+      "response": {
+        "snapshot": "signed owner/consent-epoch-bound cutoff, expires after 600 seconds"
+      },
+      "behavior": "Captures both monotonic sequence watermarks in one read transaction before confirmation; contains no message bodies. Fresh authentication/current consent/privacy policy required."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/inbox/read",
+      "body": "inboxMutation schema",
+      "response": {
+        "ok": true
+      },
+      "behavior": "Marks this account's notifications and conversation messages through the signed cutoffs read across all pages. Newer arrivals stay unread; pins/history/content stay intact. Reuse snapshot and requestID after uncertain acknowledgement."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/inbox/clear",
+      "body": "inboxMutation schema",
+      "response": {
+        "ok": true
+      },
+      "behavior": "After confirmation advances only this viewer's read/clear watermarks through the signed cutoffs and removes corresponding pins across all pages. Newer messages, peer history and unsent drafts survive. No physical deletion or retention change. Completed identical receipt retries succeed after snapshot expiry without reapplying; changed request body conflicts."
     },
     {
       "method": "GET",
@@ -869,6 +912,28 @@
       ],
       "title": "NotificationClear",
       "type": "object"
+    },
+    "inboxMutation": {
+      "additionalProperties": false,
+      "properties": {
+        "requestID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "snapshot": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Snapshot",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestID",
+        "snapshot"
+      ],
+      "title": "InboxMutation",
+      "type": "object"
     }
   },
   "internalSocialBlock": {
@@ -1009,7 +1074,7 @@
     "throughNotificationID": "UUID|null of newest visible retained notification by monotonic insertion sequence, across all pages; use as fixed clear cutoff",
     "clearedThroughSeq": "integer per-viewer clear watermark, defaults0"
   },
-  "inboxActions": "Per-account pin and clear state survives logout and synchronizes through authenticated GETs. Clear changes viewer visibility, not the peer retained messages or report evidence; underlying retention remains30days. Both clear and read high-water marks advance monotonically. Fresh sends or notifications alone restore entries. Cleared content does not contribute unread/badge or resolve old push destinations. Withdrawal/account erasure clears state and linked sequence mappings by foreign-key cascades.",
+  "inboxActions": "Per-account pin and clear state survives logout and synchronizes through authenticated GETs. Clear changes viewer visibility, not the peer retained messages or report evidence; underlying retention remains30days. Both clear and read high-water marks advance monotonically. Fresh sends or notifications alone restore entries. Cleared content does not contribute unread/badge or resolve old push destinations. Withdrawal/account erasure clears state and linked sequence mappings by foreign-key cascades. New clients display flat entries and use a pre-confirmation signed snapshot for read-all/clear-all, retaining that snapshot and UUID for uncertain retries. Legacy endpoints remain compatible for installed clients.",
   "directMessageIntroduction": {
     "limit": 5,
     "authority": "SQLite BEGIN IMMEDIATE serializes access check, committed message, direction state, mutation receipt and push outbox. Read markers and local conversation clear never count as a reply.",

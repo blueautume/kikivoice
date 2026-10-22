@@ -1367,53 +1367,84 @@ import Combine
         }
         return result
     }
-    func setInboxPinned(_ entry: KikiInboxEntry, pinned: Bool, requestID: UUID) async throws {
-        try await socialRequest { token in
-            switch entry.content {
-            case .notifications: try await self.api.socialSetNotificationsPinned(pinned: pinned, requestID: requestID, token: token)
-            case .direct(let conversation): try await self.api.socialSetConversationPinned(conversation.person.id, pinned: pinned, requestID: requestID, token: token)
-            }
-        }
+    func socialInbox(cursor: String? = nil) async throws -> KikiInboxPage {
+        let privacy = socialPrivacyRevision
+        let notificationFetch = notificationUnreadGate.beginFetch()
+        let directFetch = directUnreadGate.beginFetch()
+        let result = try await socialRequest { try await self.api.socialInbox(cursor: cursor, token: $0) }
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        if notificationUnreadGate.accepts(notificationFetch) { unreadNotificationCount = result.unreadNotificationCount }
+        if directUnreadGate.accepts(directFetch) { unreadDirectMessageCount = result.unreadDirectMessageCount }
+        return result
     }
 
-    func clearInboxEntry(_ entry: KikiInboxEntry, throughID: String, requestID: UUID) async throws {
+    func inboxSnapshot() async throws -> KikiInboxSnapshot {
+        try await socialRequest { try await self.api.socialInboxSnapshot(token: $0) }
+    }
+
+    /// The same signed cutoff and request ID survive uncertain acknowledgements.
+    /// The server applies these watermarks to this account only, across all pages.
+    func mutateInbox(snapshot: KikiInboxSnapshot, clear: Bool, requestID: UUID) async throws {
         let privacy = socialPrivacyRevision
         let generation = sessionGeneration, expectedToken = token
-        let isDirect: Bool
-        switch entry.content { case .direct: isDirect = true; case .notifications: isDirect = false }
-        let mutation = isDirect ? directUnreadGate.beginMutation() : notificationUnreadGate.beginMutation()
+        let notificationMutation = notificationUnreadGate.beginMutation()
+        let directMutation = directUnreadGate.beginMutation()
         defer {
-            if isDirect { directUnreadGate.finishMutation(mutation) }
-            else { notificationUnreadGate.finishMutation(mutation) }
+            notificationUnreadGate.finishMutation(notificationMutation)
+            directUnreadGate.finishMutation(directMutation)
         }
         do {
-            try await socialRequest { token in
-                switch entry.content {
-                case .notifications: try await self.api.socialClearNotifications(throughNotificationID: throughID, requestID: requestID, token: token)
-                case .direct(let conversation): try await self.api.socialClearConversation(conversation.person.id, throughMessageID: throughID, requestID: requestID, token: token)
-                }
-            }
+            try await socialRequest { try await self.api.socialMutateInbox(snapshot: snapshot, clear: clear, requestID: requestID, token: $0) }
         } catch {
-            if isDirect { directUnreadGate.finishMutation(mutation) } else { notificationUnreadGate.finishMutation(mutation) }
-            if privacy == socialPrivacyRevision, generation == sessionGeneration, token == expectedToken, permitsBusiness, isAuthenticated {
-                if isDirect, !directUnreadGate.hasPendingMutation { _ = try? await socialConversations() }
-                else if !isDirect, !notificationUnreadGate.hasPendingMutation { _ = try? await socialNotifications() }
-            }
+            notificationUnreadGate.finishMutation(notificationMutation)
+            directUnreadGate.finishMutation(directMutation)
+            if privacy == socialPrivacyRevision, generation == sessionGeneration, token == expectedToken,
+               permitsBusiness, isAuthenticated { _ = try? await socialInbox() }
             throw error
         }
         try requireAccess(generation: generation, token: expectedToken)
         guard privacy == socialPrivacyRevision else { throw CancellationError() }
-        switch entry.content {
-        case .notifications:
+        if clear {
+            // Drafts and pending sends are not inbox history. Preserve anything
+            // the user typed or sent after the deletion cutoff was captured.
+            directContentRevision += 1
             notificationHistoryRevision += 1
-            notificationUnreadGate.finishMutation(mutation)
-            if !notificationUnreadGate.hasPendingMutation { _ = try? await socialNotifications() }
-        case .direct(let conversation):
-            directDrafts[conversation.person.id] = nil; pendingDirectMessages[conversation.person.id] = nil
-            directHistoryRevision[conversation.person.id, default: 0] += 1
-            directUnreadGate.finishMutation(mutation)
-            if !directUnreadGate.hasPendingMutation { _ = try? await socialConversations() }
         }
+        notificationUnreadGate.finishMutation(notificationMutation)
+        directUnreadGate.finishMutation(directMutation)
+        _ = try? await socialInbox()
+        try requireAccess(generation: generation, token: expectedToken)
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        await pushController?.refresh()
+        try requireAccess(generation: generation, token: expectedToken)
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+    }
+
+    func setInboxPinned(_ entry: KikiInboxEntry, pinned: Bool, requestID: UUID) async throws {
+        guard case .direct(let conversation) = entry.content else { throw KikiAPIError.invalidResponse }
+        try await socialRequest { try await self.api.socialSetConversationPinned(conversation.person.id, pinned: pinned, requestID: requestID, token: $0) }
+    }
+
+    func clearInboxEntry(_ entry: KikiInboxEntry, throughID: String, requestID: UUID) async throws {
+        guard case .direct(let conversation) = entry.content else { throw KikiAPIError.invalidResponse }
+        let privacy = socialPrivacyRevision
+        let generation = sessionGeneration, expectedToken = token
+        let mutation = directUnreadGate.beginMutation()
+        defer { directUnreadGate.finishMutation(mutation) }
+        do {
+            try await socialRequest { try await self.api.socialClearConversation(conversation.person.id, throughMessageID: throughID, requestID: requestID, token: $0) }
+        } catch {
+            directUnreadGate.finishMutation(mutation)
+            if privacy == socialPrivacyRevision, generation == sessionGeneration, token == expectedToken,
+               permitsBusiness, isAuthenticated, !directUnreadGate.hasPendingMutation { _ = try? await socialConversations() }
+            throw error
+        }
+        try requireAccess(generation: generation, token: expectedToken)
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        directDrafts[conversation.person.id] = nil; pendingDirectMessages[conversation.person.id] = nil
+        directHistoryRevision[conversation.person.id, default: 0] += 1
+        directUnreadGate.finishMutation(mutation)
+        if !directUnreadGate.hasPendingMutation { _ = try? await socialConversations() }
         try requireAccess(generation: generation, token: expectedToken)
         guard privacy == socialPrivacyRevision else { throw CancellationError() }
         await pushController?.refresh()

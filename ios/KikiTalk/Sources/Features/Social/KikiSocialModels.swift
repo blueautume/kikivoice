@@ -63,31 +63,10 @@ struct KikiSocialNotification: Decodable, Identifiable, Equatable {
     }
 }
 
-struct KikiNotificationInboxState: Decodable, Equatable {
-    let isPinned: Bool
-    let isHidden: Bool
-    let throughNotificationID: String?
-    let clearedThroughSeq: Int
-    init(isPinned: Bool = false, isHidden: Bool = false, throughNotificationID: String? = nil, clearedThroughSeq: Int = 0) {
-        self.isPinned = isPinned; self.isHidden = isHidden
-        self.throughNotificationID = throughNotificationID; self.clearedThroughSeq = clearedThroughSeq
-    }
-}
-
 struct KikiNotificationsPage: Decodable {
     let notifications: [KikiSocialNotification]
     let unreadCount: Int
     let nextCursor: String?
-    let retentionDays: Int
-    let inboxState: KikiNotificationInboxState
-    private enum CodingKeys: String, CodingKey { case notifications, unreadCount, nextCursor, retentionDays, inboxState }
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        notifications = try c.decode([KikiSocialNotification].self, forKey: .notifications)
-        unreadCount = try c.decode(Int.self, forKey: .unreadCount); nextCursor = try c.decodeIfPresent(String.self, forKey: .nextCursor)
-        retentionDays = try c.decode(Int.self, forKey: .retentionDays)
-        inboxState = try c.decodeIfPresent(KikiNotificationInboxState.self, forKey: .inboxState) ?? .init()
-    }
 }
 
 enum KikiRelationshipKind: String, CaseIterable, Identifiable {
@@ -149,10 +128,8 @@ struct KikiMomentComment: Decodable, Identifiable, Equatable {
     let canDelete: Bool
 }
 struct KikiCommentsPage: Decodable { let comments: [KikiMomentComment]; let nextCursor: String? }
-enum KikiMomentKind: String, CaseIterable, Identifiable {
+enum KikiMomentKind: String {
     case all, following, mine
-    var id: String { rawValue }
-    var title: String { self == .all ? "最新" : (self == .following ? "关注" : "我的") }
 }
 struct KikiDirectMessage: Decodable, Identifiable, Equatable {
     let id: String
@@ -237,44 +214,56 @@ struct KikiConversation: Decodable, Identifiable, Equatable {
     }
 }
 
-/// The inbox contains one aggregate notification conversation and private
-/// conversations. Notification pagination stays inside its own detail page.
-struct KikiInboxEntry: Identifiable, Equatable {
-    enum Content: Equatable { case notifications, direct(KikiConversation) }
+/// Each interaction is a separate item alongside private conversations.
+struct KikiInboxEntry: Decodable, Identifiable, Equatable {
+    enum Content: Equatable { case notification(KikiSocialNotification), direct(KikiConversation) }
     let content: Content
     let activityAt: Double?
     let preview: String
     let unreadCount: Int
     var isPinned: Bool = false
     var id: String {
-        switch content { case .notifications: return "notifications"; case .direct(let value): return "direct:" + value.id }
+        switch content { case .notification(let value): return "notification:" + value.id; case .direct(let value): return "direct:" + value.id }
     }
     var name: String {
-        switch content { case .notifications: return "通知"; case .direct(let value): return value.person.name }
+        switch content { case .notification(let value): return value.actor?.name ?? value.title; case .direct(let value): return value.person.name }
     }
     var unreadLabel: String? { unreadCount > 0 ? (unreadCount > 99 ? "99+" : String(unreadCount)) : nil }
 
-    static func merged(conversations: [KikiConversation], notifications: [KikiSocialNotification], notificationUnreadCount: Int, notificationState: KikiNotificationInboxState = .init()) -> [Self] {
-        let latest = notifications.filter { notificationState.clearedThroughSeq == 0 || $0.seq > notificationState.clearedThroughSeq }
-            .max { $0.seq == $1.seq ? $0.createdAt < $1.createdAt : $0.seq < $1.seq }
-        var entries: [Self] = []
-        if !notificationState.isHidden || latest != nil {
-            entries.append(Self(content: .notifications, activityAt: latest?.createdAt,
-                                preview: compact(latest?.text ?? "关注、点赞、评论与社区提醒"),
-                                unreadCount: max(0, notificationUnreadCount), isPinned: notificationState.isPinned))
-        }
-        var seen: Set<String> = []
-        for conversation in conversations where seen.insert(conversation.id).inserted {
-            entries.append(Self(content: .direct(conversation), activityAt: conversation.lastMessage?.createdAt,
-                                preview: compact(conversation.lastMessage?.text ?? "开始聊天"), unreadCount: max(0, conversation.unreadCount), isPinned: conversation.isPinned))
-        }
-        return entries.sorted {
-            if $0.isPinned != $1.isPinned { return $0.isPinned }
-            if $0.activityAt != $1.activityAt { return ($0.activityAt ?? -.infinity) > ($1.activityAt ?? -.infinity) }
-            return $0.id < $1.id
+    init(content: Content, activityAt: Double?, preview: String, unreadCount: Int, isPinned: Bool = false) {
+        self.content = content; self.activityAt = activityAt; self.preview = preview
+        self.unreadCount = max(0, unreadCount); self.isPinned = isPinned
+    }
+    init(notification: KikiSocialNotification) {
+        self.init(content: .notification(notification), activityAt: notification.createdAt,
+                  preview: Self.compact(notification.text), unreadCount: notification.isUnread ? 1 : 0)
+    }
+    init(conversation: KikiConversation) {
+        self.init(content: .direct(conversation), activityAt: conversation.lastMessage?.createdAt,
+                  preview: Self.compact(conversation.lastMessage?.text ?? "开始聊天"), unreadCount: conversation.unreadCount,
+                  isPinned: conversation.isPinned)
+    }
+    private enum CodingKeys: String, CodingKey { case kind, notification, conversation }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        switch try c.decode(String.self, forKey: .kind) {
+        case "notification": self.init(notification: try c.decode(KikiSocialNotification.self, forKey: .notification))
+        case "direct": self.init(conversation: try c.decode(KikiConversation.self, forKey: .conversation))
+        default: throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "Unknown inbox item")
         }
     }
     private static func compact(_ value: String) -> String { value.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+}
+
+struct KikiInboxPage: Decodable {
+    let entries: [KikiInboxEntry]
+    let nextCursor: String?
+    let unreadNotificationCount: Int
+    let unreadDirectMessageCount: Int
+}
+
+struct KikiInboxSnapshot: Decodable, Equatable {
+    let snapshot: String
 }
 
 enum KikiInboxTime {

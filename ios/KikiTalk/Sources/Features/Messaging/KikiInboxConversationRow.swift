@@ -6,6 +6,7 @@ struct KikiInboxConversationRow: View {
     let entry: KikiInboxEntry
     let isWorking: Bool
     var canDelete: Bool = true
+    var canPin: Bool = true
     let onOpen: () -> Void
     let onTogglePin: () -> Void
     let onDelete: () -> Void
@@ -57,7 +58,7 @@ struct KikiInboxConversationRow: View {
         }
         .buttonStyle(.plain)
         .disabled(isWorking)
-        .accessibilityIdentifier(entry.id == "notifications" ? "messages.notifications" : "messages." + entry.id)
+        .accessibilityIdentifier("messages." + entry.id)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             // The first trailing action sits at the outer edge of the row.
             if canDelete {
@@ -67,25 +68,31 @@ struct KikiInboxConversationRow: View {
                     .accessibilityIdentifier("messages.delete." + entry.id)
             }
 
-            Button(action: onTogglePin) {
-                Label(entry.isPinned ? "取消置顶" : "置顶", systemImage: entry.isPinned ? "pin.slash" : "pin")
+            if canPin {
+                Button(action: onTogglePin) {
+                    Label(entry.isPinned ? "取消置顶" : "置顶", systemImage: entry.isPinned ? "pin.slash" : "pin")
+                }
+                .tint(KikiPalette.action)
+                .disabled(isWorking)
+                .accessibilityIdentifier("messages.pin." + entry.id)
             }
-            .tint(KikiPalette.action)
-            .disabled(isWorking)
-            .accessibilityIdentifier("messages.pin." + entry.id)
         }
     }
 
     @ViewBuilder
     private var avatar: some View {
         switch entry.content {
-        case .notifications:
-            Image(systemName: "bell.fill")
+        case .notification(let notice):
+            if let actor = notice.actor {
+                KikiAvatar(index: actor.avatarIndex, size: 50, customURL: actor.avatarURL)
+            } else {
+                Image(systemName: "bell.fill")
                 .font(.system(size: 21, weight: .medium))
                 .foregroundStyle(KikiPalette.purple)
                 .frame(width: 50, height: 50)
                 .background(KikiPalette.purple.opacity(0.10), in: RoundedRectangle(cornerRadius: 17))
                 .accessibilityHidden(true)
+            }
         case .direct(let conversation):
             KikiAvatar(index: conversation.person.avatarIndex, size: 50, customURL: conversation.person.avatarURL)
         }

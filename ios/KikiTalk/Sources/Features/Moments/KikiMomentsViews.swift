@@ -73,7 +73,7 @@ struct KikiMomentCard: View {
                 Spacer()
                 if isChanging { ProgressView().controlSize(.small) }
             }.font(.subheadline).buttonStyle(.plain).frame(minHeight: 36)
-            if showsCommentPreview && moment.commentCount > 0 {
+            if showsCommentPreview && commentCount > 0 && (!moment.commentPreview.isEmpty || commentCount > 3) {
                 Divider().overlay(KikiPalette.elevated)
                 VStack(alignment: .leading, spacing: 7) {
                     ForEach(Array(moment.commentPreview.prefix(3))) { comment in
@@ -86,15 +86,26 @@ struct KikiMomentCard: View {
                         }.buttonStyle(.plain)
                             .accessibilityIdentifier("moment.commentPreview.\(comment.id)")
                     }
-                    Button(action: openDetails ?? openComments) {
-                        Text("查看全部\(moment.commentCount)条评论").font(.subheadline)
-                            .foregroundStyle(KikiPalette.muted).frame(minHeight: 36, alignment: .leading)
-                    }.buttonStyle(.plain).accessibilityIdentifier("moment.allComments.\(moment.id)")
+                    if commentCount > 3 {
+                        Button(action: openDetails ?? openComments) {
+                            Text("查看全部\(commentCount)条评论").font(.subheadline)
+                                .foregroundStyle(KikiPalette.muted).frame(minHeight: 36, alignment: .leading)
+                        }.buttonStyle(.plain).accessibilityIdentifier("moment.allComments.\(moment.id)")
+                    }
                 }
             }
             if let error { Text(error).font(.footnote).foregroundStyle(KikiPalette.lavender) }
         }.padding(.horizontal, 18).padding(.vertical, 20)
-            .background { KikiPalette.surface.onTapGesture { dismissCommentInput?() } }
+            .background {
+                if let openDetails {
+                    // Whitespace has its own action behind the card's controls;
+                    // no parent tap gesture competes with their actions.
+                    Button(action: openDetails) { KikiPalette.background }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("查看\(moment.author.name)的动态详情")
+                        .accessibilityIdentifier("moment.open.\(moment.id)")
+                } else { KikiPalette.surface.onTapGesture { dismissCommentInput?() } }
+            }
             .sheet(item: $report) { KikiSocialReportForm(target: $0, store: store) }
             .confirmationDialog("删除这条动态及其图片和评论？", isPresented: $confirmsDelete, titleVisibility: .visible) {
                 Button("删除动态", role: .destructive) { Task { await delete() } }; Button("取消", role: .cancel) { }
@@ -105,26 +116,35 @@ struct KikiMomentCard: View {
     @ViewBuilder private var header: some View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 8) {
-                authorButton
+                authorIdentity
                 HStack { Spacer(minLength: 0); headerActions }
             }
         } else {
-            HStack(spacing: 11) { authorButton; Spacer(minLength: 4); headerActions }
+            HStack(spacing: 11) { authorIdentity; Spacer(minLength: 4); headerActions }
         }
     }
-    private var authorButton: some View {
-        Button { openPerson(moment.author) } label: {
-            HStack(alignment: .top, spacing: 11) {
+    private var authorIdentity: some View {
+        HStack(alignment: .top, spacing: 11) {
+            Button { openPerson(moment.author) } label: {
                 KikiAvatar(index: moment.author.avatarIndex, size: 44, customURL: moment.author.avatarURL)
-                VStack(alignment: .leading, spacing: 4) {
+            }.buttonStyle(.plain).accessibilityLabel("查看\(moment.author.name)的主页")
+                .accessibilityIdentifier("moment.authorAvatar.\(moment.id)")
+            VStack(alignment: .leading, spacing: 4) {
+                Button { openPerson(moment.author) } label: {
                     Text(moment.author.name).font(.subheadline.weight(.semibold)).foregroundStyle(KikiPalette.text)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(Date(timeIntervalSince1970: moment.createdAt), format: .dateTime.month().day().hour().minute())
-                        .font(.caption).foregroundStyle(KikiPalette.muted)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-            }.contentShape(Rectangle())
-        }.buttonStyle(.plain)
+                }.buttonStyle(.plain).accessibilityIdentifier("moment.authorName.\(moment.id)")
+                if let openDetails {
+                    Button(action: openDetails) { timestamp }
+                        .buttonStyle(.plain).accessibilityIdentifier("moment.time.\(moment.id)")
+                } else { timestamp }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+    private var timestamp: some View {
+        Text(Date(timeIntervalSince1970: moment.createdAt), format: .dateTime.month().day().hour().minute())
+            .font(.caption).foregroundStyle(KikiPalette.muted)
     }
     private var headerActions: some View {
         HStack(spacing: 8) {
@@ -220,7 +240,6 @@ struct KikiMomentCard: View {
 struct KikiMomentsView: View {
     @ObservedObject var store: KikiAppStore
     var isActive = true
-    @State private var kind: KikiMomentKind = .all
     @State private var moments: [KikiMoment] = []
     @State private var nextCursor: String?
     @State private var isLoading = false
@@ -234,25 +253,29 @@ struct KikiMomentsView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    Picker("动态范围", selection: $kind) { ForEach(KikiMomentKind.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented).padding(.horizontal, 18)
                     if let error { KikiInlineError(message: error) { Task { await reload() } } }
                     if isLoading && moments.isEmpty { ProgressView().padding(30) }
-                    else if moments.isEmpty && error == nil { KikiEmptyState(symbol: "text.bubble", title: "分享一点日常", message: kind == .following ? "关注朋友后，可以在这里看见他们的动态。" : "一段文字，或几张照片，让朋友更了解你。") }
-                    LazyVStack(spacing: 8) {
+                    else if moments.isEmpty && error == nil { KikiEmptyState(symbol: "text.bubble", title: "分享一点日常", message: "一段文字，或几张照片，让朋友更了解你。") }
+                    LazyVStack(spacing: 0) {
                         ForEach(moments) { moment in
                             KikiMomentCard(moment: moment, store: store, openPerson: { person = .init(id: $0.id) },
                                 openComments: { open(moment, focusComment: true) }, update: update,
                                 remove: { moments.removeAll { $0.id == moment.id } },
                                 openDetails: { open(moment, focusComment: false) })
+                            if moment.id != moments.last?.id {
+                                Divider().overlay(KikiPalette.elevated).padding(.horizontal, 18)
+                            }
                         }
                     }
                     if nextCursor != nil { Button(isLoading ? "正在加载…" : "加载更多") { Task { await loadMore() } }.disabled(isLoading) }
                 }.padding(.vertical, 16).frame(maxWidth: 720).frame(maxWidth: .infinity)
             }.background(KikiPalette.background.ignoresSafeArea()).refreshable { await reload() }
-                .navigationTitle("动态").toolbar {
+                .navigationTitle("").navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(KikiPalette.background, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbar {
                     ToolbarItem(placement: .topBarTrailing) { Button { showsComposer = true } label: { Image(systemName: "square.and.pencil") }.accessibilityLabel("发布动态") }
                 }
-                .task(id: kind) { if isActive { await reload() } }
                 .task(id: isActive) { if isActive { await reload() } }
                 .onChange(of: store.socialRevision) { _ in if isActive { Task { await reload() } } }
                 .onChange(of: store.socialPrivacyRevision) { _ in
@@ -288,14 +311,14 @@ struct KikiMomentsView: View {
     private func reload() async {
         let id = UUID(); generation = id; let privacy = store.socialPrivacyRevision; isLoading = true; error = nil
         defer { if generation == id { isLoading = false } }
-        do { let page = try await store.socialMoments(kind: kind); guard generation == id, privacy == store.socialPrivacyRevision else { return }; moments = page.moments; nextCursor = page.nextCursor }
+        do { let page = try await store.socialMoments(kind: .all); guard generation == id, privacy == store.socialPrivacyRevision else { return }; moments = page.moments; nextCursor = page.nextCursor }
         catch is CancellationError { } catch { if generation == id { self.error = error.localizedDescription; moments = [] } }
     }
     private func loadMore() async {
         guard !isLoading, let cursor = nextCursor else { return }; let id = generation; let privacy = store.socialPrivacyRevision; isLoading = true
         defer { if generation == id { isLoading = false } }
         do {
-            let page = try await store.socialMoments(kind: kind, cursor: cursor); guard generation == id, privacy == store.socialPrivacyRevision else { return }
+            let page = try await store.socialMoments(kind: .all, cursor: cursor); guard generation == id, privacy == store.socialPrivacyRevision else { return }
             let ids = Set(moments.map(\.id)); moments += page.moments.filter { !ids.contains($0.id) }; nextCursor = page.nextCursor
         } catch is CancellationError { } catch { if generation == id { self.error = error.localizedDescription } }
     }

@@ -1294,43 +1294,6 @@ extension KikiVoiceAPIClientTests {
 }
 
 extension KikiVoiceAPIClientTests {
-    func testUnifiedInboxOrdersAggregateNotificationsAmongPrivateConversations() {
-        let notice = inboxNotice("notice", at: 200)
-        let newer = inboxConversation("newer", at: 300, unread: 3)
-        let older = inboxConversation("older", at: 100, unread: 0)
-        let entries = KikiInboxEntry.merged(conversations: [older, newer], notifications: [notice], notificationUnreadCount: 8)
-        XCTAssertEqual(entries.map(\.id), ["direct:newer", "notifications", "direct:older"])
-        XCTAssertEqual(entries.map(\.unreadCount), [3, 8, 0])
-        XCTAssertEqual(entries[1].name, "通知")
-        XCTAssertEqual(entries[1].preview, notice.text)
-    }
-
-    func testUnifiedInboxUsesAuthoritativeUnreadCountAndNewestNotificationPreview() {
-        let entries = KikiInboxEntry.merged(conversations: [], notifications: [inboxNotice("older", at: 100), inboxNotice("newer", at: 200)], notificationUnreadCount: 155)
-        XCTAssertEqual(entries.count, 1)
-        XCTAssertEqual(entries[0].activityAt, 200)
-        XCTAssertEqual(entries[0].preview, "newer 的通知")
-        XCTAssertEqual(entries[0].unreadLabel, "99+")
-        XCTAssertEqual(entries[0].unreadCount, 155, "Only a page is loaded; unread count must not be derived from the two visible items")
-    }
-
-    func testUnifiedInboxKeepsEmptyNotificationEntryWithoutInventingActivityAndDeduplicatesConversations() {
-        let conversation = inboxConversation("notifications", at: 100, unread: -1)
-        let entries = KikiInboxEntry.merged(conversations: [conversation, conversation], notifications: [], notificationUnreadCount: -4)
-        XCTAssertEqual(entries.map(\.id), ["direct:notifications", "notifications"], "Typed IDs avoid a conversation colliding with the notification entry")
-        XCTAssertNil(entries[1].activityAt, "An empty notification inbox must not pretend to have recent activity")
-        XCTAssertNil(entries[0].unreadLabel); XCTAssertNil(entries[1].unreadLabel)
-        XCTAssertEqual(entries[1].preview, "关注、点赞、评论与社区提醒")
-    }
-
-    func testUnifiedInboxCollapsesMultilinePreviewsAndKeepsDeterministicTimeTies() {
-        var first = inboxConversation("a", at: 100, unread: 1)
-        first = KikiConversation(id: first.id, person: first.person, lastMessage: KikiDirectMessage(id: "message", seq: 1, senderID: first.person.id, text: "第一行\n\n 第二行\t末尾", createdAt: 100), unreadCount: 1, canSend: true)
-        let entries = KikiInboxEntry.merged(conversations: [inboxConversation("b", at: 100, unread: 0), first], notifications: [], notificationUnreadCount: 0)
-        XCTAssertEqual(entries.map(\.id), ["direct:a", "direct:b", "notifications"])
-        XCTAssertEqual(entries[0].preview, "第一行 第二行 末尾")
-    }
-
     func testInboxTimeUsesLocalDayBoundariesInsteadOfOnlyMonthAndDay() throws {
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 8 * 3600)!
         func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int) throws -> Date {
@@ -1353,14 +1316,4 @@ extension KikiVoiceAPIClientTests {
         XCTAssertTrue(KikiDirectTimeline.needsTimestamp(previous: start, current: start + 120, calendar: calendar), "Crossing midnight needs context even with a short gap")
         XCTAssertTrue(KikiDirectTimeline.needsTimestamp(previous: start - 1000, current: start - 700, calendar: calendar))
     }
-}
-
-private func inboxPerson() -> KikiPerson {
-    KikiPerson(id: "kiki_inboxfixture", name: "小岛", bio: "", avatarIndex: 4, avatarURL: nil, following: true, followsYou: true, mutual: true, followingCount: 1, followerCount: 1, currentRoomID: nil)
-}
-private func inboxNotice(_ id: String, at time: Double) -> KikiSocialNotification {
-    KikiSocialNotification(id: id, kind: "follow", actor: inboxPerson(), text: id + " 的通知", createdAt: time, readAt: nil, roomID: nil, momentID: nil)
-}
-private func inboxConversation(_ id: String, at time: Double, unread: Int) -> KikiConversation {
-    KikiConversation(id: id, person: inboxPerson(), lastMessage: KikiDirectMessage(id: "message-" + id, seq: 1, senderID: "kiki_inboxfixture", text: "晚上好", createdAt: time), unreadCount: unread, canSend: true)
 }

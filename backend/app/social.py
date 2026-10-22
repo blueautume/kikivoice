@@ -98,6 +98,10 @@ class NotificationPin(Mutation):
     pinned:bool
 
 
+class InboxMutation(Mutation):
+    snapshot:str=Field(min_length=1,max_length=1024)
+
+
 class NotificationClear(Mutation):
     throughNotificationID:str=Field(pattern=UUID_PATTERN)
 
@@ -304,7 +308,7 @@ class SocialService(ContentMethods):
             position = obj.get("k")
             valid_position = (isinstance(position,list) and len(position)==2
                               and type(position[0]) is int and isinstance(position[1],str))
-            if scope == "conversations-v2":
+            if scope in {"conversations-v2","inbox-v1"}:
                 valid_position = (isinstance(position,list) and len(position)==3
                                   and type(position[0]) is int and position[0] in (0,1)
                                   and type(position[1]) is int and isinstance(position[2],str))
@@ -540,8 +544,9 @@ class SocialService(ContentMethods):
         latest=next((row["id"] for row in rows if self.notification_visible(db,row,policy)),None)
         return {"isPinned":bool(state["is_pinned"]),"isHidden":state["cleared_through_seq"]>0 and latest is None,"throughNotificationID":latest,"clearedThroughSeq":state["cleared_through_seq"]}
 
-    def unread(self, db, user, policy):
-        rows=db.execute("SELECT n.actor_id,a.login_id AS actor_public FROM social_notifications n JOIN social_notification_sequence s ON s.notification_id=n.id LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE n.recipient_id=? AND n.read_at IS NULL AND n.created_at>? AND s.seq>COALESCE((SELECT cleared_through_seq FROM social_notification_state WHERE account_id=?),0)",(user["account_id"],int(time.time())-DAYS,user["account_id"])).fetchall()
+    def unread(self, db, user, policy, *, cutoff=None):
+        if cutoff is None: cutoff=int(time.time())-DAYS
+        rows=db.execute("SELECT n.actor_id,a.login_id AS actor_public FROM social_notifications n JOIN social_notification_sequence s ON s.notification_id=n.id LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE n.recipient_id=? AND n.read_at IS NULL AND n.created_at>? AND s.seq>COALESCE((SELECT cleared_through_seq FROM social_notification_state WHERE account_id=?),0)",(user["account_id"],cutoff,user["account_id"])).fetchall()
         return sum(self.notification_visible(db,row,policy) for row in rows)
 
     def pin_notifications(self,user,payload):
@@ -582,6 +587,64 @@ class SocialService(ContentMethods):
                 marks=",".join("?" for _ in payload.ids)
                 db.execute(f"UPDATE social_notifications SET read_at=? WHERE recipient_id=? AND id IN ({marks}) AND read_at IS NULL",(int(time.time()),user["account_id"],*payload.ids))
             return {"unreadCount":self.unread(db,user,policy)}
+
+    def inbox_consent_epoch(self,db,user):
+        return db.execute("SELECT MAX(event_id) FROM legal_consent_events WHERE account_id=?",
+                          (user["account_id"],)).fetchone()[0]
+
+    def inbox_snapshot(self,user):
+        self.policy(user)
+        with self.database(self.settings) as db:
+            db.execute("BEGIN")
+            self.check(db,user)
+            payload={"v":1,"u":user["account_id"],"e":self.inbox_consent_epoch(db,user),
+                     "n":db.execute("SELECT COALESCE(MAX(seq),0) FROM social_notification_sequence").fetchone()[0],
+                     "m":db.execute("SELECT COALESCE(MAX(seq),0) FROM social_messages").fetchone()[0],
+                     "exp":int(time.time())+600}
+        raw=json.dumps(payload,sort_keys=True,separators=(",",":")).encode()
+        signature=hmac.new(self.cursor_key,b"inbox-snapshot-v1:"+raw,hashlib.sha256).digest()
+        return {"snapshot":base64.urlsafe_b64encode(raw+signature).rstrip(b"=").decode()}
+
+    def read_inbox_snapshot(self,db,user,value):
+        try:
+            if len(value)>1024 or not re.fullmatch(r"[A-Za-z0-9_-]+",value): raise ValueError("Invalid snapshot")
+            packed=base64.urlsafe_b64decode(value+"="*(-len(value)%4))
+            raw,signature=packed[:-32],packed[-32:]
+            expected=hmac.new(self.cursor_key,b"inbox-snapshot-v1:"+raw,hashlib.sha256).digest()
+            obj=json.loads(raw)
+            if (not hmac.compare_digest(expected,signature) or not isinstance(obj,dict)
+                    or set(obj)!={"v","u","e","n","m","exp"} or type(obj["v"]) is not int or obj["v"]!=1
+                    or obj["u"]!=user["account_id"] or type(obj["e"]) is not int
+                    or obj["e"]!=self.inbox_consent_epoch(db,user)
+                    or any(type(obj[key]) is not int or obj[key]<0 for key in ("n","m","exp"))
+                    or obj["exp"]<int(time.time())):
+                raise ValueError("Snapshot mismatch")
+            return obj
+        except (ValueError,TypeError,KeyError,UnicodeError):
+            raise HTTPException(422,"消息快照已失效，请刷新后重试") from None
+
+    def mutate_inbox(self,user,payload,*,clear):
+        content={"kind":"inbox-clear" if clear else "inbox-read","snapshot":payload.snapshot}
+        # Completed retries do not reapply a watermark, or fail merely because
+        # the confirmation token has since expired. Auth/current consent still
+        # precede receipt lookup; withdrawal also erases these receipts.
+        with self.database(self.settings) as db:
+            db.execute("BEGIN IMMEDIATE")
+            self.check(db,user)
+            old,_=self.receipt(db,user,payload.requestID,content)
+            if old: return {"ok":True}
+        self.policy(user)
+        with self.database(self.settings) as db:
+            db.execute("BEGIN IMMEDIATE")
+            self.check(db,user)
+            old,hashed=self.receipt(db,user,payload.requestID,content)
+            if old: return {"ok":True}
+            snapshot=self.read_inbox_snapshot(db,user,payload.snapshot)
+            self.rate(db,user,"inbox",300,1000)
+            self.mutate_inbox_history(db,user,snapshot,clear=clear)
+            db.execute("INSERT INTO social_receipts VALUES(?,?,?,?,NULL)",
+                       (user["account_id"],payload.requestID,hashed,int(time.time())))
+            return {"ok":True}
 
 
 def build_router(app, *, consented_user):
@@ -627,6 +690,22 @@ def build_router(app, *, consented_user):
     @router.get("/notifications")
     def notifications(limit:int=Query(default=20,ge=1,le=50),cursor:str|None=Query(default=None,max_length=1024),user=Depends(social_user)):
         return app.state.social.notifications(user,limit,cursor)
+
+    @router.get("/inbox")
+    def inbox(limit:int=Query(default=20,ge=1,le=50),cursor:str|None=Query(default=None,max_length=1024),user=Depends(social_user)):
+        return app.state.social.inbox(user,limit,cursor)
+
+    @router.get("/inbox/snapshot")
+    def inbox_snapshot(user=Depends(social_user)):
+        return app.state.social.inbox_snapshot(user)
+
+    @router.post("/inbox/read")
+    def read_inbox(payload:InboxMutation,user=Depends(social_user)):
+        return app.state.social.mutate_inbox(user,payload,clear=False)
+
+    @router.post("/inbox/clear")
+    def clear_inbox(payload:InboxMutation,user=Depends(social_user)):
+        return app.state.social.mutate_inbox(user,payload,clear=True)
 
     @router.post("/notifications/read")
     def read_notifications(payload:ReadNotifications,user=Depends(social_user)):

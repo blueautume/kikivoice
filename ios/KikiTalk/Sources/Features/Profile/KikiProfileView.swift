@@ -13,7 +13,7 @@ struct KikiProfileView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 28) {
-                heading
+                settingsBar
                 identity
                 activity
                 KikiGiftWalletCard(gifts: store.gifts)
@@ -36,9 +36,8 @@ struct KikiProfileView: View {
         .refreshable { await store.refreshLibrary(); await store.refreshSocialSummary(); await store.refreshExperience() }
     }
 
-    private var heading: some View {
+    private var settingsBar: some View {
         HStack {
-            Text("我").font(.largeTitle.weight(.bold))
             Spacer()
             Button { activeSheet = .settings } label: {
                 Image(systemName: "gearshape").font(.title3).foregroundStyle(KikiPalette.text).frame(width: 44, height: 44)
@@ -70,11 +69,6 @@ struct KikiProfileView: View {
                         .foregroundStyle(KikiPalette.text)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
-                    HStack(spacing: 6) {
-                        Text("中文语聊社区")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(KikiPalette.secondary)
-                    }
                     Text("账号 ID · \(store.userID)")
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .tracking(1)
@@ -123,70 +117,6 @@ struct KikiProfileView: View {
                 Text(title).font(.subheadline).foregroundStyle(KikiPalette.secondary)
             }.frame(maxWidth: .infinity).contentShape(Rectangle())
         }.buttonStyle(.plain)
-    }
-
-    private var voiceCard: some View {
-        VStack(alignment: .leading, spacing: 21) {
-            HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "waveform")
-                    Text("声音名片")
-                }
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(KikiPalette.lavender)
-                Spacer()
-                Text("与你同频")
-                    .font(.system(size: 8, weight: .bold, design: .rounded))
-                    .tracking(2)
-                    .foregroundStyle(KikiPalette.lavender.opacity(0.55))
-            }
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("每个声音，\n都有自己的引力。")
-                        .font(.system(size: 23, weight: .semibold))
-                        .lineSpacing(4)
-                        .foregroundStyle(.white)
-                    Text("下一段有趣的对话，从这里开始")
-                        .font(.system(size: 11))
-                        .foregroundStyle(KikiPalette.lavender.opacity(0.7))
-                }
-                Spacer(minLength: 8)
-                waveform
-            }
-            HStack(spacing: 8) {
-                Label("此刻相遇，自在表达", systemImage: "bubble.left.and.bubble.right")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(KikiPalette.lavender.opacity(0.8))
-                Spacer(minLength: 0)
-                Image(systemName: "sparkle")
-                    .font(.system(size: 18))
-                    .foregroundStyle(KikiPalette.lavender.opacity(0.6))
-            }
-        }
-        .padding(22)
-        .background {
-            RoundedRectangle(cornerRadius: 25)
-                .fill(LinearGradient(colors: [Color(hex: 0x302055), Color(hex: 0x1C1730)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 25)
-                        .stroke(KikiPalette.lavender.opacity(0.16), lineWidth: 1)
-                }
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var waveform: some View {
-        HStack(alignment: .center, spacing: 4) {
-            ForEach(Array([17.0, 33, 50, 29, 66, 43, 24].enumerated()), id: \.offset) { index, height in
-                Capsule()
-                    .fill(LinearGradient(colors: [KikiPalette.lavender, KikiPalette.purple], startPoint: .top, endPoint: .bottom))
-                    .frame(width: 5, height: height)
-                    .opacity(index == 0 || index == 6 ? 0.45 : 0.9)
-            }
-        }
-        .frame(width: 65, height: 80)
-        .rotationEffect(.degrees(12))
-        .accessibilityHidden(true)
     }
 
     private var library: some View {
@@ -825,6 +755,7 @@ private struct KikiAccountDeletion: View {
     @State private var confirmationID = ""
     @State private var isDeleting = false
     @State private var errorMessage: String?
+    @State private var copiedNoticeID: UUID?
     private var canDelete: Bool { !store.userID.isEmpty && confirmationID == store.userID && !isDeleting }
 
     var body: some View {
@@ -843,9 +774,27 @@ private struct KikiAccountDeletion: View {
                         .lineSpacing(7)
                         .foregroundStyle(KikiPalette.secondary)
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("请输入当前账号 ID：\(store.userID)")
+                        Text("请输入当前账号 ID：")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(KikiPalette.secondary)
+                        HStack(spacing: 8) {
+                            Text(store.userID)
+                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                .foregroundStyle(KikiPalette.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button {
+                                UIPasteboard.general.string = store.userID
+                                copiedNoticeID = UUID()
+                                UIAccessibility.post(notification: .announcement, argument: "已复制ID")
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: 15)).frame(width: 44, height: 44)
+                            }
+                            .buttonStyle(.plain).foregroundStyle(KikiPalette.purple)
+                            .disabled(store.userID.isEmpty)
+                            .accessibilityLabel("复制账号 ID")
+                            .accessibilityIdentifier("deleteAccountCopyID")
+                        }
                         TextField("账号 ID", text: $confirmationID)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
@@ -888,6 +837,21 @@ private struct KikiAccountDeletion: View {
                         .foregroundStyle(KikiPalette.lavender)
                         .disabled(isDeleting)
                 }
+            }
+            .overlay(alignment: .top) {
+                if copiedNoticeID != nil {
+                    Text("已复制ID").font(.subheadline.weight(.medium))
+                        .foregroundStyle(KikiPalette.text)
+                        .padding(.horizontal, 20).padding(.vertical, 12)
+                        .background(.regularMaterial, in: Capsule())
+                        .padding(.top, 8).allowsHitTesting(false)
+                        .accessibilityIdentifier("deleteAccountCopiedNotice")
+                }
+            }
+            .task(id: copiedNoticeID) {
+                guard let noticeID = copiedNoticeID else { return }
+                do { try await Task.sleep(nanoseconds: 2_000_000_000) } catch { return }
+                if copiedNoticeID == noticeID { copiedNoticeID = nil }
             }
         }
         .interactiveDismissDisabled(isDeleting)

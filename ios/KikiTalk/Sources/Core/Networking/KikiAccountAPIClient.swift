@@ -397,6 +397,19 @@ extension KikiAccountAPIClient {
     func socialConversations(cursor: String?, token: String) async throws -> KikiConversationsPage {
         try await request(socialPath("conversations", cursor: cursor), token: token)
     }
+    func socialInbox(cursor: String?, token: String) async throws -> KikiInboxPage {
+        try await request(socialPath("inbox", cursor: cursor), token: token)
+    }
+    func socialInboxSnapshot(token: String) async throws -> KikiInboxSnapshot {
+        try await request("/v1/social/inbox/snapshot", token: token)
+    }
+    func socialMutateInbox(snapshot: KikiInboxSnapshot, clear: Bool, requestID: UUID, token: String) async throws {
+        guard !snapshot.snapshot.isEmpty, snapshot.snapshot.utf8.count <= 1024 else { throw KikiAPIError.invalidResponse }
+        struct Body: Encodable { let requestID: UUID; let snapshot: String }
+        let result: Success = try await send("/v1/social/inbox/" + (clear ? "clear" : "read"), method: "POST",
+                                            body: Body(requestID: requestID, snapshot: snapshot.snapshot), token: token)
+        guard result.ok else { throw KikiAPIError.invalidResponse }
+    }
     func socialDirectMessages(_ personID: String, cursor: String?, token: String) async throws -> KikiDirectMessagesPage {
         try validateSocialID(personID)
         return try await request(socialPath("conversations/\(personID)/messages", cursor: cursor), token: token)
@@ -416,17 +429,6 @@ extension KikiAccountAPIClient {
         try validateSocialID(personID); try validateSocialUUID(throughMessageID)
         struct Body: Encodable { let requestID: UUID; let throughMessageID: String }
         let result: Success = try await send("/v1/social/conversations/\(personID)/clear", method: "POST", body: Body(requestID: requestID, throughMessageID: throughMessageID), token: token)
-        guard result.ok else { throw KikiAPIError.invalidResponse }
-    }
-    func socialSetNotificationsPinned(pinned: Bool, requestID: UUID, token: String) async throws {
-        struct Body: Encodable { let requestID: UUID; let pinned: Bool }
-        let result: Success = try await send("/v1/social/notifications/pin", method: "PUT", body: Body(requestID: requestID, pinned: pinned), token: token)
-        guard result.ok else { throw KikiAPIError.invalidResponse }
-    }
-    func socialClearNotifications(throughNotificationID: String, requestID: UUID, token: String) async throws {
-        try validateSocialUUID(throughNotificationID)
-        struct Body: Encodable { let requestID: UUID; let throughNotificationID: String }
-        let result: Success = try await send("/v1/social/notifications/clear", method: "POST", body: Body(requestID: requestID, throughNotificationID: throughNotificationID), token: token)
         guard result.ok else { throw KikiAPIError.invalidResponse }
     }
     func socialReadDirect(_ personID: String, throughMessageID: String, token: String) async throws -> Int {

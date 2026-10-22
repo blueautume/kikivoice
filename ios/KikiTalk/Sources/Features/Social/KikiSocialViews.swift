@@ -8,7 +8,7 @@ struct KikiEmptyState: View {
         VStack(spacing: 13) {
             Image(systemName: symbol).font(.system(size: 30, weight: .light)).foregroundStyle(KikiPalette.lavender)
             Text(title).font(.headline).foregroundStyle(KikiPalette.text)
-            Text(message).font(.subheadline).foregroundStyle(KikiPalette.secondary).multilineTextAlignment(.center)
+            if !message.isEmpty { Text(message).font(.subheadline).foregroundStyle(KikiPalette.secondary).multilineTextAlignment(.center) }
         }.frame(maxWidth: .infinity).padding(.horizontal, 28).padding(.vertical, 48)
     }
 }
@@ -500,82 +500,60 @@ struct KikiMessagesView: View {
     @Environment(\.scenePhase) private var scenePhase
     var isActive: Bool
     @ObservedObject private var push: KikiPushController
-    @State private var notifications: [KikiSocialNotification] = []
-    @State private var conversations: [KikiConversation] = []
-    @State private var notificationState = KikiNotificationInboxState()
+    @State private var entries: [KikiInboxEntry] = []
+    @State private var nextCursor: String?
     @State private var pendingDeletion: KikiInboxAction?
     @State private var activeMutation: KikiInboxAction?
     @State private var retryMutation: KikiInboxAction?
-    @State private var conversationCursor: String?
-    @State private var retentionDays = 30
+    @State private var pendingBulkDeletion: KikiInboxBulkAction?
+    @State private var activeBulk: KikiInboxBulkAction?
+    @State private var retryBulk: KikiInboxBulkAction?
+    @State private var isPreparingBulk = false
     @State private var isLoading = false
     @State private var hasLoaded = false
     @State private var error: String?
     @State private var directPerson: KikiPerson?
-    @State private var showsNotifications = false
+    @State private var selectedPerson: KikiPersonDestination?
+    @State private var selectedMoment: KikiMoment?
+    @State private var showsSafety = false
     @State private var isDismissingForInbox = false
     @State private var generation = UUID()
+    @State private var navigationRequestID = UUID()
     @State private var isFetching = false
     @State private var reloadRequested = false
     @State private var loadMoreRequested = false
 
     init(store: KikiAppStore, isActive: Bool = true) {
         self.store = store; self.isActive = isActive
-        let controller = store.pushController ?? .shared
-        _push = ObservedObject(wrappedValue: controller)
+        _push = ObservedObject(wrappedValue: store.pushController ?? .shared)
     }
-    private var entries: [KikiInboxEntry] {
-        KikiInboxEntry.merged(conversations: conversations, notifications: notifications,
-                              notificationUnreadCount: store.unreadNotificationCount, notificationState: notificationState)
-    }
+    private var isMutating: Bool { activeMutation != nil || activeBulk != nil || isPreparingBulk }
+    private var hasRetry: Bool { retryMutation != nil || retryBulk != nil }
     private var refreshIsActive: Bool {
         isActive && scenePhase == .active && store.isAuthenticated && !store.isPresentingRoom
-            && directPerson == nil && !showsNotifications
+            && directPerson == nil && selectedPerson == nil && selectedMoment == nil && !showsSafety
+    }
+    private var showsDeletion: Binding<Bool> {
+        Binding(get: { pendingDeletion != nil || pendingBulkDeletion != nil }, set: { if !$0 { pendingDeletion = nil; pendingBulkDeletion = nil } })
     }
     var body: some View {
         NavigationStack {
-            List {
-                if let error {
-                    KikiInlineError(message: error) { Task { if let retryMutation { await perform(retryMutation) } else { await reload() } } }
-                        .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
+            messageList
+                .navigationTitle("").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            Button("全部已读", systemImage: "checkmark.bubble") { Task { await prepareBulk(clear: false) } }
+                                .disabled(store.unreadMessageCount == 0)
+                            Button("全部删除", systemImage: "trash", role: .destructive) { Task { await prepareBulk(clear: true) } }
+                        } label: {
+                            if isPreparingBulk || activeBulk != nil { ProgressView() }
+                            else { Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle()) }
+                        }
+                        .accessibilityLabel("消息操作").accessibilityIdentifier("messages.actions")
+                        .disabled(!hasLoaded || isMutating || hasRetry)
+                    }
                 }
-                ForEach(entries) { entry in
-                    KikiInboxConversationRow(entry: entry, isWorking: isWorking(entry), canDelete: deletionThroughID(entry) != nil,
-                        onOpen: {
-                            switch entry.content {
-                            case .notifications: showsNotifications = true
-                            case .direct(let conversation): directPerson = conversation.person
-                            }
-                        }, onTogglePin: { Task { await perform(.init(entry: entry, kind: .pin(!entry.isPinned), accountID: store.userID, privacyRevision: store.socialPrivacyRevision)) } },
-                        onDelete: {
-                            if let through = deletionThroughID(entry) { pendingDeletion = .init(entry: entry, kind: .clear(through), accountID: store.userID, privacyRevision: store.socialPrivacyRevision) }
-                        })
-                        .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
-                        .listRowBackground(entry.isPinned ? KikiPalette.purple.opacity(0.07) : KikiPalette.surface)
-                        .listRowSeparatorTint(KikiPalette.elevated)
-                }
-                if isLoading {
-                    ProgressView(hasLoaded ? "正在加载…" : "正在同步消息…").frame(maxWidth: .infinity).padding(.vertical, 20)
-                        .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
-                } else if conversationCursor != nil {
-                    Button("加载更多聊天") { Task { await loadMore() } }.frame(maxWidth: .infinity).padding(.vertical, 12)
-                        .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
-                } else if conversations.isEmpty && error == nil {
-                    VStack(spacing: 8) {
-                        Text("还没有聊天").font(.subheadline.weight(.medium)).foregroundStyle(KikiPalette.secondary)
-                        Text("可以从对方主页发起聊天；对方回复前最多发送 5 条。")
-                            .font(.footnote).foregroundStyle(KikiPalette.muted).multilineTextAlignment(.center)
-                    }.frame(maxWidth: .infinity).padding(.vertical, 30)
-                        .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
-                }
-                Text("消息保留 \(retentionDays) 天").font(.footnote).foregroundStyle(KikiPalette.muted)
-                    .frame(maxWidth: .infinity).padding(.vertical, 14)
-                    .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
-            }.listStyle(.plain).scrollContentBackground(.hidden)
-                .frame(maxWidth: 760).frame(maxWidth: .infinity)
-                .background(KikiPalette.background.ignoresSafeArea())
-                .refreshable { await reload() }
-                .navigationTitle("消息")
                 .task(id: refreshIsActive) {
                     if refreshIsActive {
                         handlePushRequest(); await reload(silent: hasLoaded)
@@ -583,47 +561,147 @@ struct KikiMessagesView: View {
                             do { try await Task.sleep(nanoseconds: 15_000_000_000) } catch { return }
                             if refreshIsActive { await reload(silent: true) }
                         }
-                    } else { generation = UUID(); isLoading = false }
+                    } else {
+                        generation = UUID(); isLoading = false
+                        if !isActive || scenePhase != .active || store.isPresentingRoom { navigationRequestID = UUID() }
+                    }
                 }
-                .sheet(isPresented: $showsNotifications, onDismiss: localSheetDidDismiss) { KikiNotificationInboxView(store: store) }
                 .sheet(item: $directPerson, onDismiss: localSheetDidDismiss) { KikiDirectConversationView(person: $0, store: store) }
+                .sheet(item: $selectedPerson, onDismiss: localSheetDidDismiss) { KikiPublicProfileView(userID: $0.id, store: store) }
+                .sheet(item: $selectedMoment, onDismiss: localSheetDidDismiss) { KikiMomentCommentsView(moment: $0, store: store) }
+                .sheet(isPresented: $showsSafety, onDismiss: localSheetDidDismiss) { KikiSafetyCenter(rtc: .shared) }
                 .onChange(of: push.inboxRequest) { _ in handlePushRequest() }
                 .onChange(of: push.pendingInboxRequest) { _ in handlePushRequest() }
                 .onChange(of: push.inboxPresentationReady) { _ in handlePushRequest() }
-                .alert("删除“\(pendingDeletion?.entry.name ?? "")”？", isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } })) {
+                .alert(pendingBulkDeletion != nil ? "删除全部消息？" : "删除“\(pendingDeletion?.entry.name ?? "")”？", isPresented: showsDeletion) {
                     Button("删除", role: .destructive) {
-                        guard let deletion = pendingDeletion else { return }
-                        pendingDeletion = nil
-                        Task { await perform(deletion) }
+                        let bulk = pendingBulkDeletion; let single = pendingDeletion
+                        pendingBulkDeletion = nil; pendingDeletion = nil
+                        if let bulk { Task { await performBulk(bulk) } }
+                        else if let single { Task { await perform(single) } }
                     }
-                    Button("取消", role: .cancel) { pendingDeletion = nil }
+                    Button("取消", role: .cancel) { pendingDeletion = nil; pendingBulkDeletion = nil }
                 } message: {
-                    Text("将移除此会话并清空你这一侧的记录，对方不受影响。新消息到来后会重新显示。")
+                    Text(pendingBulkDeletion != nil
+                         ? "清空你这一侧已有的私聊记录和互动提醒，对方不受影响。确认期间收到的新消息会保留。"
+                         : "将移除此会话并清空你这一侧的记录，对方不受影响。新消息到来后会重新显示。")
                 }
                 .onChange(of: store.socialRevision) { _ in if refreshIsActive { Task { await reload(silent: true) } } }
                 .onChange(of: store.directContentRevision) { _ in if refreshIsActive { Task { await reload(silent: true) } } }
+                .onChange(of: store.notificationHistoryRevision) { _ in if refreshIsActive { Task { await reload(silent: true) } } }
                 .onChange(of: store.socialPrivacyRevision) { _ in
-                    generation = UUID(); notifications = []; conversations = []; conversationCursor = nil
-                    notificationState = .init(); pendingDeletion = nil; activeMutation = nil; retryMutation = nil; error = nil
-                    isLoading = false; hasLoaded = false; directPerson = nil; showsNotifications = false
+                    generation = UUID(); navigationRequestID = UUID(); entries = []; nextCursor = nil
+                    pendingDeletion = nil; activeMutation = nil; retryMutation = nil
+                    pendingBulkDeletion = nil; activeBulk = nil; retryBulk = nil; isPreparingBulk = false; error = nil
+                    isLoading = false; hasLoaded = false; directPerson = nil; selectedPerson = nil; selectedMoment = nil; showsSafety = false
                     isDismissingForInbox = false
                     if isActive && store.isAuthenticated { Task { await reload() } }
                 }
+                .onDisappear { navigationRequestID = UUID() }
         }.tint(KikiPalette.lavender).foregroundStyle(KikiPalette.text)
     }
+    private var messageList: some View {
+        List {
+            if let error {
+                KikiInlineError(message: error) {
+                    Task {
+                        if let retryBulk { await performBulk(retryBulk) }
+                        else if let retryMutation { await perform(retryMutation) }
+                        else { await reload() }
+                    }
+                }.listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
+            }
+            ForEach(entries) { entry in
+                KikiInboxConversationRow(entry: entry, isWorking: isWorking(entry), canDelete: deletionThroughID(entry) != nil,
+                    canPin: isDirect(entry), onOpen: { Task { await open(entry) } },
+                    onTogglePin: { Task { await perform(.init(entry: entry, kind: .pin(!entry.isPinned), accountID: store.userID, privacyRevision: store.socialPrivacyRevision)) } },
+                    onDelete: {
+                        if let through = deletionThroughID(entry) { pendingDeletion = .init(entry: entry, kind: .clear(through), accountID: store.userID, privacyRevision: store.socialPrivacyRevision) }
+                    })
+                    .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
+                    .listRowBackground(entry.isPinned ? KikiPalette.purple.opacity(0.07) : KikiPalette.surface)
+                    .listRowSeparatorTint(KikiPalette.elevated)
+            }
+            if isLoading {
+                ProgressView(hasLoaded ? "正在加载…" : "正在同步消息…").frame(maxWidth: .infinity).padding(.vertical, 20)
+                    .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
+            } else if nextCursor != nil {
+                Button("加载更多") { Task { await loadMore() } }.frame(maxWidth: .infinity).padding(.vertical, 12)
+                    .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
+            } else if entries.isEmpty && error == nil {
+                KikiEmptyState(symbol: "bubble.left.and.bubble.right", title: "这里什么都没有", message: "")
+                    .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
+            }
+        }.listStyle(.plain).scrollContentBackground(.hidden)
+            .frame(maxWidth: 760).frame(maxWidth: .infinity)
+            .background(KikiPalette.background.ignoresSafeArea())
+            .refreshable { await reload() }
+    }
+    private func isDirect(_ entry: KikiInboxEntry) -> Bool {
+        if case .direct = entry.content { return true }; return false
+    }
     private func deletionThroughID(_ entry: KikiInboxEntry) -> String? {
-        switch entry.content {
-        case .notifications: return notificationState.throughNotificationID
-        case .direct(let conversation): return conversation.lastMessage?.id
-        }
+        if case .direct(let conversation) = entry.content { return conversation.lastMessage?.id }; return nil
     }
     private func isWorking(_ entry: KikiInboxEntry) -> Bool {
-        if activeMutation != nil || retryMutation != nil { return true }
+        if isMutating || hasRetry { return true }
         if case .direct(let conversation) = entry.content { return store.pendingDirectMessages[conversation.person.id]?.isSending == true }
         return false
     }
+    private func open(_ entry: KikiInboxEntry) async {
+        let id = UUID(); navigationRequestID = id
+        switch entry.content {
+        case .direct(let conversation): directPerson = conversation.person
+        case .notification(let notice):
+            let privacy = store.socialPrivacyRevision; let account = store.userID
+            do {
+                if notice.isUnread { try await store.readNotifications(ids: [notice.id]) }
+                guard canNavigate(id, privacy: privacy, account: account) else { return }
+                if let momentID = notice.momentID {
+                    let moment = try await store.socialMoment(momentID)
+                    guard canNavigate(id, privacy: privacy, account: account) else { return }; selectedMoment = moment
+                } else if let actor = notice.actor { selectedPerson = .init(id: actor.id) }
+                else { showsSafety = true }
+            } catch is CancellationError { }
+            catch { if canNavigate(id, privacy: privacy, account: account) { self.error = error.localizedDescription } }
+        }
+    }
+    private func canNavigate(_ id: UUID, privacy: Int, account: String) -> Bool {
+        !Task.isCancelled && navigationRequestID == id && privacy == store.socialPrivacyRevision
+            && account == store.userID && store.isAuthenticated && isActive && scenePhase == .active && !store.isPresentingRoom
+    }
+    private func prepareBulk(clear: Bool) async {
+        guard !isMutating, !hasRetry, store.isAuthenticated else { return }
+        let account = store.userID; let privacy = store.socialPrivacyRevision
+        isPreparingBulk = true; error = nil
+        defer { if privacy == store.socialPrivacyRevision { isPreparingBulk = false } }
+        do {
+            let snapshot = try await store.inboxSnapshot()
+            guard privacy == store.socialPrivacyRevision, account == store.userID, store.isAuthenticated else { return }
+            let action = KikiInboxBulkAction(snapshot: snapshot, clear: clear, accountID: account, privacyRevision: privacy)
+            if clear { pendingBulkDeletion = action }
+            else { await performBulk(action) }
+        } catch is CancellationError { }
+        catch { if privacy == store.socialPrivacyRevision { self.error = error.localizedDescription } }
+    }
+    private func performBulk(_ action: KikiInboxBulkAction) async {
+        guard activeMutation == nil, activeBulk == nil, retryBulk == nil || retryBulk?.requestID == action.requestID,
+              store.isAuthenticated, store.userID == action.accountID, store.socialPrivacyRevision == action.privacyRevision else { return }
+        generation = UUID(); isLoading = false; activeBulk = action; retryBulk = nil; error = nil
+        do {
+            try await store.mutateInbox(snapshot: action.snapshot, clear: action.clear, requestID: action.requestID)
+            guard action.privacyRevision == store.socialPrivacyRevision, store.userID == action.accountID, store.isAuthenticated else { return }
+            activeBulk = nil
+            await reload()
+        } catch {
+            guard action.privacyRevision == store.socialPrivacyRevision, store.userID == action.accountID, store.isAuthenticated else { return }
+            activeBulk = nil
+            if error is CancellationError || KikiSocialMutation.needsSameIDRetry(error) { retryBulk = action }
+            self.error = error is CancellationError ? "操作结果尚未确认，请重试。" : error.localizedDescription
+        }
+    }
     private func perform(_ action: KikiInboxAction) async {
-        guard activeMutation == nil, retryMutation == nil || retryMutation?.requestID == action.requestID,
+        guard !isMutating, retryMutation == nil || retryMutation?.requestID == action.requestID,
               store.isAuthenticated, store.userID == action.accountID, store.socialPrivacyRevision == action.privacyRevision else { return }
         let privacy = store.socialPrivacyRevision
         generation = UUID(); isLoading = false; activeMutation = action; retryMutation = nil; error = nil
@@ -635,23 +713,22 @@ struct KikiMessagesView: View {
             guard privacy == store.socialPrivacyRevision, store.isAuthenticated else { return }
             activeMutation = nil
             await reload()
-        } catch is CancellationError {
-            if privacy == store.socialPrivacyRevision { activeMutation = nil }
         } catch {
             guard privacy == store.socialPrivacyRevision, store.isAuthenticated else { return }
             activeMutation = nil
-            guard !Task.isCancelled else { return }
-            if KikiSocialMutation.needsSameIDRetry(error) { retryMutation = action }
-            self.error = error.localizedDescription
+            if error is CancellationError || KikiSocialMutation.needsSameIDRetry(error) { retryMutation = action }
+            self.error = error is CancellationError ? "操作结果尚未确认，请重试。" : error.localizedDescription
         }
     }
     private func handlePushRequest() {
         guard isActive, store.isAuthenticated, !isDismissingForInbox,
               let request = push.pendingInboxRequest, push.inboxPresentationReady else { return }
-        if directPerson != nil { isDismissingForInbox = true; directPerson = nil; return }
-        if showsNotifications { isDismissingForInbox = true; showsNotifications = false; return }
+        if directPerson != nil || selectedPerson != nil || selectedMoment != nil || showsSafety {
+            isDismissingForInbox = true; directPerson = nil; selectedPerson = nil; selectedMoment = nil; showsSafety = false
+            return
+        }
         guard push.consumeInboxRequest(request) else { return }
-        showsNotifications = true
+        Task { await reload(silent: hasLoaded) }
     }
     private func localSheetDidDismiss() {
         isDismissingForInbox = false
@@ -662,53 +739,40 @@ struct KikiMessagesView: View {
         !Task.isCancelled && generation == id && privacy == store.socialPrivacyRevision && store.isAuthenticated
     }
     private func reload(silent: Bool = false) async {
-        guard store.isAuthenticated, activeMutation == nil, !Task.isCancelled else { return }
+        guard store.isAuthenticated, activeMutation == nil, activeBulk == nil, !Task.isCancelled else { return }
         guard !isFetching else { reloadRequested = true; return }
         isFetching = true
         let id = UUID(); generation = id; let privacy = store.socialPrivacyRevision
         if !silent || !hasLoaded { isLoading = true }
-        defer {
-            if generation == id { isLoading = false }
-            finishFetch()
-        }
+        defer { if generation == id { isLoading = false }; finishFetch() }
         do {
-            let notices = try await store.socialNotifications()
-            let direct = try await store.socialConversations()
+            let page = try await store.socialInbox()
             guard isCurrent(id, privacy: privacy) else { return }
-            if notifications != notices.notifications { notifications = notices.notifications }
-            if retentionDays != notices.retentionDays { retentionDays = notices.retentionDays }
-            if notificationState != notices.inboxState { notificationState = notices.inboxState }
-            if conversations != direct.conversations { conversations = direct.conversations }
-            if conversationCursor != direct.nextCursor { conversationCursor = direct.nextCursor }
-            if !hasLoaded { hasLoaded = true }
-            if retryMutation == nil { error = nil }
+            if entries != page.entries { entries = page.entries }
+            nextCursor = page.nextCursor; hasLoaded = true
+            if !hasRetry { error = nil }
         } catch is CancellationError { }
         catch { if isCurrent(id, privacy: privacy) { self.error = error.localizedDescription } }
     }
     private func loadMore() async {
-        guard !Task.isCancelled, activeMutation == nil, retryMutation == nil else { return }
+        guard !Task.isCancelled, !isMutating, !hasRetry else { return }
         guard !isFetching else { loadMoreRequested = true; return }
-        guard !isLoading, let cursor = conversationCursor else { return }
+        guard !isLoading, let cursor = nextCursor else { return }
         let id = generation; let privacy = store.socialPrivacyRevision; isLoading = true; isFetching = true
         defer { if generation == id { isLoading = false }; finishFetch() }
         do {
-            let page = try await store.socialConversations(cursor: cursor)
+            let page = try await store.socialInbox(cursor: cursor)
             guard isCurrent(id, privacy: privacy) else { return }
-            let ids = Set(conversations.map(\.id)); conversations += page.conversations.filter { !ids.contains($0.id) }
-            conversationCursor = page.nextCursor; error = nil
+            let ids = Set(entries.map(\.id)); entries += page.entries.filter { !ids.contains($0.id) }
+            nextCursor = page.nextCursor; error = nil
         } catch is CancellationError { }
         catch { if isCurrent(id, privacy: privacy) { self.error = error.localizedDescription } }
     }
     private func finishFetch() {
         isFetching = false
         guard refreshIsActive else { reloadRequested = false; loadMoreRequested = false; return }
-        if reloadRequested {
-            reloadRequested = false
-            Task { await reload(silent: true) }
-        } else if loadMoreRequested {
-            loadMoreRequested = false
-            Task { await loadMore() }
-        }
+        if reloadRequested { reloadRequested = false; Task { await reload(silent: true) } }
+        else if loadMoreRequested { loadMoreRequested = false; Task { await loadMore() } }
     }
 }
 
@@ -721,147 +785,12 @@ private struct KikiInboxAction {
     let requestID = UUID()
 }
 
-/// The aggregate inbox row opens this page. Reading notifications never marks
-/// private conversations read; those acknowledge only messages actually viewed.
-struct KikiNotificationInboxView: View {
-    @ObservedObject var store: KikiAppStore
-    @Environment(\.dismiss) private var dismiss
-    @State private var notifications: [KikiSocialNotification] = []
-    @State private var clearedThroughSeq = 0
-    @State private var nextCursor: String?
-    @State private var retentionDays = 30
-    @State private var isLoading = false
-    @State private var isMarking = false
-    @State private var error: String?
-    @State private var selected: KikiPersonDestination?
-    @State private var selectedMoment: KikiMoment?
-    @State private var showsSafety = false
-    @State private var showsReports = false
-    @State private var generation = UUID()
-    var body: some View {
-        NavigationStack {
-            List {
-                Button { showsSafety = true } label: {
-                    HStack(spacing: 13) {
-                        Image(systemName: "shield.lefthalf.filled").foregroundStyle(KikiPalette.purple)
-                            .frame(width: 42, height: 42).background(KikiPalette.purple.opacity(0.09), in: RoundedRectangle(cornerRadius: 13))
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("社区安全与运营通知").font(.subheadline.weight(.semibold)).foregroundStyle(KikiPalette.text)
-                            Text("账号状态、处理结果与黑名单").font(.caption).foregroundStyle(KikiPalette.secondary)
-                        }
-                        Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(KikiPalette.muted)
-                    }.padding(.vertical, 9).contentShape(Rectangle())
-                }.buttonStyle(.plain).listRowBackground(KikiPalette.surface)
-                    .accessibilityIdentifier("messages.communitySafety")
-                if let error { KikiInlineError(message: error) { Task { await reload() } }.listRowBackground(KikiPalette.background) }
-                if isLoading && notifications.isEmpty { ProgressView("正在同步通知…").frame(maxWidth: .infinity).padding(.vertical, 25).listRowBackground(KikiPalette.background) }
-                else if notifications.isEmpty && error == nil {
-                    KikiEmptyState(symbol: "bell", title: "暂无互动通知", message: "新的关注、点赞和评论会显示在这里。")
-                        .listRowBackground(KikiPalette.background).listRowSeparator(.hidden)
-                }
-                ForEach(notifications) { notice in
-                    Button { Task { await open(notice) } } label: { notificationRow(notice) }
-                        .buttonStyle(.plain).listRowBackground(KikiPalette.surface)
-                        .accessibilityIdentifier("messages.notice." + notice.id)
-                }
-                if nextCursor != nil { Button(isLoading ? "正在加载…" : "加载更多通知") { Task { await loadMore() } }.disabled(isLoading).frame(maxWidth: .infinity) }
-                Section {
-                    Button("我的社交举报") { showsReports = true }
-                } footer: { Text("通知最多保留 \(retentionDays) 天。这里的“全部已读”只处理互动通知。") }
-            }.listStyle(.insetGrouped).scrollContentBackground(.hidden)
-                .frame(maxWidth: 760).frame(maxWidth: .infinity)
-                .background(KikiPalette.background.ignoresSafeArea())
-                .navigationTitle("通知").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("全部已读") { Task { await markAll() } }.disabled(isMarking || store.unreadNotificationCount == 0)
-                            .accessibilityLabel("互动通知全部已读")
-                    }
-                }
-                .task { await reload() }
-                .refreshable { await reload() }
-                .sheet(item: $selected) { KikiPublicProfileView(userID: $0.id, store: store) }
-                .sheet(item: $selectedMoment) { KikiMomentCommentsView(moment: $0, store: store) }
-                .sheet(isPresented: $showsSafety) { KikiSafetyCenter(rtc: KikiRTCService.shared) }
-                .sheet(isPresented: $showsReports) { KikiSocialReportsView(store: store) }
-                .onChange(of: store.notificationHistoryRevision) { _, _ in
-                    generation = UUID(); notifications = []; nextCursor = nil; isLoading = false
-                    Task { await reload() }
-                }
-                .onChange(of: store.socialPrivacyRevision) { _ in
-                    generation = UUID(); notifications = []; nextCursor = nil; isLoading = false; isMarking = false; clearedThroughSeq = 0
-                    selected = nil; selectedMoment = nil; showsSafety = false; showsReports = false
-                    if store.isAuthenticated { Task { await reload() } }
-                }
-                .onDisappear { generation = UUID(); isLoading = false }
-        }.tint(KikiPalette.lavender).foregroundStyle(KikiPalette.text)
-    }
-    private func notificationRow(_ notice: KikiSocialNotification) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            if let actor = notice.actor { KikiAvatar(index: actor.avatarIndex, size: 42, customURL: actor.avatarURL) }
-            else { Image(systemName: "bell").frame(width: 42, height: 42).background(KikiPalette.elevated, in: Circle()) }
-            VStack(alignment: .leading, spacing: 7) {
-                HStack {
-                    Text(notice.title).font(.subheadline.weight(.semibold)); Spacer()
-                    if notice.isUnread { Circle().fill(KikiPalette.purple).frame(width: 7, height: 7).accessibilityLabel("未读") }
-                }
-                Text(notice.text).font(.subheadline).foregroundStyle(KikiPalette.secondary).multilineTextAlignment(.leading)
-                Text(Date(timeIntervalSince1970: notice.createdAt), format: .dateTime.month().day().hour().minute())
-                    .font(.caption).foregroundStyle(KikiPalette.muted)
-            }
-        }.padding(.vertical, 10).contentShape(Rectangle())
-    }
-    private func isCurrent(_ id: UUID, privacy: Int) -> Bool {
-        !Task.isCancelled && generation == id && privacy == store.socialPrivacyRevision && store.isAuthenticated
-    }
-    private func reload() async {
-        guard store.isAuthenticated else { return }
-        let id = UUID(); generation = id; let privacy = store.socialPrivacyRevision; isLoading = true
-        defer { if generation == id { isLoading = false } }
-        do {
-            let page = try await store.socialNotifications()
-            guard isCurrent(id, privacy: privacy) else { return }
-            clearedThroughSeq = max(clearedThroughSeq, page.inboxState.clearedThroughSeq)
-            notifications = page.notifications.filter { clearedThroughSeq == 0 || $0.seq > clearedThroughSeq }; nextCursor = page.nextCursor; retentionDays = page.retentionDays; error = nil
-        } catch is CancellationError { }
-        catch { if isCurrent(id, privacy: privacy) { self.error = error.localizedDescription } }
-    }
-    private func loadMore() async {
-        guard !isLoading, let cursor = nextCursor else { return }
-        let id = generation; let privacy = store.socialPrivacyRevision; isLoading = true
-        defer { if generation == id { isLoading = false } }
-        do {
-            let page = try await store.socialNotifications(cursor: cursor)
-            guard isCurrent(id, privacy: privacy) else { return }
-            clearedThroughSeq = max(clearedThroughSeq, page.inboxState.clearedThroughSeq)
-            notifications = notifications.filter { clearedThroughSeq == 0 || $0.seq > clearedThroughSeq }
-            let ids = Set(notifications.map(\.id)); notifications += page.notifications.filter { !ids.contains($0.id) && (clearedThroughSeq == 0 || $0.seq > clearedThroughSeq) }; nextCursor = page.nextCursor; error = nil
-        } catch is CancellationError { }
-        catch { if isCurrent(id, privacy: privacy) { self.error = error.localizedDescription } }
-    }
-    private func markAll() async {
-        guard !isMarking else { return }
-        let id = generation; let privacy = store.socialPrivacyRevision; isMarking = true
-        defer { if privacy == store.socialPrivacyRevision { isMarking = false } }
-        do { try await store.readNotifications(all: true); guard isCurrent(id, privacy: privacy) else { return }; await reload() }
-        catch is CancellationError { }
-        catch { if isCurrent(id, privacy: privacy) { self.error = error.localizedDescription } }
-    }
-    private func open(_ notice: KikiSocialNotification) async {
-        let id = generation; let privacy = store.socialPrivacyRevision
-        do {
-            if notice.isUnread { try await store.readNotifications(ids: [notice.id]) }
-            guard isCurrent(id, privacy: privacy) else { return }
-            if let momentID = notice.momentID {
-                let moment = try await store.socialMoment(momentID)
-                guard isCurrent(id, privacy: privacy) else { return }; selectedMoment = moment
-            } else if let actor = notice.actor { selected = .init(id: actor.id) }
-            else { showsSafety = true }
-            await reload()
-        } catch is CancellationError { }
-        catch { if isCurrent(id, privacy: privacy) { self.error = error.localizedDescription } }
-    }
+private struct KikiInboxBulkAction {
+    let snapshot: KikiInboxSnapshot
+    let clear: Bool
+    let accountID: String
+    let privacyRevision: Int
+    let requestID = UUID()
 }
 
 struct KikiRoomRecordView: View {

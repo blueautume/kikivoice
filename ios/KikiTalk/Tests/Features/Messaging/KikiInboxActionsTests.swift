@@ -9,6 +9,9 @@ final class KikiInboxActionsTests: XCTestCase {
         let operations: [() async throws -> Void] = [
             { _ = try await server.client.socialNotifications(cursor: nil, token: "account-inbox-only") },
             { _ = try await server.client.socialConversations(cursor: nil, token: "account-inbox-only") },
+            { _ = try await server.client.socialInbox(cursor: nil, token: "account-inbox-only") },
+            { _ = try await server.client.socialInboxSnapshot(token: "account-inbox-only") },
+            { try await server.client.socialMutateInbox(snapshot: .init(snapshot: "signed-cutoff"), clear: true, requestID: UUID(), token: "account-inbox-only") },
             { try await server.client.socialSetConversationPinned("kiki_target0000", pinned: true, requestID: UUID(), token: "account-inbox-only") },
             { try await server.client.socialClearConversation("kiki_target0000", throughMessageID: UUID().uuidString, requestID: UUID(), token: "account-inbox-only") }
         ]
@@ -26,6 +29,9 @@ final class KikiInboxActionsTests: XCTestCase {
         let operations: [() async throws -> Void] = [
             { _ = try await server.client.socialNotifications(cursor: nil, token: "account-inbox-only") },
             { _ = try await server.client.socialConversations(cursor: nil, token: "account-inbox-only") },
+            { _ = try await server.client.socialInbox(cursor: nil, token: "account-inbox-only") },
+            { _ = try await server.client.socialInboxSnapshot(token: "account-inbox-only") },
+            { try await server.client.socialMutateInbox(snapshot: .init(snapshot: "signed-cutoff"), clear: true, requestID: UUID(), token: "account-inbox-only") },
             { try await server.client.socialSetConversationPinned("kiki_target0000", pinned: true, requestID: UUID(), token: "account-inbox-only") },
             { try await server.client.socialClearConversation("kiki_target0000", throughMessageID: UUID().uuidString, requestID: UUID(), token: "account-inbox-only") }
         ]
@@ -82,41 +88,44 @@ final class KikiInboxActionsTests: XCTestCase {
         XCTAssertEqual(calls.requests.count, 2)
     }
 
-    func testAggregateNotificationPinAndUnpinHaveIndependentAccountRoutes() async throws {
-        for pinned in [true, false] {
-            let nonce = UUID()
+    func testInboxBulkReadAndClearReuseOnlyTheSignedSnapshotAndStableRequestID() async throws {
+        for clear in [false, true] {
+            let nonce = UUID(), snapshot = KikiInboxSnapshot(snapshot: "signed-owner-cutoff")
             let calls = KikiInboxActionsRequestLog()
             let server = KikiAPIMockServer { request in
-                try self.assertMutation(request, path: "/v1/social/notifications/pin", method: "PUT")
+                try self.assertMutation(request, path: "/v1/social/inbox/" + (clear ? "clear" : "read"), method: "POST")
                 let body = try requestBody(request)
-                XCTAssertEqual(Set(body.keys), ["requestID", "pinned"])
+                XCTAssertEqual(Set(body.keys), ["requestID", "snapshot"])
                 XCTAssertEqual(UUID(uuidString: body["requestID"] as? String ?? ""), nonce)
-                self.assertJSONBoolean(body["pinned"], equals: pinned)
+                XCTAssertEqual(body["snapshot"] as? String, snapshot.snapshot)
                 calls.append(request)
                 return (200, try inboxActionsJSON(["ok": true]))
             }
-            try await server.client.socialSetNotificationsPinned(pinned: pinned, requestID: nonce, token: "account-inbox-only")
-            try await server.client.socialSetNotificationsPinned(pinned: pinned, requestID: nonce, token: "account-inbox-only")
+            try await server.client.socialMutateInbox(snapshot: snapshot, clear: clear, requestID: nonce, token: "account-inbox-only")
+            try await server.client.socialMutateInbox(snapshot: snapshot, clear: clear, requestID: nonce, token: "account-inbox-only")
             XCTAssertEqual(calls.requests.count, 2)
+            XCTAssertEqual(try requestBody(calls.requests[0])["snapshot"] as? String, try requestBody(calls.requests[1])["snapshot"] as? String)
         }
     }
 
-    func testClearAggregateNotificationsSendsViewedNotificationAndStableRetryID() async throws {
-        let nonce = UUID()
-        let through = UUID().uuidString.lowercased()
-        let calls = KikiInboxActionsRequestLog()
+    func testUnifiedInboxAndSnapshotUseAccountRoutesAndPreserveServerPaginationAndTotals() async throws {
         let server = KikiAPIMockServer { request in
-            try self.assertMutation(request, path: "/v1/social/notifications/clear", method: "POST")
-            let body = try requestBody(request)
-            XCTAssertEqual(Set(body.keys), ["requestID", "throughNotificationID"])
-            XCTAssertEqual(UUID(uuidString: body["requestID"] as? String ?? ""), nonce)
-            XCTAssertEqual(body["throughNotificationID"] as? String, through)
-            calls.append(request)
-            return (200, try inboxActionsJSON(["ok": true]))
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer account-inbox-only")
+            XCTAssertEqual(request.httpMethod, "GET")
+            if request.url?.path == "/v1/social/inbox/snapshot" { return (200, try inboxActionsJSON(["snapshot": "signed-cutoff"])) }
+            XCTAssertEqual(request.url?.path, "/v1/social/inbox")
+            XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "cursor" })?.value, "older-page")
+            return (200, try inboxActionsJSON([
+                "entries": [["kind": "direct", "conversation": inboxActionsConversation(id: "one-visible", time: 200)]],
+                "nextCursor": "still-older", "unreadNotificationCount": 9, "unreadDirectMessageCount": 150
+            ]))
         }
-        try await server.client.socialClearNotifications(throughNotificationID: through, requestID: nonce, token: "account-inbox-only")
-        try await server.client.socialClearNotifications(throughNotificationID: through, requestID: nonce, token: "account-inbox-only")
-        XCTAssertEqual(calls.requests.count, 2)
+        let snapshot = try await server.client.socialInboxSnapshot(token: "account-inbox-only")
+        XCTAssertEqual(snapshot.snapshot, "signed-cutoff")
+        let page = try await server.client.socialInbox(cursor: "older-page", token: "account-inbox-only")
+        XCTAssertEqual(page.entries.map(\.id), ["direct:one-visible"])
+        XCTAssertEqual(page.nextCursor, "still-older")
+        XCTAssertEqual(page.unreadNotificationCount + page.unreadDirectMessageCount, 159, "Badge totals cover unloaded pages")
     }
 
     func testConversationActionsRejectInvalidPersonBeforeAttachingBearerOrSendingRequest() async throws {
@@ -144,9 +153,6 @@ final class KikiInboxActionsTests: XCTestCase {
             await assertSecurityFailure {
                 try await server.client.socialClearConversation("kiki_target0000", throughMessageID: invalid, requestID: UUID(), token: "private")
             }
-            await assertSecurityFailure {
-                try await server.client.socialClearNotifications(throughNotificationID: invalid, requestID: UUID(), token: "private")
-            }
         }
     }
 
@@ -159,7 +165,7 @@ final class KikiInboxActionsTests: XCTestCase {
         } catch let error as KikiAPIError { XCTAssertTrue(error.isUnauthorized) }
         let malformed = KikiAPIMockServer { _ in (200, try inboxActionsJSON([:])) }
         do {
-            try await malformed.client.socialSetNotificationsPinned(pinned: true, requestID: UUID(), token: "account-inbox-only")
+            try await malformed.client.socialMutateInbox(snapshot: .init(snapshot: "signed-cutoff"), clear: true, requestID: UUID(), token: "account-inbox-only")
             XCTFail("Missing acknowledgement must fail")
         } catch let error as KikiAPIError {
             guard case .invalidResponse = error else { return XCTFail("Expected acknowledgement schema failure") }
@@ -172,10 +178,8 @@ final class KikiInboxActionsTests: XCTestCase {
         let notifications = try decode(KikiNotificationsPage.self, [
             "notifications": [], "unreadCount": 0, "nextCursor": NSNull(), "retentionDays": 30
         ])
-        XCTAssertFalse(notifications.inboxState.isPinned)
-        XCTAssertFalse(notifications.inboxState.isHidden)
-        XCTAssertNil(notifications.inboxState.throughNotificationID)
-        XCTAssertEqual(notifications.inboxState.clearedThroughSeq, 0)
+        XCTAssertTrue(notifications.notifications.isEmpty)
+        XCTAssertEqual(notifications.unreadCount, 0)
         let messages = try decode(KikiDirectMessagesPage.self, [
             "conversationID": "old-conversation", "messages": [], "nextCursor": NSNull(), "canSend": true, "unreadCount": 0
         ])
@@ -192,9 +196,7 @@ final class KikiInboxActionsTests: XCTestCase {
             "notifications": [], "unreadCount": 0, "nextCursor": NSNull(), "retentionDays": 30,
             "inboxState": ["isPinned": false, "isHidden": true, "throughNotificationID": through, "clearedThroughSeq": 42]
         ])
-        XCTAssertTrue(notifications.inboxState.isHidden)
-        XCTAssertEqual(notifications.inboxState.throughNotificationID, through)
-        XCTAssertEqual(notifications.inboxState.clearedThroughSeq, 42)
+        XCTAssertTrue(notifications.notifications.isEmpty, "Old aggregate metadata is irrelevant to individual inbox items")
         let messages = try decode(KikiDirectMessagesPage.self, [
             "conversationID": "cleared-conversation", "messages": [], "nextCursor": NSNull(), "canSend": true,
             "unreadCount": 0, "clearedThroughSeq": 17
@@ -202,31 +204,32 @@ final class KikiInboxActionsTests: XCTestCase {
         XCTAssertEqual(messages.clearedThroughSeq, 17)
     }
 
-    func testPinnedConversationsSortBeforeRecentUnpinnedEntriesIncludingAggregateNotifications() throws {
-        var oldPinned = inboxActionsConversation(id: "old-pinned", time: 100)
-        oldPinned["isPinned"] = true
-        let conversations = try [inboxActionsConversation(id: "newer", time: 500), oldPinned]
-            .map { try decode(KikiConversation.self, $0) }
-        let notice = inboxActionsNotice(id: "latest-notice", time: 400)
-        let normal = KikiInboxEntry.merged(conversations: conversations, notifications: [notice], notificationUnreadCount: 6)
-        XCTAssertEqual(normal.map(\.id), ["direct:old-pinned", "direct:newer", "notifications"])
-        let withPinnedNotice = KikiInboxEntry.merged(conversations: conversations, notifications: [notice], notificationUnreadCount: 6,
-            notificationState: KikiNotificationInboxState(isPinned: true))
-        XCTAssertEqual(withPinnedNotice.map(\.id), ["notifications", "direct:old-pinned", "direct:newer"])
-        XCTAssertTrue(withPinnedNotice[0].isPinned)
-        XCTAssertEqual(withPinnedNotice[0].unreadCount, 6)
+    func testUnifiedInboxDecodesEveryInteractionAndPreservesServerOrderAndPinnedState() throws {
+        var pinned = inboxActionsConversation(id: "old-pinned", time: 100)
+        pinned["isPinned"] = true
+        let notice: [String: Any] = ["id": "newer", "kind": "follow", "text": "第一行\n\n 第二行\t末尾",
+                                    "createdAt": 400, "readAt": NSNull(), "actor": NSNull()]
+        var readNotice = notice; readNotice["id"] = "read"; readNotice["readAt"] = 500
+        let page = try decode(KikiInboxPage.self, [
+            "entries": [["kind": "direct", "conversation": pinned],
+                        ["kind": "direct", "conversation": inboxActionsConversation(id: "newer", time: 500)],
+                        ["kind": "notification", "notification": notice], ["kind": "notification", "notification": readNotice]],
+            "nextCursor": "server-page-position", "unreadNotificationCount": 40, "unreadDirectMessageCount": 80
+        ])
+        XCTAssertEqual(page.entries.map(\.id), ["direct:old-pinned", "direct:newer", "notification:newer", "notification:read"])
+        XCTAssertTrue(page.entries[0].isPinned, "The client preserves the server's pinned-before-time order")
+        XCTAssertFalse(page.entries[2].isPinned)
+        XCTAssertEqual(page.entries[2].preview, "第一行 第二行 末尾")
+        XCTAssertEqual(page.entries[2].unreadCount, 1)
+        XCTAssertNil(page.entries[3].unreadLabel, "Every interaction carries its own read state")
+        XCTAssertEqual(page.unreadNotificationCount + page.unreadDirectMessageCount, 120, "Totals are independent of the loaded page")
     }
 
-    func testClearedAggregateIsHiddenUntilNewVisibleNotificationsReturn() throws {
-        let conversation = try decode(KikiConversation.self, inboxActionsConversation(id: "chat", time: 300))
-        let hidden = KikiNotificationInboxState(isHidden: true, clearedThroughSeq: 30)
-        let cleared = KikiInboxEntry.merged(conversations: [conversation], notifications: [], notificationUnreadCount: 0, notificationState: hidden)
-        XCTAssertEqual(cleared.map(\.id), ["direct:chat"])
-        let fresh = KikiInboxEntry.merged(conversations: [conversation], notifications: [inboxActionsNotice(id: "new-visible", time: 500, seq: 31)],
-            notificationUnreadCount: 2, notificationState: hidden)
-        XCTAssertEqual(fresh.map(\.id), ["notifications", "direct:chat"])
-        XCTAssertEqual(fresh[0].preview, "new-visible 的通知")
-        XCTAssertEqual(fresh[0].unreadCount, 2)
+    func testEmptyInboxPageDoesNotInventANotificationRowAndUnknownKindsFailClosed() throws {
+        let empty: [String: Any] = ["entries": [], "nextCursor": NSNull(), "unreadNotificationCount": 0, "unreadDirectMessageCount": 0]
+        XCTAssertTrue(try decode(KikiInboxPage.self, empty).entries.isEmpty)
+        var unknown = empty; unknown["entries"] = [["kind": "unsupported", "notification": [:]]]
+        XCTAssertThrowsError(try decode(KikiInboxPage.self, unknown))
     }
 
     func testTimelineClearWatermarkRemovesOlderMessagesFromBothCachedAndFreshPages() {
@@ -343,9 +346,6 @@ private func inboxActionsConversation(id: String, time: Double) -> [String: Any]
      "unreadCount": 4, "canSend": true]
 }
 
-private func inboxActionsNotice(id: String, time: Double, seq: Int = 0) -> KikiSocialNotification {
-    KikiSocialNotification(id: id, kind: "follow", actor: nil, text: id + " 的通知", createdAt: time, readAt: nil, roomID: nil, momentID: nil, seq: seq)
-}
 
 private final class KikiInboxActionsRequestLog {
     private let lock = NSLock()

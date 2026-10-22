@@ -46,7 +46,7 @@ final class KikiInboxConversationRowTests: XCTestCase {
             XCTAssertEqual(fixture.openCalls, 0)
             XCTAssertEqual(fixture.entries.first?.unreadLabel, "99+")
             XCTAssertTrue(fixture.entries.contains { $0.isPinned })
-            XCTAssertTrue(fixture.entries.contains { $0.id == "notifications" })
+            XCTAssertTrue(fixture.entries.contains { $0.id == "notification:fixture-notice" })
         }
 
         guard ProcessInfo.processInfo.environment["KIKI_INBOX_SWIPE_OBSERVATION"] == "1" else { return }
@@ -109,8 +109,8 @@ private final class KikiInboxRowFixtureState: ObservableObject {
                            preview: "左滑后可置顶或删除此会话", unreadCount: 155, isPinned: false),
             KikiInboxEntry(content: .direct(pinned), activityAt: now - 300,
                            preview: "已置顶的会话保留时间与未读布局", unreadCount: 0, isPinned: true),
-            KikiInboxEntry(content: .notifications, activityAt: now - 450,
-                           preview: "新的关注、点赞、评论与社区提醒", unreadCount: 6, isPinned: false),
+            KikiInboxEntry(notification: KikiSocialNotification(id: "fixture-notice", kind: "follow", actor: target.person,
+                text: "关注了你", createdAt: now - 450, readAt: nil, roomID: nil, momentID: nil)),
             KikiInboxEntry(content: .direct(long), activityAt: now - 600,
                            preview: "长名称与消息预览仍然保持单行，避免挤压未读标记", unreadCount: 8, isPinned: false)
         ]
@@ -153,24 +153,32 @@ private final class KikiInboxRowFixtureState: ObservableObject {
 private struct KikiInboxRowFixtureList: View {
     @ObservedObject var fixture: KikiInboxRowFixtureState
 
+    private func isDirect(_ entry: KikiInboxEntry) -> Bool { if case .direct = entry.content { return true }; return false }
+
     var body: some View {
         NavigationStack {
             List {
                 ForEach(fixture.entries) { entry in
-                    KikiInboxConversationRow(entry: entry, isWorking: false,
+                    KikiInboxConversationRow(entry: entry, isWorking: false, canDelete: isDirect(entry), canPin: isDirect(entry),
                         onOpen: { fixture.open(entry) }, onTogglePin: { fixture.togglePin(entry) }, onDelete: { fixture.delete(entry) })
                         .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
                         .listRowBackground(entry.isPinned ? KikiPalette.purple.opacity(0.06) : KikiPalette.surface)
                         .listRowSeparatorTint(KikiPalette.elevated)
                 }
-                Text("消息保留 30 天").font(.footnote).foregroundStyle(KikiPalette.muted)
-                    .frame(maxWidth: .infinity).padding(.vertical, 14)
-                    .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
             }
             .listStyle(.plain).scrollContentBackground(.hidden)
             .frame(maxWidth: 760).frame(maxWidth: .infinity)
             .background(KikiPalette.background.ignoresSafeArea())
-            .navigationTitle("消息")
+            .navigationTitle("").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("全部已读", systemImage: "checkmark.bubble") { }
+                        Button("全部删除", systemImage: "trash", role: .destructive) { }
+                    } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+                    .accessibilityLabel("消息操作")
+                }
+            }
         }
         .tint(KikiPalette.lavender).foregroundStyle(KikiPalette.text)
     }

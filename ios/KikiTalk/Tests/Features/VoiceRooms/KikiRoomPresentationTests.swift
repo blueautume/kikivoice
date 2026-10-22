@@ -307,7 +307,8 @@ final class KikiRoomPresentationTests: XCTestCase {
             let accessibilitySize = large.sizeThatFits(in: CGSize(width: width, height: 10_000))
             XCTAssertEqual(normalSize.width, width, accuracy: 1)
             XCTAssertEqual(accessibilitySize.width, width, accuracy: 1)
-            XCTAssertGreaterThan(normalSize.height, 120)
+            XCTAssertGreaterThan(normalSize.height, 100,
+                                 "The category-free card must still fit its title, host avatar and vertical padding")
             XCTAssertGreaterThan(accessibilitySize.height, normalSize.height + 50,
                                  "Long titles and host names must get more height instead of a fixed card clipping them")
             XCTAssertLessThan(accessibilitySize.height, 1_500)
@@ -601,11 +602,6 @@ private struct KikiRoomCardsFixture: View {
                                                        accessibilitySize: dynamicTypeSize.isAccessibilitySize)
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    HStack {
-                        Text("正在语聊").font(.title2.weight(.bold)).foregroundStyle(KikiPalette.text)
-                        Spacer()
-                        KikiCreateRoomButton(isVisible: false, action: {})
-                    }
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 12, alignment: .top), count: columns), spacing: 12) {
                         ForEach(rooms) { KikiRoomCard(room: $0) }
                     }

@@ -732,7 +732,7 @@ extension KikiConsentTests {
         let store = try await directIntroductionStore(documents: docs, api: mock.client, voice: mock.voiceClient)
         _ = try await store.socialDirectMessages(peer)
         let before = store.directMessageAccess[peer]
-        try await store.clearInboxEntry(inboxMutationEntry(direct: true), throughID: UUID().uuidString, requestID: UUID())
+        try await store.clearInboxEntry(inboxMutationEntry(), throughID: UUID().uuidString, requestID: UUID())
         XCTAssertEqual(store.directMessageAccess[peer], before)
         XCTAssertEqual(store.directMessageAccess[peer]?.requiresReply, true)
         XCTAssertEqual(store.directHistoryRevision[peer], 1)
@@ -1889,12 +1889,13 @@ extension KikiConsentTests {
         let person = try await store.socialPerson("kiki_fixture0002")
         let momentPage = try await store.socialMoments(kind: .all)
         let moment = try XCTUnwrap(momentPage.moments.first)
+        let inboxPage = try await store.socialInbox()
+        XCTAssertEqual(inboxPage.entries.count, 2, "The main inbox fixture must contain a private conversation and an individual interaction")
         let screens: [(String, AnyView)] = [
             ("rooms-light", AnyView(KikiDiscoverView().environmentObject(store).preferredColorScheme(.light))),
             ("create-room-light", AnyView(KikiCreateRoomView(isLive: false, onCreate: { _ in XCTFail("Visual fixtures must not create a room") }).environmentObject(store).preferredColorScheme(.light))),
             ("moments-light", AnyView(KikiMomentsView(store: store).preferredColorScheme(.light))),
-            ("messages-unified-light", AnyView(KikiMessagesView(store: store).preferredColorScheme(.light))),
-            ("notifications-light", AnyView(KikiNotificationInboxView(store: store).preferredColorScheme(.light))),
+            ("messages-unified-light", AnyView(KikiMessagesView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.light))),
             ("person-light", AnyView(KikiPublicProfileView(userID: person.id, store: store).preferredColorScheme(.light))),
             ("comments-dark", AnyView(KikiMomentCommentsView(moment: moment, store: store).preferredColorScheme(.dark))),
             ("direct-light", AnyView(KikiDirectConversationView(person: person, store: store).preferredColorScheme(.light))),
@@ -2451,6 +2452,10 @@ private func p1VisualResponse(_ request: URLRequest, documents: KikiLegalBundle,
     let moment: [String: Any] = ["id": postID, "author": person, "text": "今天绕着公园走了一圈，风很舒服。\n你们最近有什么开心的小事？", "media": [], "createdAt": time - 900, "likeCount": 8, "commentCount": 2, "liked": false, "canDelete": false]
     let message: [String: Any] = ["id": "22222222-2222-4222-8222-222222222222", "seq": 1, "senderID": other, "text": "晚上好，刚刚房间里聊得很开心。", "createdAt": time - 120]
     let comment: [String: Any] = ["id": "33333333-3333-4333-8333-333333333333", "momentID": postID, "author": person, "text": "散步的时候，心情也会慢慢变轻松。", "createdAt": time - 500, "canDelete": false]
+    let notice: [String: Any] = ["id": "44444444-4444-4444-8444-444444444444", "kind": "follow", "actor": person,
+                                "text": "小岛关注了你", "createdAt": time - 500, "readAt": NSNull(), "roomID": NSNull(), "momentID": NSNull()]
+    let conversation: [String: Any] = ["id": "55555555-5555-4555-8555-555555555555", "person": person,
+                                      "lastMessage": message, "unreadCount": 1, "canSend": true]
     let path = request.url!.path
     let body: [String: Any]
     switch path {
@@ -2474,8 +2479,12 @@ private func p1VisualResponse(_ request: URLRequest, documents: KikiLegalBundle,
     case "/v1/social/people/" + me: body = ["person": myself]
     case "/v1/social/people", "/v1/social/relationships": body = ["people": [person], "nextCursor": NSNull()]
     case "/v1/social/relationships/ids": body = ["followingIDs": [other], "followingCount": 12, "followerCount": 18]
-    case "/v1/social/notifications": body = ["notifications": [["id": "44444444-4444-4444-8444-444444444444", "kind": "follow", "actor": person, "text": "小岛关注了你", "createdAt": time - 500, "readAt": NSNull(), "roomID": NSNull(), "momentID": NSNull()]], "unreadCount": 1, "nextCursor": NSNull(), "retentionDays": 30]
-    case "/v1/social/conversations": body = ["conversations": [["id": "55555555-5555-4555-8555-555555555555", "person": person, "lastMessage": message, "unreadCount": 1, "canSend": true]], "nextCursor": NSNull(), "unreadCount": 1]
+    case "/v1/social/notifications": body = ["notifications": [notice], "unreadCount": 1, "nextCursor": NSNull(), "retentionDays": 30]
+    case "/v1/social/conversations": body = ["conversations": [conversation], "nextCursor": NSNull(), "unreadCount": 1]
+    case "/v1/social/inbox": body = ["entries": [["kind": "direct", "conversation": conversation], ["kind": "notification", "notification": notice]],
+                                    "nextCursor": NSNull(), "unreadNotificationCount": 1, "unreadDirectMessageCount": 1]
+    case "/v1/social/inbox/snapshot": body = ["snapshot": "visual-fixture-snapshot"]
+    case "/v1/social/inbox/read", "/v1/social/inbox/clear": body = ["ok": true]
     case "/v1/social/conversations/" + other + "/messages": body = ["conversationID": "55555555-5555-4555-8555-555555555555", "messages": [message], "nextCursor": NSNull(), "canSend": true, "unreadCount": 1]
     case "/v1/social/conversations/" + other + "/read", "/v1/social/notifications/read": body = ["unreadCount": 0]
     case "/v1/social/moments": body = ["moments": [moment], "nextCursor": NSNull()]
@@ -3918,7 +3927,7 @@ extension KikiStartupPermissionsTests {
 
 extension KikiConsentTests {
     func testInboxClearInvalidatesLateUnreadFetchAndClearsDraftOnlyAfterAcknowledgement() async throws {
-        for direct in [false, true] {
+        do {
             let identity = TestIdentity(values: ["sessionToken": "existing-session", "appleSubject": "apple-subject", "appleSessionVersion": "2"])
             let docs = try XCTUnwrap(KikiLegalBundle.bundled)
             let arrived = expectation(description: "Pre-clear inbox snapshot")
@@ -3926,24 +3935,22 @@ extension KikiConsentTests {
             defer { release.signal() }
             let fetches = TestRequests()
             let requests = TestRequests()
-            let listPath = direct ? "/v1/social/conversations" : "/v1/social/notifications"
-            let clearPath = direct ? "/v1/social/conversations/kiki_fixture0002/clear" : "/v1/social/notifications/clear"
+            let listPath = "/v1/social/conversations"
+            let clearPath = "/v1/social/conversations/kiki_fixture0002/clear"
             let nonce = UUID(), through = UUID().uuidString
             let mock = KikiConcurrentConsentServer { request in
                 if request.url?.path == listPath {
                     fetches.append("fetch")
                     let old = fetches.values.count == 1
                     if old { arrived.fulfill(); _ = release.wait(timeout: .now() + 5) }
-                    let body: [String: Any] = direct
-                        ? ["conversations": [], "nextCursor": NSNull(), "unreadCount": old ? 8 : 0]
-                        : ["notifications": [], "nextCursor": NSNull(), "unreadCount": old ? 8 : 0, "retentionDays": 30]
+                    let body: [String: Any] = ["conversations": [], "nextCursor": NSNull(), "unreadCount": old ? 8 : 0]
                     return (200, try JSONSerialization.data(withJSONObject: body))
                 }
                 if request.url?.path == clearPath {
                     let body = try requestBody(request)
                     requests.append(try XCTUnwrap(body["requestID"] as? String))
                     XCTAssertEqual(UUID(uuidString: requests.values.last!), nonce)
-                    XCTAssertEqual(body[direct ? "throughMessageID" : "throughNotificationID"] as? String, through)
+                    XCTAssertEqual(body["throughMessageID"] as? String, through)
                     return (200, Data(#"{"ok":true}"#.utf8))
                 }
                 return try consentResponse(request, documents: docs)
@@ -3954,21 +3961,15 @@ extension KikiConsentTests {
             await store.start()
             store.updateDirectDraft("删除前的草稿", personID: "kiki_fixture0002")
             let snapshot = Task {
-                if direct { _ = try await store.socialConversations() }
-                else { _ = try await store.socialNotifications() }
+                _ = try await store.socialConversations()
             }
             await fulfillment(of: [arrived], timeout: 3)
-            try await store.clearInboxEntry(inboxMutationEntry(direct: direct), throughID: through, requestID: nonce)
-            XCTAssertEqual(direct ? store.unreadDirectMessageCount : store.unreadNotificationCount, 0)
-            if direct {
-                XCTAssertNil(store.directDrafts["kiki_fixture0002"])
-                XCTAssertEqual(store.directHistoryRevision["kiki_fixture0002"], 1)
-            } else {
-                XCTAssertEqual(store.directDrafts["kiki_fixture0002"], "删除前的草稿", "Notification clear cannot clear a private conversation draft")
-                XCTAssertEqual(store.notificationHistoryRevision, 1)
-            }
+            try await store.clearInboxEntry(inboxMutationEntry(), throughID: through, requestID: nonce)
+            XCTAssertEqual(store.unreadDirectMessageCount, 0)
+            XCTAssertNil(store.directDrafts["kiki_fixture0002"])
+            XCTAssertEqual(store.directHistoryRevision["kiki_fixture0002"], 1)
             release.signal(); try await snapshot.value
-            XCTAssertEqual(direct ? store.unreadDirectMessageCount : store.unreadNotificationCount, 0, "Pre-clear network responses cannot restore the badge")
+            XCTAssertEqual(store.unreadDirectMessageCount, 0, "Pre-clear network responses cannot restore the badge")
             XCTAssertEqual(requests.values.count, 1)
             XCTAssertEqual(fetches.values.count, 2)
             await store.logout()
@@ -3995,10 +3996,10 @@ extension KikiConsentTests {
         let store = KikiAppStore(consent: consent, identity: identity, apiProvider: { mock.client }, voiceAPIProvider: { mock.voiceClient }, rtcProvider: { TestRTC() }, appleProvider: { TestApple() })
         await store.start()
         store.updateDirectDraft("尚未发送", personID: "kiki_fixture0002")
-        do { try await store.clearInboxEntry(inboxMutationEntry(direct: true), throughID: through, requestID: nonce); XCTFail("Unconfirmed clear must not succeed") } catch { }
+        do { try await store.clearInboxEntry(inboxMutationEntry(), throughID: through, requestID: nonce); XCTFail("Unconfirmed clear must not succeed") } catch { }
         XCTAssertEqual(store.directDrafts["kiki_fixture0002"], "尚未发送")
         XCTAssertNil(store.directHistoryRevision["kiki_fixture0002"])
-        try await store.clearInboxEntry(inboxMutationEntry(direct: true), throughID: through, requestID: nonce)
+        try await store.clearInboxEntry(inboxMutationEntry(), throughID: through, requestID: nonce)
         XCTAssertNil(store.directDrafts["kiki_fixture0002"])
         XCTAssertEqual(store.directHistoryRevision["kiki_fixture0002"], 1)
         XCTAssertEqual(writes.values.count, 2); XCTAssertEqual(Set(writes.values).count, 1)
@@ -4023,7 +4024,7 @@ extension KikiConsentTests {
         let store = KikiAppStore(consent: consent, identity: identity, apiProvider: { mock.client }, voiceAPIProvider: { mock.voiceClient }, rtcProvider: { TestRTC() }, appleProvider: { TestApple() })
         await store.start()
         let action = Task {
-            try await store.clearInboxEntry(inboxMutationEntry(direct: true), throughID: UUID().uuidString, requestID: UUID())
+            try await store.clearInboxEntry(inboxMutationEntry(), throughID: UUID().uuidString, requestID: UUID())
         }
         await fulfillment(of: [arrived], timeout: 3)
         await store.logout(); let revision = store.notificationHistoryRevision
@@ -4035,8 +4036,7 @@ extension KikiConsentTests {
         XCTAssertFalse(store.isAuthenticated)
     }
 
-    private func inboxMutationEntry(direct: Bool) -> KikiInboxEntry {
-        guard direct else { return KikiInboxEntry(content: .notifications, activityAt: nil, preview: "通知", unreadCount: 8) }
+    private func inboxMutationEntry() -> KikiInboxEntry {
         let person = KikiPerson(id: "kiki_fixture0002", name: "朋友", bio: "", avatarIndex: 0, avatarURL: nil, following: true, followsYou: true, mutual: true, followingCount: 1, followerCount: 1, currentRoomID: nil)
         let conversation = KikiConversation(id: "test-conversation", person: person, lastMessage: nil, unreadCount: 8, canSend: true)
         return KikiInboxEntry(content: .direct(conversation), activityAt: nil, preview: "聊天", unreadCount: 8)
@@ -4317,7 +4317,21 @@ extension KikiConsentTests {
             "text": "今天沿着海边走了一圈，风很舒服。\n你们最近有什么开心的小事？ 😀", "media": media,
             "createdAt": time - 900, "likeCount": 8, "commentCount": comments.count, "liked": false,
             "canDelete": false, "commentPreview": Array(comments.prefix(3))]
-        let listData = try JSONSerialization.data(withJSONObject: ["moments": [moment], "nextCursor": NSNull()])
+        let shortID = "11111111-1111-4111-8111-111111111112"
+        var short = moment
+        let shortComments = Array(comments.prefix(3)).map { value -> [String: Any] in
+            var item = value; item["momentID"] = shortID; return item
+        }
+        short["id"] = shortID; short["text"] = "三条评论的动态：直接展开预览即可。"
+        short["media"] = []; short["createdAt"] = time - 1800
+        short["commentCount"] = 3; short["commentPreview"] = shortComments
+        var empty = short; empty["id"] = "11111111-1111-4111-8111-111111111113"
+        empty["text"] = "没有评论的动态"; empty["commentCount"] = 0; empty["createdAt"] = time - 2700
+        empty["commentPreview"] = shortComments.map { value -> [String: Any] in
+            var item = value; item["momentID"] = empty["id"]; return item
+        }
+        let shortMoment = short
+        let listData = try JSONSerialization.data(withJSONObject: ["moments": [moment, short, empty], "nextCursor": NSNull()])
         let momentData = try JSONSerialization.data(withJSONObject: ["moment": moment])
         let commentsData = try JSONSerialization.data(withJSONObject: ["comments": comments, "nextCursor": NSNull()])
         return KikiAPIMockServer(contentType: "image/jpeg") { request in
@@ -4326,6 +4340,13 @@ extension KikiConsentTests {
             if path == "/v1/social/moments" { return (200, listData) }
             if path == "/v1/social/moments/" + momentID { return (200, momentData) }
             if path == "/v1/social/moments/" + momentID + "/comments" { return (200, commentsData) }
+            if path == "/v1/social/moments/" + momentID + "/like" {
+                var liked = moment; let enabled = request.httpMethod == "PUT"
+                liked["liked"] = enabled; liked["likeCount"] = enabled ? 9 : 8
+                return (200, try JSONSerialization.data(withJSONObject: ["moment": liked]))
+            }
+            if path == "/v1/social/moments/" + shortID { return (200, try JSONSerialization.data(withJSONObject: ["moment": shortMoment])) }
+            if path == "/v1/social/moments/" + shortID + "/comments" { return (200, try JSONSerialization.data(withJSONObject: ["comments": shortComments, "nextCursor": NSNull()])) }
             return try p1VisualResponse(request, documents: documents)
         }
     }

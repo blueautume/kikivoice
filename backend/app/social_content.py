@@ -336,12 +336,93 @@ class ContentMethods:
     def message_json(self,db,row):
         return {"id":row["id"],"seq":row["seq"],"senderID":db.execute("SELECT login_id FROM accounts WHERE account_id=?",(row["sender_id"],)).fetchone()[0],"text":row["text"],"createdAt":row["created_at"]}
 
-    def conversation_unread(self,db,user,conversation_id):
-        return db.execute("SELECT COUNT(*) FROM social_messages m WHERE m.conversation_id=? AND m.recipient_id=? AND m.created_at>? AND m.seq>MAX(COALESCE((SELECT through_seq FROM social_reads WHERE conversation_id=? AND account_id=?),0),COALESCE((SELECT cleared_through_seq FROM social_conversation_state WHERE conversation_id=? AND account_id=?),0))",(conversation_id,user["account_id"],int(time.time())-30*86400,conversation_id,user["account_id"],conversation_id,user["account_id"])).fetchone()[0]
+    def conversation_unread(self,db,user,conversation_id,*,cutoff=None):
+        if cutoff is None: cutoff=int(time.time())-30*86400
+        return db.execute("SELECT COUNT(*) FROM social_messages m WHERE m.conversation_id=? AND m.recipient_id=? AND m.created_at>? AND m.seq>MAX(COALESCE((SELECT through_seq FROM social_reads WHERE conversation_id=? AND account_id=?),0),COALESCE((SELECT cleared_through_seq FROM social_conversation_state WHERE conversation_id=? AND account_id=?),0))",(conversation_id,user["account_id"],cutoff,conversation_id,user["account_id"],conversation_id,user["account_id"])).fetchone()[0]
 
     def conversation_state(self,db,user,conversation_id):
         row=db.execute("SELECT is_pinned,cleared_through_seq FROM social_conversation_state WHERE conversation_id=? AND account_id=?",(conversation_id,user["account_id"])).fetchone()
         return row if row is not None else {"is_pinned":0,"cleared_through_seq":0}
+
+    def inbox_rows(self,db,user,policy,limit,key,*,cutoff):
+        blocked=list(policy.blockedUserIDs)
+        exclusion=" AND a.login_id NOT IN ("+",".join("?" for _ in blocked)+")" if blocked else ""
+        query="""SELECT * FROM (
+          SELECT 'notification' AS kind,n.id,0 AS is_pinned,n.created_at AS activity_at,
+                 'notification:'||n.id AS sort_id,a.login_id AS target_public
+          FROM social_notifications n JOIN social_notification_sequence q ON q.notification_id=n.id
+          LEFT JOIN accounts a ON a.account_id=n.actor_id
+          WHERE n.recipient_id=? AND n.created_at>?
+            AND q.seq>COALESCE((SELECT cleared_through_seq FROM social_notification_state WHERE account_id=?),0)
+            AND (n.actor_id IS NULL OR ("""+self.valid_account_sql()+exclusion+"""))
+          UNION ALL
+          SELECT 'direct',c.id,COALESCE(s.is_pinned,0),c.updated_at,'direct:'||c.id,a.login_id
+          FROM social_conversations c
+          JOIN accounts a ON a.account_id=CASE WHEN c.first_id=? THEN c.second_id ELSE c.first_id END
+          LEFT JOIN social_conversation_state s ON s.conversation_id=c.id AND s.account_id=?
+          WHERE (c.first_id=? OR c.second_id=?) AND """+self.valid_account_sql()+exclusion+"""
+            AND EXISTS(SELECT 1 FROM social_messages m WHERE m.conversation_id=c.id AND m.created_at>?
+                       AND m.seq>COALESCE(s.cleared_through_seq,0)))
+          """+(" WHERE (is_pinned,activity_at,sort_id)<(?,?,?)" if key else "")+" ORDER BY is_pinned DESC,activity_at DESC,sort_id DESC LIMIT ?"
+        owner=user["account_id"]
+        args=(owner,cutoff,owner,*self.legal_args,*blocked,owner,owner,owner,owner,
+              *self.legal_args,*blocked,cutoff,*(key if key else ()),limit+1)
+        return db.execute(query,args).fetchall()
+
+    def inbox(self,user,limit=20,cursor=None):
+        # Retention is a response-wide boundary, including both policy phases,
+        # the final message previews and unread counts when the clock advances.
+        cutoff=int(time.time())-30*86400
+        key=self.cursor(user,"inbox-v1",value=cursor)
+        policy=self.policy(user)
+        with self.database(self.settings) as db:
+            self.check(db,user)
+            candidates=self.inbox_rows(db,user,policy,limit,key,cutoff=cutoff)[:limit]
+        # Enrich only the bounded page's people with current-room metadata; the
+        # complete fresh bilateral block snapshot is still applied before LIMIT.
+        policy=self.policy(user,[row["target_public"] for row in candidates if row["target_public"]])
+        with self.database(self.settings) as db:
+            db.execute("BEGIN")
+            self.check(db,user)
+            rows=self.inbox_rows(db,user,policy,limit,key,cutoff=cutoff)
+            candidates=rows[:limit];entries=[]
+            for row in candidates:
+                if row["kind"]=="notification":
+                    notice=db.execute("SELECT n.*,q.seq FROM social_notifications n JOIN social_notification_sequence q ON q.notification_id=n.id WHERE n.id=? AND n.recipient_id=?",(row["id"],user["account_id"])).fetchone()
+                    actor=self.person(db,user,self.account(db,row["target_public"]),policy) if row["target_public"] else None
+                    value={"id":notice["id"],"seq":notice["seq"],"kind":notice["kind"],"actor":actor,
+                           "text":notice["text"],"createdAt":notice["created_at"],"readAt":notice["read_at"],
+                           "roomID":None,"momentID":notice["moment_id"]}
+                    entries.append({"kind":"notification","notification":value})
+                else:
+                    target=self.account(db,row["target_public"])
+                    state=self.conversation_state(db,user,row["id"])
+                    last=db.execute("SELECT * FROM social_messages WHERE conversation_id=? AND created_at>? AND seq>? ORDER BY seq DESC LIMIT 1",(row["id"],cutoff,state["cleared_through_seq"])).fetchone()
+                    if last is None: continue
+                    value={"id":row["id"],"person":self.person(db,user,target,policy),
+                           "lastMessage":self.message_json(db,last),"unreadCount":self.conversation_unread(db,user,row["id"],cutoff=cutoff),
+                           **self.dm_access(db,user["account_id"],target["account_id"]),"isPinned":bool(state["is_pinned"])}
+                    entries.append({"kind":"direct","conversation":value})
+            unread_direct=0
+            for conv in db.execute("SELECT c.id,a.login_id FROM social_conversations c JOIN accounts a ON a.account_id=CASE WHEN c.first_id=? THEN c.second_id ELSE c.first_id END WHERE (c.first_id=? OR c.second_id=?) AND "+self.valid_account_sql(),(user["account_id"],user["account_id"],user["account_id"],*self.legal_args)):
+                if conv["login_id"] not in policy.blockedUserIDs:
+                    unread_direct+=self.conversation_unread(db,user,conv["id"],cutoff=cutoff)
+            unread_notice=self.unread(db,user,policy,cutoff=cutoff)
+        return {"entries":entries,"nextCursor":self.cursor(user,"inbox-v1",key=[candidates[-1]["is_pinned"],candidates[-1]["activity_at"],candidates[-1]["sort_id"]]) if len(rows)>limit and candidates else None,
+                "unreadNotificationCount":unread_notice,"unreadDirectMessageCount":unread_direct}
+
+    def mutate_inbox_history(self,db,user,snapshot,*,clear):
+        owner=user["account_id"]
+        # Per-conversation maxima come from the fixed global cutoff, rather
+        # than the currently loaded page or the latest event at confirmation.
+        rows=db.execute("SELECT m.conversation_id,MAX(m.seq) AS through_seq FROM social_messages m JOIN social_conversations c ON c.id=m.conversation_id WHERE (c.first_id=? OR c.second_id=?) AND m.seq<=? GROUP BY m.conversation_id",(owner,owner,snapshot["m"])).fetchall()
+        for row in rows:
+            if clear:
+                db.execute("INSERT INTO social_conversation_state(conversation_id,account_id,is_pinned,cleared_through_seq) VALUES(?,?,0,?) ON CONFLICT(conversation_id,account_id) DO UPDATE SET is_pinned=0,cleared_through_seq=MAX(cleared_through_seq,excluded.cleared_through_seq)",(row["conversation_id"],owner,row["through_seq"]))
+            db.execute("INSERT INTO social_reads VALUES(?,?,?) ON CONFLICT(conversation_id,account_id) DO UPDATE SET through_seq=MAX(through_seq,excluded.through_seq)",(row["conversation_id"],owner,row["through_seq"]))
+        if clear:
+            db.execute("INSERT INTO social_notification_state(account_id,is_pinned,cleared_through_seq) VALUES(?,0,?) ON CONFLICT(account_id) DO UPDATE SET is_pinned=0,cleared_through_seq=MAX(cleared_through_seq,excluded.cleared_through_seq)",(owner,snapshot["n"]))
+        db.execute("UPDATE social_notifications SET read_at=? WHERE recipient_id=? AND read_at IS NULL AND id IN (SELECT notification_id FROM social_notification_sequence WHERE seq<=?)",(int(time.time()),owner,snapshot["n"]))
 
     def conversations(self,user,limit=20,cursor=None):
         try:
