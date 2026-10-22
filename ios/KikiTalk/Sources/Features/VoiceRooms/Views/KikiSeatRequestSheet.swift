@@ -13,8 +13,8 @@ struct KikiSeatRequestSheet: View {
     let onOpenPerson: (String) -> Void
     let onDismiss: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    private let accent = Color(hex: 0x8B66FF)
-    private let background = Color(hex: 0x17151E)
+    private let accent = KikiPalette.purple
+    private let background = KikiPalette.background
 
     init(roomState: KikiRoomState?, gifts: KikiGiftStore, isWorking: Bool, isAvailable: Bool,
          errorMessage: String?, onApprove: @escaping (String) -> Void, onReject: @escaping (String) -> Void,
@@ -31,9 +31,7 @@ struct KikiSeatRequestSheet: View {
     }
 
     var body: some View {
-        if #available(iOS 18.0, *) {
-            content.presentationSizing(.form)
-        } else { content }
+        content
     }
 
     private var pending: [KikiSeatRequest] { requests(with: "pending") }
@@ -48,7 +46,7 @@ struct KikiSeatRequestSheet: View {
             VStack(spacing: 0) {
                 if let errorMessage, !errorMessage.isEmpty {
                     Label(errorMessage, systemImage: "exclamationmark.circle")
-                        .font(.subheadline).foregroundStyle(Color(hex: 0xEAC6A3))
+                        .font(.subheadline).foregroundStyle(.red)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 20).padding(.vertical, 12)
                         .accessibilityIdentifier("livekit.room.seatRequestError")
@@ -58,10 +56,10 @@ struct KikiSeatRequestSheet: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if pending.isEmpty && approved.isEmpty {
                     VStack(spacing: 15) {
-                        Image(systemName: "figure.wave")
-                            .font(.system(size: 38, weight: .light)).foregroundStyle(.white.opacity(0.32))
+                        Image("RaiseHand").renderingMode(.template).resizable().scaledToFit()
+                            .frame(width: 42, height: 42).foregroundStyle(KikiPalette.muted)
                             .accessibilityHidden(true)
-                        Text("暂无上麦申请").font(.headline).foregroundStyle(.white.opacity(0.62))
+                        Text("暂无上麦申请").font(.headline).foregroundStyle(KikiPalette.secondary)
                     }
                     .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityElement(children: .combine)
@@ -76,7 +74,7 @@ struct KikiSeatRequestSheet: View {
                         }
                     }
                     .listStyle(.plain).scrollContentBackground(.hidden)
-                    .listRowSeparatorTint(.white.opacity(0.10))
+                    .listRowSeparatorTint(KikiPalette.muted.opacity(0.18))
                 }
             }
             .background(background)
@@ -87,10 +85,7 @@ struct KikiSeatRequestSheet: View {
                 }
             }
         }
-        .tint(accent).preferredColorScheme(.dark)
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(background)
+        .tint(accent).foregroundStyle(KikiPalette.text)
         .accessibilityIdentifier("livekit.room.seatRequestPanel")
     }
 
@@ -110,10 +105,10 @@ struct KikiSeatRequestSheet: View {
                 .buttonStyle(.plain).accessibilityLabel("查看\(request.name)的个人主页")
                 .accessibilityIdentifier("livekit.room.seatRequestPerson.\(request.userID)")
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(request.name).font(.subheadline.weight(.medium)).foregroundStyle(.white)
+                    Text(request.name).font(.subheadline.weight(.medium)).foregroundStyle(KikiPalette.text)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     Text(request.status == "approved" ? "已同意，等待自动上麦" : "申请上麦")
-                        .font(.caption).foregroundStyle(.white.opacity(0.52))
+                        .font(.caption).foregroundStyle(KikiPalette.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
@@ -122,7 +117,7 @@ struct KikiSeatRequestSheet: View {
                 approvalButtons(request)
             } else if request.status == "approved" {
                 Label("已同意", systemImage: "checkmark.circle.fill")
-                    .font(.caption).foregroundStyle(Color(hex: 0xB9F2D1))
+                    .font(.caption).foregroundStyle(KikiPalette.mint)
             }
         }
         .padding(.vertical, 9).listRowBackground(Color.clear)
@@ -142,7 +137,7 @@ struct KikiSeatRequestSheet: View {
                 Text("拒绝").font(.subheadline.weight(.medium))
                     .frame(minWidth: 32, maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, minHeight: 30)
             }
-            .buttonStyle(.bordered).tint(.white.opacity(0.76))
+            .buttonStyle(.bordered).tint(KikiPalette.secondary)
             .accessibilityLabel("拒绝\(request.name)的上麦申请")
             .accessibilityIdentifier("livekit.room.rejectSeatRequest.\(request.userID)")
             Button {
@@ -152,7 +147,7 @@ struct KikiSeatRequestSheet: View {
                 Text("同意").font(.subheadline.weight(.semibold))
                     .frame(minWidth: 32, maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, minHeight: 30)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.borderedProminent).tint(KikiPalette.action)
             .accessibilityLabel("同意\(request.name)的上麦申请")
             .accessibilityIdentifier("livekit.room.approveSeatRequest.\(request.userID)")
         }

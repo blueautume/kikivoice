@@ -48,6 +48,98 @@ final class KikiRoomPresentationTests: XCTestCase {
         }
     }
 
+    func testDiscoverSearchKeepsTabsOutOfKeyboardAndDismissesWithoutLosingQuery() async throws {
+        let scene = try foregroundScene()
+        let previous = scene.windows.first { $0.isKeyWindow }
+        let model = KikiSearchPresentationModel()
+        let store = presentationStore()
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: KikiDiscoverSearchFixture(model: model).environmentObject(store))
+        // Native scene geometry is required for keyboard avoidance; never disable
+        // the keyboard safe-area region to make this assertion pass.
+        host.safeAreaRegions = .all
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.endEditing(true); window.isHidden = true; previous?.makeKeyAndVisible() }
+        try await Task.sleep(nanoseconds: 150_000_000)
+        window.layoutIfNeeded()
+        let field = try XCTUnwrap(descendants(of: host.view).compactMap { $0 as? UITextField }.first)
+        let initialBar = try XCTUnwrap(model.barProbe)
+        let initialBarFrame = initialBar.convert(initialBar.bounds, to: window)
+        XCTAssertEqual(initialBar.window, window)
+        XCTAssertGreaterThan(initialBarFrame.width, 100)
+        XCTAssertGreaterThanOrEqual(initialBarFrame.height, 44)
+
+        XCTAssertTrue(field.becomeFirstResponder())
+        try await waitForSearch { field.isFirstResponder && model.searchFocused && model.barProbe?.window == nil }
+        field.text = "音乐和晚风"
+        field.sendActions(for: .editingChanged)
+        try await Task.sleep(nanoseconds: 150_000_000)
+        window.layoutIfNeeded()
+        let fieldFrame = field.convert(field.bounds, to: host.view)
+        XCTAssertTrue(host.view.bounds.contains(fieldFrame), "Search must retain normal keyboard-safe layout")
+        XCTAssertNil(model.barProbe?.window, "The main tabs must not float above a focused search keyboard")
+        let inputIdentity = ObjectIdentifier(field)
+        let probe = try XCTUnwrap(descendants(of: host.view).compactMap { $0 as? KikiRoomKeyboardDismissal.Probe }.first)
+        let dismissal = try XCTUnwrap(probe.coordinator)
+        XCTAssertFalse(dismissal.acceptsTap(from: field), "Tapping within native search must keep editing")
+        XCTAssertTrue(dismissal.acceptsTap(from: host.view), "Non-input blank space must end search editing")
+        XCTAssertFalse(try XCTUnwrap(dismissal.recognizer).cancelsTouchesInView,
+                       "The observer must preserve room/create/filter button delivery")
+        let scrollViews = descendants(of: host.view).compactMap { $0 as? UIScrollView }
+        let roomList = try XCTUnwrap(scrollViews.max { $0.bounds.height < $1.bounds.height })
+        XCTAssertTrue(dismissal.acceptsTap(from: roomList),
+                      "The real room-list blank area must reach the window dismissal observer")
+        // SwiftUI may include the keyboard accessory in its native interactive
+        // mode; both public UIKit modes track the drag rather than dismissing abruptly.
+        XCTAssertTrue(scrollViews.contains {
+            $0.keyboardDismissMode == .interactive || $0.keyboardDismissMode == .interactiveWithAccessory
+        }, "Room-list scrolling must support interactive dismissal; native modes: \(scrollViews.map { $0.keyboardDismissMode.rawValue })")
+        if ProcessInfo.processInfo.environment["KIKI_DISCOVER_SEARCH_SOFTWARE_KEYBOARD"] == "1" {
+            let deadline = Date().addingTimeInterval(45)
+            while host.view.keyboardLayoutGuide.layoutFrame.height <= 100, Date() < deadline {
+                try await Task.sleep(nanoseconds: 100_000_000)
+                window.layoutIfNeeded()
+            }
+            let keyboard = host.view.keyboardLayoutGuide.layoutFrame
+            XCTAssertGreaterThan(keyboard.height, 100, "The opt-in requires a visible native software keyboard")
+            XCTAssertLessThanOrEqual(field.convert(field.bounds, to: host.view).maxY, keyboard.minY + 1)
+            XCTAssertNil(model.barProbe?.window)
+        }
+        try capture(name: "discover-search-focused", windows: [window], bounds: window.bounds)
+        if ProcessInfo.processInfo.environment["KIKI_DISCOVER_SEARCH_SOFTWARE_KEYBOARD"] == "1" {
+            try await Task.sleep(nanoseconds: 3_000_000_000)
+        }
+        // Deliver the same public callback used by the accepted window tap,
+        // without creating synthetic touches or depending on SwiftUI AX nodes.
+        dismissal.dismissAfterRecognizedTap()
+        try await waitForSearch { !field.isFirstResponder && !model.searchFocused && model.barProbe?.window === window }
+        XCTAssertEqual(field.text, "音乐和晚风")
+        let restoredBar = try XCTUnwrap(model.barProbe)
+        let restoredFrame = restoredBar.convert(restoredBar.bounds, to: window)
+        XCTAssertEqual(restoredFrame.minX, initialBarFrame.minX, accuracy: 1)
+        XCTAssertEqual(restoredFrame.maxY, initialBarFrame.maxY, accuracy: 1,
+                       "Tabs return to the bottom after the keyboard has closed")
+        XCTAssertEqual(restoredFrame.width, initialBarFrame.width, accuracy: 1)
+        try capture(name: "discover-search-dismissed", windows: [window], bounds: window.bounds)
+
+        XCTAssertTrue(field.becomeFirstResponder())
+        try await waitForSearch { model.searchFocused && field.isFirstResponder }
+        model.selectedTab = 1
+        try await waitForSearch { !field.isFirstResponder && !model.searchFocused }
+        model.selectedTab = 0
+        try await waitForSearch { model.barProbe?.window === window }
+        XCTAssertEqual(field.text, "音乐和晚风")
+        XCTAssertEqual(ObjectIdentifier(field), inputIdentity, "Switching tabs must preserve the actual search field and query")
+    }
+
+    private func waitForSearch(file: StaticString = #filePath, line: UInt = #line,
+                               _ predicate: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(4)
+        while !predicate(), Date() < deadline { try await Task.sleep(nanoseconds: 30_000_000) }
+        XCTAssertTrue(predicate(), "Native search focus or tab layout did not settle", file: file, line: line)
+    }
+
     func testOfflineSeatKeepsTheSameGridHeightAndDoesNotNeedAStatusCaption() {
         let gifts = KikiGiftStore()
         defer { gifts.reset() }
@@ -271,6 +363,48 @@ final class KikiRoomPresentationTests: XCTestCase {
         let folder = URL(fileURLWithPath: "/tmp/kiki-room-presentation-screenshots", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(device + "-" + name + ".png"), options: .atomic)
+    }
+}
+
+@MainActor
+private final class KikiSearchPresentationModel: ObservableObject {
+    @Published var selectedTab = 0
+    @Published var searchFocused = false
+    var barProbe: UIView?
+}
+
+private struct KikiSearchBarProbe: UIViewRepresentable {
+    let model: KikiSearchPresentationModel
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        model.barProbe = view
+        return view
+    }
+    func updateUIView(_ view: UIView, context: Context) { model.barProbe = view }
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
+}
+
+private struct KikiDiscoverSearchFixture: View {
+    @ObservedObject var model: KikiSearchPresentationModel
+    var body: some View {
+        KikiMainTabLayout(isRoomSearchFocused: model.selectedTab == 0 && model.searchFocused) {
+            ZStack {
+                KikiDiscoverView(isActive: model.selectedTab == 0, onSearchFocusChange: { model.searchFocused = $0 })
+                    .opacity(model.selectedTab == 0 ? 1 : 0)
+                    .allowsHitTesting(model.selectedTab == 0)
+                if model.selectedTab != 0 { Text("动态") }
+            }
+        } tabBar: {
+            HStack {
+                ForEach(Array(["语聊", "动态", "消息", "我"].enumerated()), id: \.offset) { index, title in
+                    Button(title) { model.selectedTab = index }.frame(maxWidth: .infinity, minHeight: 44)
+                }
+            }.padding(.vertical, 8).background(KikiSearchBarProbe(model: model))
+        }
+        .background(KikiPalette.background.ignoresSafeArea())
     }
 }
 

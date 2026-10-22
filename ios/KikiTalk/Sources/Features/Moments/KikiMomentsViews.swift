@@ -500,8 +500,8 @@ struct KikiMomentCommentsView: View {
                     generation = UUID(); isLoading = false; isSending = false
                     deletingCommentID = nil; isCommentFocused = false
                 }
-                .sheet(item: $report) { KikiSocialReportForm(target: $0, store: store) }
-                .sheet(item: $person) { KikiPublicProfileView(userID: $0.id, store: store) }
+                .sheet(item: $report) { KikiSocialReportForm(target: $0, store: store).kikiRoomSheet() }
+                .sheet(item: $person) { KikiPublicProfileView(userID: $0.id, store: store).kikiRoomSheet() }
         }.tint(KikiPalette.lavender).foregroundStyle(KikiPalette.text)
     }
     private func applyInitialFocus() async {

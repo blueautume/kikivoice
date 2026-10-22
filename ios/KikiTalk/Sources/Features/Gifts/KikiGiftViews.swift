@@ -28,7 +28,7 @@ struct KikiGiftWalletCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("profile.experienceWallet")
-        .sheet(isPresented: $showsCenter) { KikiExperienceCenterView(gifts: gifts) }
+        .sheet(isPresented: $showsCenter) { KikiExperienceCenterView(gifts: gifts).kikiRoomSheet() }
     }
 }
 
@@ -68,7 +68,7 @@ struct KikiExperienceCenterView: View {
             }
             .refreshable { await gifts.refresh() }
             .task { await gifts.refresh() }
-            .sheet(item: $preview) { item in KikiDecorationDetail(gifts: gifts, item: item) }
+            .sheet(item: $preview) { item in KikiDecorationDetail(gifts: gifts, item: item).kikiRoomSheet() }
             .overlay {
                 if gifts.isLoading && gifts.catalog == nil {
                     ProgressView("正在同步体验账户…").padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
@@ -286,13 +286,13 @@ private struct KikiDecorationPreview: View {
                         Image(systemName: "waveform").font(.caption.bold()).foregroundStyle(KikiDecorationPaint(id: item.id).colors[0]).offset(y: 15)
                     }
             case .chatBubble:
-                Text("你好，很高兴认识你 ✨").font(.caption).foregroundStyle(.white)
+                Text("你好，很高兴认识你 ✨").font(.caption).foregroundStyle(KikiPalette.text)
                     .padding(12).background { KikiChatDecorationBackground(decorationID: item.id) }.padding(10)
             case .roomBackground:
                 ZStack {
                     KikiRoomDecorationBackground(decorationID: item.id)
                     VStack(spacing: 12) {
-                        Text("Kiki 的语聊空间").font(.caption.weight(.semibold)).foregroundStyle(.white)
+                        Text("Kiki 的语聊空间").font(.caption.weight(.semibold)).foregroundStyle(KikiPalette.text)
                         HStack(spacing: 9) { ForEach(0..<4) { index in KikiAvatar(index: index, size: 22) } }
                     }.padding(12)
                 }.clipShape(RoundedRectangle(cornerRadius: 14)).padding(7)
@@ -407,7 +407,7 @@ struct KikiGiftPanel: View {
                 }
             }
             .onChange(of: gifts.userID) { selectedIDs = []; dismiss() }
-            .sheet(isPresented: $showsCenter) { KikiExperienceCenterView(gifts: gifts) }
+            .sheet(isPresented: $showsCenter) { KikiExperienceCenterView(gifts: gifts).kikiRoomSheet() }
         }
         .tint(KikiPalette.purple)
         .accessibilityIdentifier("gift.panel")
@@ -802,7 +802,7 @@ struct KikiChatDecorationBackground: View {
     var body: some View {
         let paint = KikiDecorationPaint(id: decorationID)
         RoundedRectangle(cornerRadius: 15)
-            .fill(decorationID?.hasPrefix("bubble_") == true ? AnyShapeStyle(LinearGradient(colors: paint.colors.map { $0.opacity(0.19) }, startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(Color.white.opacity(0.065)))
+            .fill(decorationID?.hasPrefix("bubble_") == true ? AnyShapeStyle(LinearGradient(colors: paint.colors.map { $0.opacity(0.19) }, startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(KikiPalette.surface.opacity(0.85)))
             .overlay {
                 if decorationID?.hasPrefix("bubble_") == true {
                     RoundedRectangle(cornerRadius: 15).stroke(paint.gradient.opacity(0.6), lineWidth: 0.8)
@@ -814,11 +814,16 @@ struct KikiChatDecorationBackground: View {
 
 struct KikiRoomDecorationBackground: View {
     let decorationID: String?
+    @Environment(\.colorScheme) private var colorScheme
     var body: some View {
         let paint = KikiDecorationPaint(id: decorationID)
         GeometryReader { geometry in
             ZStack {
-                LinearGradient(colors: paint.roomColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                KikiPalette.background
+                LinearGradient(colors: colorScheme == .dark ? paint.roomColors
+                               : (paint.decorated ? paint.colors.map { $0.opacity(0.16) }
+                                  : [KikiPalette.background, KikiPalette.surface]),
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
                 if decorationID?.hasPrefix("background_") == true {
                     Ellipse().fill(RadialGradient(colors: [paint.colors[0].opacity(0.16), .clear], center: .center, startRadius: 0, endRadius: max(1, min(geometry.size.width, 700) * 0.6)))
                         .frame(width: min(geometry.size.width * 1.3, 900), height: min(geometry.size.height * 0.8, 700))

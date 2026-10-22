@@ -72,7 +72,7 @@ struct KikiRoomAudienceStrip<Avatar: View>: View {
                         Button { onOpenPerson(member.userID) } label: {
                             VStack(spacing: 5) {
                                 avatar(member).frame(width: 36, height: 36)
-                                Text(member.name).font(.caption2).foregroundStyle(.white.opacity(0.78))
+                                Text(member.name).font(.caption2).foregroundStyle(KikiPalette.secondary)
                                     .lineLimit(1).frame(width: 56, height: labelHeight)
                             }
                             .padding(.vertical, 4).frame(minWidth: 56, minHeight: 58).contentShape(Rectangle())
@@ -110,8 +110,8 @@ struct KikiRoomChatBubbleRow<Avatar: View, BubbleBackground: View>: View {
             .buttonStyle(.plain)
             .accessibilityLabel("查看\(senderName)的个人主页")
             .accessibilityIdentifier("livekit.room.messageAvatar.\(id)")
-            (Text(senderName + "：").foregroundColor(isLocal ? Color(hex: 0xC6B5FF) : .white.opacity(0.65))
-             + Text(isGift ? "🎁 " + text : text).foregroundColor(isGift ? Color(hex: 0xE5D5FF) : .white))
+            (Text(senderName + "：").foregroundColor(isLocal ? KikiPalette.purple : KikiPalette.secondary)
+             + Text(isGift ? "🎁 " + text : text).foregroundColor(isGift ? KikiPalette.purple : KikiPalette.text))
                 .font(.subheadline).lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 11).padding(.vertical, 8)
@@ -134,17 +134,17 @@ struct KikiRoomAnnouncementChatRow: View {
                 Image(systemName: "megaphone.fill")
                     .font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
                     .frame(width: 32, height: 32)
-                    .background(Color(hex: 0x8B66FF), in: Circle()).padding(4)
+                    .background(KikiPalette.action, in: Circle()).padding(4)
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("公告").font(.caption2).foregroundStyle(Color(hex: 0xD4C7FF))
+                    Text("公告").font(.caption2).foregroundStyle(KikiPalette.purple)
                         .padding(.horizontal, 5).padding(.vertical, 2)
-                        .background(Color(hex: 0x8B66FF).opacity(0.25), in: Capsule())
+                        .background(KikiPalette.purple.opacity(0.12), in: Capsule())
                         .fixedSize()
-                    Text(text).font(.subheadline).foregroundStyle(.white).lineSpacing(3)
+                    Text(text).font(.subheadline).foregroundStyle(KikiPalette.text).lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                     .padding(.horizontal, 11).padding(.vertical, 8)
-                    .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 15))
+                    .background(KikiPalette.surface.opacity(0.85), in: RoundedRectangle(cornerRadius: 15))
                 Spacer(minLength: 8)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

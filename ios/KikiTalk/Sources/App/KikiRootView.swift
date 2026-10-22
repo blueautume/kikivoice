@@ -110,6 +110,7 @@ private struct KikiAuthorizedRootView: View {
     @StateObject private var store: KikiAppStore
     @ObservedObject private var push = KikiPushController.shared
     @State private var selectedTab = 0
+    @State private var isRoomSearchFocused = false
     @Environment(\.scenePhase) private var scenePhase
 
     init(consent: KikiConsentStore) {
@@ -134,9 +135,10 @@ private struct KikiAuthorizedRootView: View {
             } else if store.isAuthenticated && store.needsNickname {
                 KikiNicknameOnboardingView()
             } else if store.isAuthenticated {
-                VStack(spacing: 0) {
+                KikiMainTabLayout(isRoomSearchFocused: selectedTab == 0 && isRoomSearchFocused) {
                     ZStack {
-                        KikiDiscoverView(isActive: selectedTab == 0).opacity(selectedTab == 0 ? 1 : 0)
+                        KikiDiscoverView(isActive: selectedTab == 0, onSearchFocusChange: { isRoomSearchFocused = $0 })
+                            .opacity(selectedTab == 0 ? 1 : 0)
                             .allowsHitTesting(selectedTab == 0).accessibilityHidden(selectedTab != 0)
                         KikiMomentsView(store: store, isActive: selectedTab == 1).opacity(selectedTab == 1 ? 1 : 0)
                             .allowsHitTesting(selectedTab == 1).accessibilityHidden(selectedTab != 1)
@@ -145,8 +147,7 @@ private struct KikiAuthorizedRootView: View {
                         KikiProfileView(isActive: selectedTab == 3).opacity(selectedTab == 3 ? 1 : 0)
                             .allowsHitTesting(selectedTab == 3).accessibilityHidden(selectedTab != 3)
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    tabBar
-                }
+                } tabBar: { tabBar }
             } else { KikiLoginView() }
         }
         .foregroundStyle(KikiPalette.text).environmentObject(store)
@@ -154,6 +155,10 @@ private struct KikiAuthorizedRootView: View {
         .task { push.attach(store); await store.start(); await push.refresh() }
         .task(id: store.pushSessionKey) { if store.pushSessionKey != nil { await push.refresh() } }
         .onChange(of: push.inboxRequest) { _ in if store.isAuthenticated { selectedTab = 2 } }
+        .onChange(of: selectedTab) { _ in
+            isRoomSearchFocused = false
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
         .sheet(item: $push.navigation, onDismiss: { push.navigationDidDismiss() }) { route in
             switch route.content {
             case .direct(let person): KikiDirectConversationView(person: person, store: store)
@@ -237,6 +242,31 @@ private struct KikiAuthorizedRootView: View {
                 .frame(maxWidth: .infinity).frame(height: 43).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityIdentifier(index == 0 ? "discoverTab" : (index == 1 ? "momentsTab" : (index == 2 ? "messagesTab" : "profileTab")))
             .accessibilityAddTraits(selectedTab == index ? .isSelected : [])
+    }
+}
+
+/// Preserve normal keyboard avoidance for inputs while keeping the main tabs
+/// out of a room-search editing session, including the keyboard hide animation.
+struct KikiMainTabLayout<Content: View, TabBar: View>: View {
+    let isRoomSearchFocused: Bool
+    @ViewBuilder var content: () -> Content
+    @ViewBuilder var tabBar: () -> TabBar
+    @State private var searchKeyboardVisible = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            content().frame(maxWidth: .infinity, maxHeight: .infinity)
+            if !isRoomSearchFocused && !searchKeyboardVisible { tabBar() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            if isRoomSearchFocused { searchKeyboardVisible = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+            if isRoomSearchFocused { searchKeyboardVisible = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
+            searchKeyboardVisible = false
+        }
     }
 }
 

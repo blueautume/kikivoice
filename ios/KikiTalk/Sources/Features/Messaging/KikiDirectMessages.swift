@@ -111,8 +111,8 @@ struct KikiDirectConversationView: View {
                 }
                 .onChange(of: store.socialRevision) { _, _ in requestRefresh() }
                 .onChange(of: store.directContentRevision) { _, _ in requestRefresh() }
-                .sheet(isPresented: $showsProfile) { KikiPublicProfileView(userID: person.id, store: store) }
-                .sheet(item: $report) { KikiSocialReportForm(target: $0, store: store) }
+                .sheet(isPresented: $showsProfile) { KikiPublicProfileView(userID: person.id, store: store).kikiRoomSheet() }
+                .sheet(item: $report) { KikiSocialReportForm(target: $0, store: store).kikiRoomSheet() }
         }.tint(KikiPalette.lavender).foregroundStyle(KikiPalette.text)
     }
     private var composer: some View {

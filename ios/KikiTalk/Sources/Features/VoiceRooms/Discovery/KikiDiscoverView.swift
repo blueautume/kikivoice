@@ -4,6 +4,7 @@ import UIKit
 @available(iOS 16.0, *)
 struct KikiDiscoverView: View {
     var isActive: Bool = true
+    var onSearchFocusChange: (Bool) -> Void = { _ in }
     @EnvironmentObject private var store: KikiAppStore
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var category = "全部"
@@ -13,6 +14,7 @@ struct KikiDiscoverView: View {
     @State private var showsCreate = false
     @State private var showsPeople = false
     @State private var pendingRoom: KikiRoom?
+    @FocusState private var isSearching: Bool
 
     private var filteredRooms: [KikiRoom] {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -42,6 +44,10 @@ struct KikiDiscoverView: View {
                     .padding(28).background(KikiPalette.elevated, in: RoundedRectangle(cornerRadius: 20))
             }
         }
+        .background(KikiRoomKeyboardDismissal(isEnabled: isActive && isSearching, onDismiss: endSearch))
+        .onChange(of: isSearching) { focused in onSearchFocusChange(isActive && focused) }
+        .onChange(of: isActive) { active in if !active { endSearch() } }
+        .onDisappear(perform: endSearch)
     }
 
     private func discoverContent(columns: [GridItem]) -> some View {
@@ -49,7 +55,7 @@ struct KikiDiscoverView: View {
             HStack {
                 Text("语聊").font(.largeTitle.weight(.bold))
                 Spacer()
-                Button { showsPeople = true } label: {
+                Button { endSearch(); showsPeople = true } label: {
                     Image(systemName: "person.crop.circle.badge.plus")
                         .font(.system(size: KikiCreateRoomButton.symbolSize, weight: .semibold))
                         .frame(width: 44, height: KikiCreateRoomButton.touchHeight)
@@ -61,6 +67,7 @@ struct KikiDiscoverView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(KikiPalette.muted)
                 TextField("搜索房间、房主或话题", text: $query).font(.body).autocorrectionDisabled().submitLabel(.search)
+                    .focused($isSearching).onSubmit(endSearch)
                     .accessibilityIdentifier("roomSearchField")
                 if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(KikiPalette.muted) }.accessibilityLabel("清空搜索") }
             }.padding(13).background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 14)).padding(.horizontal, 20)
@@ -76,14 +83,14 @@ struct KikiDiscoverView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(["全部", "随心聊", "音乐", "生活", "游戏", "情感"], id: \.self) { item in
-                        Button { category = item } label: {
+                        Button { endSearch(); category = item } label: {
                             Text(item).font(.subheadline).foregroundStyle(category == item ? KikiPalette.lavender : KikiPalette.secondary)
                                 .padding(.horizontal, 13).padding(.vertical, 8)
                                 .background(category == item ? KikiPalette.elevated : .clear, in: Capsule())
                         }.buttonStyle(.plain)
                     }
                 }.padding(.horizontal, 20)
-            }.padding(.bottom, 10)
+            }.scrollDismissesKeyboard(.interactively).padding(.bottom, 10)
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 14) {
                     if let error = store.loadingError { KikiInlineError(message: error) { Task { await store.refreshRooms() } } }
@@ -96,7 +103,7 @@ struct KikiDiscoverView: View {
                     if filteredRooms.isEmpty {
                         KikiEmptyState(symbol: followingOnly ? "person.2.wave.2" : "waveform", title: followingOnly ? "关注的人还没有开房" : "此刻，等一个声音",
                             message: followingOnly ? "去找朋友，或切换「全部」认识更多人。" : "可以换个关键词，或创建一个自己的中文语聊房。")
-                        Button(followingOnly ? "找朋友" : "创建语聊房") { if followingOnly { showsPeople = true } else { presentCreate() } }
+                        Button(followingOnly ? "找朋友" : "创建语聊房") { endSearch(); if followingOnly { showsPeople = true } else { presentCreate() } }
                             .font(.body.weight(.semibold)).padding(.bottom, 25)
                     }
                     LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
@@ -109,21 +116,28 @@ struct KikiDiscoverView: View {
                         }
                     }
                 }.padding(.horizontal, 20).padding(.vertical, 12)
-            }.refreshable { await store.refreshRooms(); await store.refreshSocialSummary() }
+            }.scrollDismissesKeyboard(.interactively)
+                .refreshable { await store.refreshRooms(); await store.refreshSocialSummary() }
         }
     }
     private func filterButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Text(title).font(.headline).foregroundStyle(selected ? KikiPalette.text : KikiPalette.muted)
+        Button { endSearch(); action() } label: { Text(title).font(.headline).foregroundStyle(selected ? KikiPalette.text : KikiPalette.muted)
             .padding(.bottom, 6).overlay(alignment: .bottom) { if selected { Capsule().fill(KikiPalette.purple).frame(height: 2) } }
         }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
     }
     private func presentCreate() {
         guard !store.isJoiningRoom else { return }
+        endSearch()
         guard !KikiRTCService.shared.isVoiceRoomMinimized else { store.notify("你仍在语聊房中，请先返回并离开房间。"); return }
         showsCreate = true
     }
     private func open(_ room: KikiRoom) async {
+        endSearch()
         do { try await store.openRoom(room) } catch { store.notify(error.localizedDescription) }
+    }
+    private func endSearch() {
+        isSearching = false
+        onSearchFocusChange(false)
     }
     private func openPendingRoom() {
         guard let room = pendingRoom else { return }; pendingRoom = nil

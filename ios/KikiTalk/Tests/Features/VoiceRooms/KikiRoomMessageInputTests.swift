@@ -15,8 +15,18 @@ final class KikiRoomMessageInputTests: XCTestCase {
         XCTAssertFalse(fixture.input.isAccessibilityElement)
         XCTAssertEqual(field.keyboardType, .default)
         XCTAssertEqual(field.returnKeyType, .default)
-        XCTAssertEqual(field.keyboardAppearance, .dark)
-        XCTAssertEqual(field.textColor, .white)
+        XCTAssertEqual(field.keyboardAppearance, .default)
+        let textColor = try XCTUnwrap(field.textColor)
+        let placeholderColor = try XCTUnwrap(fixture.input.placeholderLabel.textColor)
+        let light = UITraitCollection(userInterfaceStyle: .light)
+        let dark = UITraitCollection(userInterfaceStyle: .dark)
+        for traits in [light, dark] {
+            XCTAssertEqual(textColor.resolvedColor(with: traits), UIColor(KikiPalette.text).resolvedColor(with: traits))
+            XCTAssertEqual(placeholderColor.resolvedColor(with: traits), UIColor(KikiPalette.secondary).resolvedColor(with: traits))
+        }
+        XCTAssertNotEqual(textColor.resolvedColor(with: light), textColor.resolvedColor(with: dark),
+                          "Native input text must use a genuinely adaptive color")
+        XCTAssertNotEqual(placeholderColor.resolvedColor(with: light), placeholderColor.resolvedColor(with: dark))
         XCTAssertFalse(field.allowsEditingTextAttributes)
         if #available(iOS 18.0, *) { XCTAssertFalse(field.supportsAdaptiveImageGlyph) }
         XCTAssertTrue(field.adjustsFontForContentSizeCategory)
@@ -277,19 +287,20 @@ final class KikiRoomMessageInputTests: XCTestCase {
         let longDraft = "第一行：保留草稿\n第二行：系统表情 😀\n第三行：继续输入\n第四行：等待发送"
         // Only the opt-in native viewport makes assertions about the physical
         // software keyboard. Synthetic short windows exercise the same layout.
-        let cases: [(name: String, size: CGSize, draft: String, messages: Int, allSeats: Bool, scrolls: Bool)] = inspectSoftwareKeyboard ? [
-            ("phone-native", scene.coordinateSpace.bounds.size, "原生输入 😀 👩🏽‍💻", 2, true, false),
-            ("phone-native-four-lines", scene.coordinateSpace.bounds.size, longDraft, 1, false, false)
+        let cases: [(name: String, size: CGSize, draft: String, messages: Int, allSeats: Bool, scrolls: Bool, scheme: ColorScheme)] = inspectSoftwareKeyboard ? [
+            ("phone-native", scene.coordinateSpace.bounds.size, "原生输入 😀 👩🏽‍💻", 2, true, false, .light),
+            ("phone-native-four-lines", scene.coordinateSpace.bounds.size, longDraft, 1, false, false, .dark)
         ] : [
-            ("phone-375", CGSize(width: 375, height: 812), "原生输入 😀 👩🏽‍💻", 3, true, false),
-            ("phone-keyboard-window", CGSize(width: 375, height: 520), "原生输入 😀", 1, true, false),
-            ("phone-four-lines", CGSize(width: 375, height: 520), longDraft, 1, false, false),
-            ("phone-tiny-window", CGSize(width: 375, height: 400), "小窗口草稿", 2, false, true),
-            ("phone-empty-chat", CGSize(width: 375, height: 520), "还没有消息", 0, true, false),
-            ("ipad-wide", CGSize(width: 1133, height: 744), "原生输入 😀", 3, true, false)
+            ("phone-375-light", CGSize(width: 375, height: 812), "原生输入 😀 👩🏽‍💻", 3, true, false, .light),
+            ("phone-375-dark", CGSize(width: 375, height: 812), "原生输入 😀 👩🏽‍💻", 3, true, false, .dark),
+            ("phone-keyboard-window", CGSize(width: 375, height: 520), "原生输入 😀", 1, true, false, .light),
+            ("phone-four-lines", CGSize(width: 375, height: 520), longDraft, 1, false, false, .dark),
+            ("phone-tiny-window", CGSize(width: 375, height: 400), "小窗口草稿", 2, false, true, .light),
+            ("phone-empty-chat", CGSize(width: 375, height: 520), "还没有消息", 0, true, false, .dark),
+            ("ipad-wide", CGSize(width: 1133, height: 744), "原生输入 😀", 3, true, false, .light)
         ]
         for item in cases {
-            let model = ScreenshotModel(text: item.draft, messageCount: item.messages)
+            let model = ScreenshotModel(text: item.draft, messageCount: item.messages, scheme: item.scheme)
             defer { model.gifts.reset() }
             let host = UIHostingController(rootView: ComposerScreenshotFixture(model: model))
             host.safeAreaRegions = inspectSoftwareKeyboard ? .all : .container
@@ -304,6 +315,10 @@ final class KikiRoomMessageInputTests: XCTestCase {
             let dismissal = try XCTUnwrap(probe.coordinator)
             try await waitFor { model.probes["seat.8"]?.window != nil && input.bounds.width > 0 }
             XCTAssertEqual(host.view.bounds.size, item.size)
+            XCTAssertEqual(input.traitCollection.userInterfaceStyle, item.scheme == .dark ? .dark : .light)
+            XCTAssertEqual(input.textView.textColor?.resolvedColor(with: input.traitCollection),
+                           UIColor(KikiPalette.text).resolvedColor(with: input.traitCollection))
+            XCTAssertNotNil(UIImage(named: "RaiseHand"), "The fixture must render the bundled hand icon used by the room")
             XCTAssertGreaterThan(input.textView.bounds.width, 120)
             XCTAssertGreaterThanOrEqual(input.emojiButton.bounds.width, 40)
             XCTAssertFalse(input.textView.isFirstResponder)
@@ -348,6 +363,8 @@ final class KikiRoomMessageInputTests: XCTestCase {
             try assertActionColumn(model: model, input: input, window: window)
             try await assertSeatReachability(model: model, window: window,
                                             allVisible: item.allSeats, requiresScroll: item.scrolls)
+            try await assertAudienceReachability(model: model, window: window)
+            try await assertActionReachability(model: model, window: window)
             XCTAssertFalse(dismissal.acceptsTap(from: input))
             XCTAssertFalse(dismissal.acceptsTap(from: input.textView))
             XCTAssertFalse(dismissal.acceptsTap(from: input.emojiButton))
@@ -400,7 +417,7 @@ final class KikiRoomMessageInputTests: XCTestCase {
     private func assertActionColumn(model: ScreenshotModel, input: UIView, window: UIWindow) throws {
         let inputFrame = input.convert(input.bounds, to: window)
         let body = try layoutFrame("content", model: model, window: window)
-        let buttons = try (0..<3).map { try layoutFrame("action.\($0)", model: model, window: window) }
+        let buttons = try (0..<4).map { try layoutFrame("action.\($0)", model: model, window: window) }
         for (index, frame) in buttons.enumerated() {
             XCTAssertEqual(frame.width, 44, accuracy: 1)
             XCTAssertEqual(frame.height, 44, accuracy: 1)
@@ -410,17 +427,27 @@ final class KikiRoomMessageInputTests: XCTestCase {
                 XCTAssertEqual(frame.minY - buttons[index - 1].maxY, 6, accuracy: 1)
             }
         }
-        let rail = try XCTUnwrap(scrollAncestor(of: try XCTUnwrap(model.probes["action.2"])))
+        let rail = try XCTUnwrap(scrollAncestor(of: try XCTUnwrap(model.probes["action.3"])))
         let visibleRail = rail.convert(rail.bounds, to: window)
         XCTAssertLessThanOrEqual(visibleRail.maxY, inputFrame.minY + 1,
                                  "The independent action rail must stay above the composer")
         XCTAssertEqual(visibleRail.maxY, body.maxY, accuracy: 1)
-        for number in 1...8 {
-            let seat = try layoutFrame("seat.\(number)", model: model, window: window)
-            XCTAssertLessThanOrEqual(seat.maxX, buttons[0].minX - 11,
-                                     "The right-hand action hit areas cannot cover any microphone seat")
-        }
+        let stageProbe = try XCTUnwrap(model.probes["stageContent"])
+        let stageScroll = try XCTUnwrap(scrollAncestor(of: stageProbe))
+        let stageViewport = stageScroll.convert(stageScroll.bounds, to: window)
+        XCTAssertEqual(stageViewport.minX, body.minX, accuracy: 1)
+        XCTAssertEqual(stageViewport.maxX, body.maxX, accuracy: 1,
+                       "The eight-seat stage must keep the entire room width on iPhone and iPad")
+        let audience = try layoutFrame("audience", model: model, window: window)
+        XCTAssertEqual(audience.minX, body.minX, accuracy: 1)
+        XCTAssertEqual(audience.maxX, body.maxX, accuracy: 1,
+                       "The audience strip belongs to the full-width stage, without an action-column gutter")
+        XCTAssertGreaterThan(audience.height, 40)
+        XCTAssertGreaterThanOrEqual(visibleRail.minY, stageViewport.maxY - 1,
+                                    "The four action hit areas must stay in the conversation area below the stage")
         let chat = try layoutFrame("chat", model: model, window: window)
+        XCTAssertGreaterThanOrEqual(chat.minY, stageViewport.maxY - 1,
+                                    "Chat must stay below the stage even on a wide iPad")
         XCTAssertLessThanOrEqual(chat.maxX, buttons[0].minX - 11,
                                  "The action rail cannot cover the chat viewport")
     }
@@ -441,15 +468,52 @@ final class KikiRoomMessageInputTests: XCTestCase {
                 XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height + 1,
                                      "The tiny-window fixture must actually exercise stage overflow")
             }
-            let bottom = max(-scroll.adjustedContentInset.top,
-                             scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
-            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: bottom), animated: false)
+            scroll.scrollRectToVisible(last.convert(last.bounds, to: scroll), animated: false)
             window.layoutIfNeeded()
             await settle()
             let seat = last.convert(last.bounds, to: window)
             XCTAssertGreaterThanOrEqual(seat.minY, viewport.minY - 1)
             XCTAssertLessThanOrEqual(seat.maxY, viewport.maxY + 1, "The eighth seat must be reachable by scrolling")
         }
+    }
+
+    private func assertAudienceReachability(model: ScreenshotModel, window: UIWindow) async throws {
+        let audience = try XCTUnwrap(model.probes["audience"])
+        let stageProbe = try XCTUnwrap(model.probes["stageContent"])
+        let scroll = try XCTUnwrap(scrollAncestor(of: stageProbe))
+        let previous = scroll.contentOffset
+        scroll.scrollRectToVisible(audience.convert(audience.bounds, to: scroll), animated: false)
+        window.layoutIfNeeded()
+        await settle()
+        let viewport = scroll.convert(scroll.bounds, to: window)
+        let frame = audience.convert(audience.bounds, to: window)
+        XCTAssertGreaterThanOrEqual(frame.minY, viewport.minY - 1)
+        XCTAssertLessThanOrEqual(frame.maxY, viewport.maxY + 1,
+                                 "Online listeners must remain reachable while the input keeps keyboard focus")
+        scroll.setContentOffset(previous, animated: false)
+        window.layoutIfNeeded()
+        await settle()
+    }
+
+    private func assertActionReachability(model: ScreenshotModel, window: UIWindow) async throws {
+        let last = try XCTUnwrap(model.probes["action.3"])
+        let scroll = try XCTUnwrap(scrollAncestor(of: last))
+        let previous = scroll.contentOffset
+        if scroll.bounds.height < 193 {
+            XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height + 1,
+                                 "A short conversation area must let the four tools scroll independently")
+        }
+        scroll.scrollRectToVisible(last.convert(last.bounds, to: scroll), animated: false)
+        window.layoutIfNeeded()
+        await settle()
+        let viewport = scroll.convert(scroll.bounds, to: window)
+        let frame = last.convert(last.bounds, to: window)
+        XCTAssertGreaterThanOrEqual(frame.minY, viewport.minY - 1)
+        XCTAssertLessThanOrEqual(frame.maxY, viewport.maxY + 1,
+                                 "The diamond action must stay reachable when the keyboard shortens the tool rail")
+        scroll.setContentOffset(previous, animated: false)
+        window.layoutIfNeeded()
+        await settle()
     }
 
     private func scrollAncestor(of view: UIView) -> UIScrollView? {
@@ -616,11 +680,12 @@ final class KikiRoomMessageInputTests: XCTestCase {
         @Published var text: String
         @Published var focused = false
         let messageCount: Int
+        let scheme: ColorScheme
         let gifts = KikiGiftStore()
         var probes: [String: UIView] = [:]
         var dismissals = 0
         var submissions = 0
-        init(text: String, messageCount: Int) { self.text = text; self.messageCount = messageCount }
+        init(text: String, messageCount: Int, scheme: ColorScheme) { self.text = text; self.messageCount = messageCount; self.scheme = scheme }
     }
 
     /// UIKit probes expose geometry even when SwiftUI omits virtual AX nodes.
@@ -647,14 +712,21 @@ final class KikiRoomMessageInputTests: XCTestCase {
                     KikiAvatar(index: 1, size: 36)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("今晚一起聊聊").font(.system(size: 17, weight: .semibold))
-                        Text("房主 小岛").font(.system(size: 11)).foregroundStyle(.white.opacity(0.66))
+                        Text("房主 小岛").font(.system(size: 11)).foregroundStyle(KikiPalette.secondary)
                     }
                     Spacer()
                     Image(systemName: "ellipsis").frame(width: 44, height: 44)
                     Image(systemName: "xmark").frame(width: 44, height: 44)
                 }.frame(height: 60)
                 KikiRoomContentLayout(hasChatContent: model.messageCount > 0) { width, columns in
-                    seats(width: width, avatarSize: columns ? 68 : 55)
+                    VStack(spacing: 14) {
+                        seats(width: width, avatarSize: columns ? 68 : 55)
+                        KikiRoomAudienceStrip(listeners: listeners, onOpenPerson: { _ in }) { member in
+                            KikiAvatar(index: member.avatarIndex, size: 36)
+                        }.background(LayoutProbe(key: "audience", model: model))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .background(LayoutProbe(key: "stageContent", model: model))
                 } chat: {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 10) {
@@ -664,41 +736,58 @@ final class KikiRoomMessageInputTests: XCTestCase {
                                     isLocal: false, onOpenSender: {}) {
                                         KikiAvatar(index: index + 1, size: 32)
                                     } bubbleBackground: {
-                                        RoundedRectangle(cornerRadius: 15).fill(.black.opacity(0.22))
+                                        RoundedRectangle(cornerRadius: 15).fill(KikiPalette.elevated)
                                     }
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }.background(LayoutProbe(key: "chat", model: model))
                 } controls: {
-                    ForEach(Array(["gift.fill", "mic.slash.fill", "figure.wave"].enumerated()), id: \.offset) { index, symbol in
+                    ForEach(0..<4, id: \.self) { index in
                         Button {} label: {
-                            Image(systemName: symbol).frame(width: 44, height: 44)
-                                .background(.white.opacity(0.10), in: Circle())
+                            Group {
+                                if index == 2 {
+                                    Image("RaiseHand").renderingMode(.template).resizable().scaledToFit()
+                                        .frame(width: 21, height: 21)
+                                } else {
+                                    Image(systemName: index == 0 ? "gift.fill" : (index == 1 ? "mic.slash.fill" : "diamond.fill"))
+                                }
+                            }
+                            .frame(width: 44, height: 44)
+                            .background(KikiPalette.elevated, in: Circle())
                         }.background(LayoutProbe(key: "action.\(index)", model: model))
                     }
                 }.background(LayoutProbe(key: "content", model: model))
             }
             .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 2)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(red: 0.09, green: 0.06, blue: 0.16).ignoresSafeArea())
+            .background(KikiPalette.background.ignoresSafeArea())
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 KikiRoomComposerBar {
                     KikiRoomMessageInput(text: $model.text, isFocused: $model.focused,
                         placeholder: "说点什么…", isEnabled: true,
                         onSubmit: { model.submissions += 1 }, onNotice: { _ in })
-                        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 21))
-                        .overlay(RoundedRectangle(cornerRadius: 21).stroke(.white.opacity(0.2), lineWidth: 1))
+                        .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 21))
+                        .overlay(RoundedRectangle(cornerRadius: 21).stroke(KikiPalette.muted.opacity(0.3), lineWidth: 1))
                 } send: {
                     Button { model.submissions += 1 } label: { Image(systemName: "paperplane.fill").frame(width: 44, height: 44) }
                 }
                 .padding(.horizontal, 18).padding(.vertical, 8)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(KikiPalette.text)
             .background(KikiRoomKeyboardDismissal(isEnabled: true) {
                 model.dismissals += 1
                 model.focused = false
             })
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(model.scheme)
+        }
+
+        private var listeners: [KikiRoomMember] {
+            (1...3).map { number in
+                KikiRoomMember(userID: "fixture-listener-\(number)", name: "听众\(number)",
+                    avatarIndex: number + 2, avatarURL: nil, role: .member, seatIndex: nil,
+                    audioMuted: false, chatMuted: false, online: true,
+                    canPublishAudio: false, canPublishData: true)
+            }
         }
 
         private func seats(width: CGFloat, avatarSize: CGFloat) -> some View {

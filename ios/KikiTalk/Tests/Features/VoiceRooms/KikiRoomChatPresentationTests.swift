@@ -161,7 +161,7 @@ final class KikiRoomChatPresentationTests: XCTestCase {
             let listeners = Self.listeners(count: 20) + [Self.member("offline", online: false), Self.member("speaker", seat: 2)]
             let host = UIHostingController(rootView: KikiRoomAudienceStrip(listeners: listeners, onOpenPerson: { _ in }) { member in
                 KikiAvatar(index: member.avatarIndex, size: 36)
-            }.padding(16).background(Color(hex: 0x302269)).ignoresSafeArea())
+            }.padding(16).background(KikiPalette.background).ignoresSafeArea())
             await mount(host, in: window, size: CGSize(width: 375, height: 100))
             let horizontal = try XCTUnwrap(descendants(of: host.view).compactMap { $0 as? UIScrollView }.first {
                 $0.contentSize.width > $0.bounds.width + 1
@@ -235,7 +235,7 @@ final class KikiRoomChatPresentationTests: XCTestCase {
                               isLocal: false, onOpenSender: {}) {
             KikiAvatar(index: 3, size: 32)
         } bubbleBackground: {
-            RoundedRectangle(cornerRadius: 15).fill(.black.opacity(0.22))
+            RoundedRectangle(cornerRadius: 15).fill(KikiPalette.surface)
         }
     }
 
@@ -290,10 +290,10 @@ private struct KikiRoomChatScreenshotFixture: View {
     var body: some View {
         VStack(spacing: 14) {
             HStack {
-                Text("一起练习，慢慢聊").font(.headline).foregroundStyle(.white)
+                Text("一起练习，慢慢聊").font(.headline).foregroundStyle(KikiPalette.text)
                 Spacer()
-                Image(systemName: "ellipsis").foregroundStyle(.white).frame(width: 44, height: 44)
-                    .background(.black.opacity(0.16), in: Circle())
+                Image(systemName: "ellipsis").foregroundStyle(KikiPalette.purple).frame(width: 44, height: 44)
+                    .background(KikiPalette.surface, in: Circle())
             }
             KikiRoomAudienceStrip(listeners: listeners, onOpenPerson: { _ in }) { member in
                 KikiAvatar(index: member.avatarIndex, size: 36)
@@ -303,32 +303,32 @@ private struct KikiRoomChatScreenshotFixture: View {
                     KikiRoomChatBubbleRow(id: "friend", senderName: "南风", text: "大家好，今天在聊什么？", isLocal: false,
                                           onOpenSender: {}) {
                         KikiAvatar(index: 5, size: 32)
-                    } bubbleBackground: { RoundedRectangle(cornerRadius: 15).fill(.black.opacity(0.22)) }
+                    } bubbleBackground: { RoundedRectangle(cornerRadius: 15).fill(KikiPalette.surface) }
                     KikiRoomChatBubbleRow(id: "me", senderName: "我", text: "你好 👋 很高兴认识你！", isLocal: true,
                                           onOpenSender: {}) {
                         KikiAvatar(index: 2, size: 32)
-                    } bubbleBackground: { RoundedRectangle(cornerRadius: 15).fill(.black.opacity(0.22)) }
+                    } bubbleBackground: { RoundedRectangle(cornerRadius: 15).fill(KikiPalette.surface) }
                     KikiRoomAnnouncementChatRow(text: "欢迎来到 KikiTalk。请友好交流，尊重每位朋友，让我们一起享受聊天的时光。", onOpen: {})
                     KikiRoomChatBubbleRow(id: "gift", senderName: "小岛", text: "送给南风 鲜花 ×1", isLocal: false,
                                           isGift: true, onOpenSender: {}) {
                         KikiAvatar(index: 4, size: 32)
-                    } bubbleBackground: { RoundedRectangle(cornerRadius: 15).fill(.purple.opacity(0.25)) }
+                    } bubbleBackground: { RoundedRectangle(cornerRadius: 15).fill(KikiPalette.purple.opacity(0.12)) }
                     KikiRoomChatBubbleRow(id: "long", senderName: "昵称比较长的一位朋友", text: longText, isLocal: false,
                                           onOpenSender: {}) {
                         KikiAvatar(index: 8, size: 32)
-                    } bubbleBackground: { RoundedRectangle(cornerRadius: 15).fill(.black.opacity(0.22)) }
+                    } bubbleBackground: { RoundedRectangle(cornerRadius: 15).fill(KikiPalette.surface) }
                 }
             }
             HStack {
-                Text("说点什么…").foregroundStyle(.white.opacity(0.55)).frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14).background(.black.opacity(0.24), in: Capsule())
-                Image(systemName: "mic.fill").foregroundStyle(.white).frame(width: 44, height: 44)
-                    .background(.black.opacity(0.24), in: Circle())
-                Image(systemName: "gift.fill").foregroundStyle(.white).frame(width: 44, height: 44)
-                    .background(.black.opacity(0.24), in: Circle())
+                Text("说点什么…").foregroundStyle(KikiPalette.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14).background(KikiPalette.surface, in: Capsule())
+                Image(systemName: "mic.fill").foregroundStyle(KikiPalette.purple).frame(width: 44, height: 44)
+                    .background(KikiPalette.surface, in: Circle())
+                Image(systemName: "gift.fill").foregroundStyle(KikiPalette.purple).frame(width: 44, height: 44)
+                    .background(KikiPalette.surface, in: Circle())
             }
         }
         .padding(16).frame(maxWidth: 760).frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(hex: 0x302269))
+        .background(KikiRoomDecorationBackground(decorationID: "background_aurora"))
     }
 }

@@ -20,6 +20,7 @@ enum KikiPalette {
     static let secondary = adaptive(0x6D6878, 0xBAB5C5)
     static let muted = adaptive(0x88838F, 0x928D9D)
     static let mint = adaptive(0x397C68, 0xA8D6C1)
+    static let warning = adaptive(0x8C4C17, 0xEAC6A3)
 }
 
 extension Color {

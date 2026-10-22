@@ -22,6 +22,7 @@
 		5BBB2099AB0B88FBFDA1F1AA /* KikiTalkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30442ADCE3A3C4DDB29CEDCF /* KikiTalkApp.swift */; };
 		6177B1747CA73EA635A3951B /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = 868487E6A8B625D7B7BA52B6 /* LiveKit */; };
 		64A225D462F7BE84ADD40B1F /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A4F11069BA80712ECE428D6 /* Foundation.framework */; };
+		7147A0F092214BD88F656867 /* KikiRoomSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2C3F667032C4EB7EB39B64B /* KikiRoomSheet.swift */; };
 		77591E077D625C9F66490AC7 /* KikiSocialModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4A43C686CB31556D53F97EF /* KikiSocialModels.swift */; };
 		78FA065D82985302C2E8F57B /* KikiIncidents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF17FBC07B097DAE35202DBD /* KikiIncidents.swift */; };
 		794E6B39AC33F70940416664 /* KikiRoomModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4E154A32FB7F1B3EBE3606 /* KikiRoomModelsTests.swift */; };
@@ -157,6 +158,7 @@
 		C4D764FEA49E3BEBBB6F45F9 /* KikiDiscoverView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiDiscoverView.swift; sourceTree = "<group>"; };
 		C78FE734DAC221D8418D57EC /* KikiLoginView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiLoginView.swift; sourceTree = "<group>"; };
 		C8D8A7DD9AEF50739450B570 /* KikiCreateRoomView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiCreateRoomView.swift; sourceTree = "<group>"; };
+		D2C3F667032C4EB7EB39B64B /* KikiRoomSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiRoomSheet.swift; sourceTree = "<group>"; };
 		D4A43C686CB31556D53F97EF /* KikiSocialModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiSocialModels.swift; sourceTree = "<group>"; };
 		E02020000000000000000001 /* KikiGiftViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiGiftViews.swift; sourceTree = "<group>"; };
 		E5B162B839EFE438CD43AF6C /* KikiDirectMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiDirectMessages.swift; sourceTree = "<group>"; };
@@ -210,6 +212,7 @@
 				828EC0CAA0220378953D731A /* KikiRoomHostingController.swift */,
 				85EC875B0927AF0E14C439AE /* KikiVoiceRoomFloatingOverlay.swift */,
 				91A11A64FD267F50C5E25D27 /* KikiRoomContentLayout.swift */,
+				D2C3F667032C4EB7EB39B64B /* KikiRoomSheet.swift */,
 			);
 			name = Presentation;
 			path = Presentation;
@@ -786,6 +789,7 @@
 				28CC888CABA9A9816EC41605 /* KikiRoomDiagnosticsView.swift in Sources */,
 				D3BA9DB0946F250337B91D3B /* KikiRoomAnnouncementView.swift in Sources */,
 				3142154AEF20288C63D07A39 /* KikiRoomContentLayout.swift in Sources */,
+				7147A0F092214BD88F656867 /* KikiRoomSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -836,7 +840,7 @@
 				CODE_SIGN_ENTITLEMENTS = Configuration/KikiTalk.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_LANGUAGE = "zh-Hans";
 				DEVELOPMENT_TEAM = A82X46N3WS;
 				ENABLE_PREVIEWS = YES;
@@ -851,13 +855,12 @@
 				INFOPLIST_KEY_UIRequiresFullScreen = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.10;
+				MARKETING_VERSION = 1.0.11;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kikitalk.demo;
 				PRODUCT_NAME = KikiTalk;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1046,7 +1049,7 @@
 				CODE_SIGN_ENTITLEMENTS = Configuration/KikiTalk.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_LANGUAGE = "zh-Hans";
 				DEVELOPMENT_TEAM = A82X46N3WS;
 				ENABLE_PREVIEWS = YES;
@@ -1061,13 +1064,12 @@
 				INFOPLIST_KEY_UIRequiresFullScreen = NO;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.10;
+				MARKETING_VERSION = 1.0.11;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kikitalk.demo;
 				PRODUCT_NAME = KikiTalk;
 				PROVISIONING_PROFILE_SPECIFIER = "";

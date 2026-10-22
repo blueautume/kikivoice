@@ -60,10 +60,10 @@ struct KikiRoomDiagnosticsView: View {
                     if let error = rtc.diagnosticsError { Text(error).font(.caption).foregroundStyle(.orange) }
                 }
             }
-            .scrollContentBackground(.hidden).background(Color(hex: 0x241747))
+            .scrollContentBackground(.hidden).background(KikiPalette.background)
             .navigationTitle("连接与音频").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
-        }.preferredColorScheme(.dark).tint(Color(hex: 0xB69AFF))
+        }.tint(KikiPalette.purple)
     }
 
     private func metric(_ value: Double?, suffix: String) -> String {

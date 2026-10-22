@@ -1,0 +1,2 @@
+# Preserve vector asset bytes, including PDF cross-reference offsets.
+Resources/Assets.xcassets/**/*.pdf binary

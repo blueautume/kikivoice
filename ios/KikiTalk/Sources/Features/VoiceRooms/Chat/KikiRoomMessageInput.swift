@@ -68,9 +68,9 @@ struct KikiRoomMessageInput: UIViewRepresentable {
             textView.isScrollEnabled = false
             textView.keyboardType = .default
             textView.returnKeyType = .default
-            textView.keyboardAppearance = .dark
-            textView.textColor = .white
-            textView.tintColor = .white
+            textView.keyboardAppearance = .default
+            textView.textColor = UIColor(KikiPalette.text)
+            textView.tintColor = UIColor(KikiPalette.purple)
             textView.allowsEditingTextAttributes = false
             if #available(iOS 18.0, *) { textView.supportsAdaptiveImageGlyph = false }
             textView.adjustsFontForContentSizeCategory = true
@@ -78,7 +78,7 @@ struct KikiRoomMessageInput: UIViewRepresentable {
             textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
             emojiButton.accessibilityIdentifier = "livekit.room.emoji"
-            emojiButton.tintColor = UIColor.white.withAlphaComponent(0.85)
+            emojiButton.tintColor = UIColor(KikiPalette.secondary)
             emojiButton.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 19), forImageIn: .normal)
             emojiButton.accessibilityHint = "切换系统文字和表情键盘"
             updateEmojiButton(isEmoji: false)
@@ -97,7 +97,7 @@ struct KikiRoomMessageInput: UIViewRepresentable {
                 emojiButton.bottomAnchor.constraint(equalTo: bottomAnchor),
                 emojiButton.widthAnchor.constraint(equalToConstant: 40)
             ])
-            placeholderLabel.textColor = UIColor.white.withAlphaComponent(0.46)
+            placeholderLabel.textColor = UIColor(KikiPalette.secondary)
             placeholderLabel.isUserInteractionEnabled = false
             placeholderLabel.isAccessibilityElement = false
             textView.addSubview(placeholderLabel)

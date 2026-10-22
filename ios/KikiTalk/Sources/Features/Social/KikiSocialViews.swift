@@ -203,11 +203,13 @@ struct KikiPublicProfileView: View {
                     dismiss()
                 }
                 .sheet(item: $destination) { value in
-                    switch value {
-                    case .direct(let person): KikiDirectConversationView(person: person, store: store)
-                    case .report(let target): KikiSocialReportForm(target: target, store: store)
-                    case .moment(let moment): KikiMomentCommentsView(moment: moment, store: store)
-                    }
+                    Group {
+                        switch value {
+                        case .direct(let person): KikiDirectConversationView(person: person, store: store)
+                        case .report(let target): KikiSocialReportForm(target: target, store: store)
+                        case .moment(let moment): KikiMomentCommentsView(moment: moment, store: store)
+                        }
+                    }.kikiRoomSheet()
                 }
                 .confirmationDialog("拉黑后将停止互相关注、隐藏双方社交内容与私信，并屏蔽对方房间语音和文字。", isPresented: $confirmsBlock, titleVisibility: .visible) {
                     Button("拉黑用户", role: .destructive) { Task { await block() } }; Button("取消", role: .cancel) { }

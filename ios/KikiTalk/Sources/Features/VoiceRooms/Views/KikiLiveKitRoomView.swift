@@ -11,7 +11,6 @@ struct KikiLiveKitRoomView: View {
     @State private var confirmsExit = false
     @State private var showsParticipants = false
     @State private var showsSeatRequests = false
-    @State private var showsDiagnostics = false
     @State private var showsAnnouncement = false
     @State private var showsTitleEditor = false
     @State private var roomTitleDraft = ""
@@ -29,8 +28,8 @@ struct KikiLiveKitRoomView: View {
     @State private var hasPositionedChat = false
     @State private var chatTracking = KikiRoomChatTracking()
     @GestureState private var isDraggingChat = false
-    private let accent = Color(hex: 0x8B66FF)
-    private let secondary = Color.white.opacity(0.66)
+    private let accent = KikiPalette.purple
+    private let secondary = KikiPalette.secondary
 
     init(rtc: KikiRTCService) {
         self.rtc = rtc
@@ -48,19 +47,17 @@ struct KikiLiveKitRoomView: View {
     private var observesRoomTaps: Bool {
         isComposing && scenePhase == .active && !rtc.isVoiceRoomMinimized && rtc.canUseRoom
             && !showsGifts && !showsExperience && !showsParticipants && !showsSeatRequests
-            && !showsDiagnostics && !showsAnnouncement && !showsTitleEditor && !showsSafety && !confirmsExit
+            && !showsAnnouncement && !showsTitleEditor && !showsSafety && !confirmsExit
             && reportTarget == nil && selectedPerson == nil && pendingBlock == nil && pendingModeration == nil
     }
 
     var body: some View {
-        GeometryReader { geometry in
+        GeometryReader { _ in
             let horizontalPadding: CGFloat = 18
-            let contentWidth = max(0, min(1180, geometry.size.width) - horizontalPadding * 2)
-            let usesColumns = contentWidth - 56 >= 720
             ZStack {
                 KikiRoomDecorationBackground(decorationID: gifts.appearance(for: rtc.roomInfo?.hostID ?? "").roomBackground)
                     .ignoresSafeArea()
-                VStack(spacing: usesColumns ? 20 : 14) {
+                VStack(spacing: 14) {
                     header
                     KikiRoomContentLayout(hasChatContent: !chatScrollIdentity.isEmpty || rtc.chatSyncNotice != nil) { width, columns in
                         roomStage(width: width, avatarSize: columns ? 68 : 55)
@@ -73,7 +70,7 @@ struct KikiLiveKitRoomView: View {
                 .padding(.horizontal, horizontalPadding).padding(.top, 10).padding(.bottom, 2)
                 .frame(maxWidth: 1180)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .foregroundStyle(.white)
+                .foregroundStyle(KikiPalette.text)
                 if let reason = rtc.disconnectionReason { endedRoom(reason) }
             }
         }
@@ -85,23 +82,23 @@ struct KikiLiveKitRoomView: View {
         .background(KikiRoomKeyboardDismissal(isEnabled: observesRoomTaps, onDismiss: endComposing))
         .overlay(alignment: .top) {
             if let roomNotice {
-                Text(roomNotice).font(.subheadline).foregroundStyle(.white)
+                Text(roomNotice).font(.subheadline).foregroundStyle(KikiPalette.text)
                     .multilineTextAlignment(.center).padding(.horizontal, 18).padding(.vertical, 11)
                     .background(.ultraThinMaterial, in: Capsule()).padding(.horizontal, 24).padding(.top, 68)
                     .allowsHitTesting(false).accessibilityIdentifier("livekit.room.notice")
             }
         }
-        .preferredColorScheme(.dark)
+        .tint(KikiPalette.purple)
         .interactiveDismissDisabled()
         .overlay { KikiGiftPresentationOverlay(gifts: gifts).allowsHitTesting(false) }
         .sheet(isPresented: $showsGifts) {
             if let roomID = rtc.currentRoomID {
                 KikiGiftPanel(gifts: gifts, roomID: roomID,
                               members: rtc.roomState?.members.filter { $0.online && !rtc.safetyState.blockedIDs.contains($0.userID) } ?? [],
-                              hostID: rtc.roomInfo?.hostID)
+                              hostID: rtc.roomInfo?.hostID).kikiRoomSheet()
             }
         }
-        .sheet(isPresented: $showsExperience) { KikiExperienceCenterView(gifts: gifts) }
+        .sheet(isPresented: $showsExperience) { KikiExperienceCenterView(gifts: gifts).kikiRoomSheet() }
         .task(id: experienceVisibilityKey) {
             // RTC owns the single refresh driver. A visibility/safety boundary
             // rebuilds the gift cursor without replaying past room events.
@@ -135,22 +132,21 @@ struct KikiLiveKitRoomView: View {
         .alert("语聊提示", isPresented: Binding(get: { rtc.roomError != nil && !showsParticipants && !showsSeatRequests }, set: { if !$0 { rtc.roomError = nil } })) {
             Button("知道了") { rtc.roomError = nil }
         } message: { Text(rtc.roomError ?? "") }
-        .sheet(isPresented: $showsParticipants, onDismiss: presentQueuedDestination) { participantList }
-        .sheet(isPresented: $showsSeatRequests, onDismiss: { rtc.roomError = nil; presentQueuedDestination() }) { seatRequestPanel }
-        .sheet(item: $reportTarget) { target in KikiSafetyReportForm(rtc: rtc, target: target) }
+        .sheet(isPresented: $showsParticipants, onDismiss: presentQueuedDestination) { participantList.kikiRoomSheet() }
+        .sheet(isPresented: $showsSeatRequests, onDismiss: { rtc.roomError = nil; presentQueuedDestination() }) { seatRequestPanel.kikiRoomSheet() }
+        .sheet(item: $reportTarget) { target in KikiSafetyReportForm(rtc: rtc, target: target).kikiRoomSheet() }
         .sheet(item: $selectedPerson) { person in
-            if let store = rtc.socialStore { KikiPublicProfileView(userID: person.id, store: store) }
+            if let store = rtc.socialStore { KikiPublicProfileView(userID: person.id, store: store).kikiRoomSheet() }
         }
-        .sheet(isPresented: $showsSafety) { KikiSafetyCenter(rtc: rtc) }
+        .sheet(isPresented: $showsSafety) { KikiSafetyCenter(rtc: rtc).kikiRoomSheet() }
         .confirmationDialog("拉黑后，你将不再听到对方的声音或看到对方的房间文字。对方仍可能在公开房间听到你；可在设置解除。", isPresented: blockConfirmation(inParticipants: false), titleVisibility: .visible) {
             blockConfirmationButtons
         }
         .alert(pendingModeration?.title ?? "确认管理操作", isPresented: moderationConfirmation(inParticipants: false)) {
             moderationConfirmationButtons
         } message: { Text(pendingModeration?.message ?? "") }
-        .sheet(isPresented: $showsDiagnostics) { KikiRoomDiagnosticsView(rtc: rtc) }
-        .sheet(isPresented: $showsAnnouncement) { KikiRoomAnnouncementView(rtc: rtc) }
-        .sheet(isPresented: $showsTitleEditor) { titleEditor }
+        .sheet(isPresented: $showsAnnouncement) { KikiRoomAnnouncementView(rtc: rtc).kikiRoomSheet() }
+        .sheet(isPresented: $showsTitleEditor) { titleEditor.kikiRoomSheet() }
     }
 
     private func roomStage(width: CGFloat, avatarSize: CGFloat) -> some View {
@@ -191,7 +187,6 @@ struct KikiLiveKitRoomView: View {
             Spacer(minLength: 2)
             HStack(spacing: 4) {
                 Menu {
-                    Button("我的钻石与装扮", systemImage: "sparkles") { showsExperience = true }
                     if rtc.canManageRoom || !rtc.announcement.text.isEmpty {
                         Button(rtc.canManageRoom ? (rtc.announcement.text.isEmpty ? "发布房间公告" : "编辑房间公告") : "查看房间公告", systemImage: "megaphone") {
                             endComposing()
@@ -205,14 +200,12 @@ struct KikiLiveKitRoomView: View {
                         } else if ["pending", "approved"].contains(mySeatRequestStatus) {
                             Button("取消上麦申请", systemImage: "xmark.circle") { action(.cancelRequest) }
                         } else if rtc.canManageRoom {
-                            Button("申请上麦", systemImage: "figure.wave") { submitSeatRequest() }
+                            Button(action: submitSeatRequest) { Label("申请上麦", image: "RaiseHand") }
                         }
                     }
                     Button("举报房间", systemImage: "exclamationmark.bubble") {
                         if let roomID = rtc.currentRoomID { openReport(.init(targetType: .room, roomID: roomID, targetUserID: nil, messageID: nil, name: rtc.roomInfo?.title ?? "当前房间")) }
                     }
-                    Button("社区安全与通知", systemImage: "shield") { showsSafety = true }
-                    Button("连接与音频诊断", systemImage: "waveform.path.ecg") { showsDiagnostics = true }
                 } label: { roomControlIcon("ellipsis", size: 36) }
                 .buttonStyle(.plain)
                 .accessibilityLabel("房间工具与举报").accessibilityIdentifier("livekit.room.tools")
@@ -233,12 +226,17 @@ struct KikiLiveKitRoomView: View {
     }
 
     private func roomControlIcon(_ symbol: String, size: CGFloat, active: Bool = false, loading: Bool = false) -> some View {
+        roomControl(Image(systemName: symbol).font(.system(size: size == 36 ? 15 : 17, weight: .medium)),
+                    size: size, active: active, loading: loading)
+    }
+
+    private func roomControl<Icon: View>(_ icon: Icon, size: CGFloat, active: Bool = false, loading: Bool = false) -> some View {
         Group {
-            if loading { ProgressView().tint(.white).controlSize(.small) }
-            else { Image(systemName: symbol).font(.system(size: size == 36 ? 15 : 17, weight: .medium)) }
+            if loading { ProgressView().tint(accent).controlSize(.small) }
+            else { icon }
         }
-        .foregroundStyle(.white).frame(width: size, height: size)
-        .background(active ? accent.opacity(0.42) : .white.opacity(0.10), in: Circle())
+        .foregroundStyle(active ? accent : KikiPalette.text).frame(width: size, height: size)
+        .background(active ? accent.opacity(0.20) : KikiPalette.elevated.opacity(0.85), in: Circle())
         .frame(width: max(44, size), height: max(44, size))
         .contentShape(Rectangle())
     }
@@ -253,14 +251,14 @@ struct KikiLiveKitRoomView: View {
         }
         if rtc.isLeavingRoom {
             HStack(spacing: 8) {
-                ProgressView().tint(.white).scaleEffect(0.7)
+                ProgressView().tint(accent).scaleEffect(0.7)
                 Text("正在离开房间…").font(.system(size: 11))
                 Spacer()
             }.padding(8).background(accent.opacity(0.25), in: RoundedRectangle(cornerRadius: 10))
         } else if !rtc.isRecovering, rtc.connectionState == .connected, let notice = rtc.audioState.notice {
-            Text(notice).font(.system(size: 11)).foregroundStyle(Color(hex: 0xEAC6A3))
+            Text(notice).font(.system(size: 11)).foregroundStyle(KikiPalette.warning)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(8)
-                .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 10))
         }
     }
 
@@ -296,7 +294,7 @@ struct KikiLiveKitRoomView: View {
 
     private func seatPlaceholder(number: Int, avatarSize: CGFloat) -> some View {
         VStack(spacing: 9) {
-            Circle().fill(.white.opacity(0.07)).frame(width: avatarSize + 6, height: avatarSize + 6)
+            Circle().fill(KikiPalette.elevated).frame(width: avatarSize + 6, height: avatarSize + 6)
                 .overlay(Image(systemName: "mic").foregroundStyle(secondary))
             Text("\(number) 号麦位").font(.system(size: 10)).foregroundStyle(secondary)
         }.frame(maxWidth: .infinity)
@@ -473,7 +471,7 @@ struct KikiLiveKitRoomView: View {
             }
             if let failure = pending.failure {
                 HStack(spacing: 10) {
-                    Text("发送失败").foregroundStyle(Color(hex: 0xEAC6A3)).accessibilityHint(failure)
+                    Text("发送失败").foregroundStyle(KikiPalette.warning).accessibilityHint(failure)
                     Button("重试") {
                         Task { if await rtc.sendMessage(pending.text), rtc.messageDraft == pending.text { rtc.messageDraft = "" } }
                     }
@@ -496,8 +494,8 @@ struct KikiLiveKitRoomView: View {
             KikiRoomMessageInput(text: $rtc.messageDraft, isFocused: $isComposing,
                                  placeholder: rtc.roomState?.me.chatMuted == true ? "已被禁言" : "说点什么…",
                                  isEnabled: rtc.canSendChat, onSubmit: send, onNotice: showRoomNotice)
-                .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 21))
-                .overlay(RoundedRectangle(cornerRadius: 21).stroke(.white.opacity(0.14), lineWidth: 1))
+                .background(KikiPalette.surface.opacity(0.9), in: RoundedRectangle(cornerRadius: 21))
+                .overlay(RoundedRectangle(cornerRadius: 21).stroke(KikiPalette.text.opacity(0.14), lineWidth: 1))
         } send: {
             Button(action: send) { roomControlIcon("paperplane.fill", size: 42, loading: rtc.isSendingMessage) }
                 .buttonStyle(.plain)
@@ -522,6 +520,12 @@ struct KikiLiveKitRoomView: View {
         .accessibilityLabel(rtc.microphoneEnabled ? "关闭麦克风" : "打开麦克风")
         .accessibilityValue(rtc.microphoneStatus).accessibilityIdentifier("livekit.room.microphone")
         seatRequestControl
+        Button {
+            endComposing()
+            showsExperience = true
+        } label: { roomControlIcon("diamond.fill", size: 42) }
+            .buttonStyle(.plain)
+            .accessibilityLabel("我的钻石与装扮").accessibilityIdentifier("livekit.room.experience")
     }
 
     private var titleEditor: some View {
@@ -560,7 +564,6 @@ struct KikiLiveKitRoomView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark).presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         .interactiveDismissDisabled(rtc.isUpdatingRoomTitle)
     }
 
@@ -593,13 +596,13 @@ struct KikiLiveKitRoomView: View {
     }
 
     private var seatRequestIcon: some View {
-        roomControlIcon("figure.wave", size: 42,
+        roomControl(Image("RaiseHand").renderingMode(.template).resizable().scaledToFit().frame(width: 24, height: 24), size: 42,
                         active: !rtc.canManageRoom && ["pending", "approved", "seated"].contains(mySeatRequestStatus),
                         loading: rtc.isPerformingRoomAction)
             .overlay(alignment: .topTrailing) {
                 if rtc.canManageRoom, !pendingSeatRequests.isEmpty {
                     Circle().fill(.red).frame(width: 8, height: 8)
-                        .overlay(Circle().stroke(Color(hex: 0x211732), lineWidth: 1.5))
+                        .overlay(Circle().stroke(KikiPalette.background, lineWidth: 1.5))
                 }
             }
     }
@@ -656,16 +659,16 @@ struct KikiLiveKitRoomView: View {
         ZStack {
             Color.black.opacity(0.65).ignoresSafeArea()
             VStack(spacing: 18) {
-                Image(systemName: "waveform.slash").font(.system(size: 38)).foregroundStyle(Color(hex: 0xC6B5FF))
+                Image(systemName: "waveform.slash").font(.system(size: 38)).foregroundStyle(accent)
                 Text("已离开语聊").font(.system(size: 20, weight: .semibold))
                 Text(reason).font(.system(size: 14)).foregroundStyle(secondary).multilineTextAlignment(.center)
                 Button { Task { await rtc.leaveRoom() } } label: {
                     Text("返回大厅").font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 13)
-                        .background(accent, in: Capsule())
+                        .foregroundStyle(.white).background(KikiPalette.action, in: Capsule())
                 }.disabled(rtc.isLeavingRoom)
             }
-            .foregroundStyle(.white).padding(26).frame(maxWidth: 420)
-            .background(Color(hex: 0x2B2044), in: RoundedRectangle(cornerRadius: 24)).padding(32)
+            .foregroundStyle(KikiPalette.text).padding(26).frame(maxWidth: 420)
+            .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 24)).padding(32)
         }
     }
 
@@ -781,7 +784,7 @@ struct KikiLiveKitRoomView: View {
             }
         }
         .accessibilityValue(member.online ? "在线" : "连接中断，等待恢复")
-        .listRowBackground(Color.white.opacity(0.05))
+        .listRowBackground(KikiPalette.surface)
     }
 
     private var participantList: some View {
@@ -813,7 +816,7 @@ struct KikiLiveKitRoomView: View {
                 } else { ProgressView("正在同步房间状态") }
             }
             .disabled(!rtc.canUseRoom || rtc.isPerformingRoomAction)
-            .scrollContentBackground(.hidden).background(Color(hex: 0x211732))
+            .scrollContentBackground(.hidden).background(KikiPalette.background)
             .navigationTitle(rtc.canManageRoom ? "房间成员与管理" : "房间成员").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showsParticipants = false } } }
         }
@@ -822,7 +825,6 @@ struct KikiLiveKitRoomView: View {
         } message: { Text(rtc.roomError ?? "") }
         .confirmationDialog("拉黑后，你将不再听到对方的声音或看到对方的房间文字。对方仍可能在公开房间听到你；可在设置解除。", isPresented: blockConfirmation(inParticipants: true), titleVisibility: .visible) { blockConfirmationButtons }
         .alert(pendingModeration?.title ?? "确认管理操作", isPresented: moderationConfirmation(inParticipants: true)) { moderationConfirmationButtons } message: { Text(pendingModeration?.message ?? "") }
-        .preferredColorScheme(.dark)
     }
 }
 
@@ -835,8 +837,8 @@ struct KikiRoomSeatTile: View {
     let localUserID: String?
     let avatarSize: CGFloat
     @ObservedObject var gifts: KikiGiftStore
-    private let accent = Color(hex: 0x8B66FF)
-    private let secondary = Color.white.opacity(0.66)
+    private let accent = KikiPalette.purple
+    private let secondary = KikiPalette.secondary
 
     var body: some View {
         let online = member?.online != false
@@ -849,15 +851,15 @@ struct KikiRoomSeatTile: View {
                             .saturation(online ? 1 : 0).opacity(online ? 1 : 0.42)
                     }
                     else {
-                        Circle().fill(.white.opacity(0.07))
+                        Circle().fill(KikiPalette.elevated)
                         Image(systemName: slot.locked ? "lock.fill" : "mic")
-                            .font(.system(size: 21, weight: .light)).foregroundStyle(.white.opacity(0.38))
+                            .font(.system(size: 21, weight: .light)).foregroundStyle(KikiPalette.muted)
                     }
                 }
                 .frame(width: avatarSize, height: avatarSize)
-                .overlay(Circle().stroke(speaking ? Color(hex: 0xB9F2D1) : .white.opacity(0.12), lineWidth: speaking ? 3 : 1))
+                .overlay(Circle().stroke(speaking ? KikiPalette.mint : KikiPalette.text.opacity(0.12), lineWidth: speaking ? 3 : 1))
                 .padding(3)
-                .overlay(Circle().stroke(speaking ? Color(hex: 0xB9F2D1).opacity(0.24) : .clear, lineWidth: 2))
+                .overlay(Circle().stroke(speaking ? KikiPalette.mint.opacity(0.24) : .clear, lineWidth: 2))
                 .animation(.easeOut(duration: 0.18), value: speaking)
                 .overlay {
                     KikiMicDecoration(decorationID: member.flatMap { gifts.appearance(for: $0.userID).micEffect },
@@ -867,7 +869,7 @@ struct KikiRoomSeatTile: View {
                 if member != nil || slot.audioLocked {
                     Image(systemName: slot.audioLocked ? "lock.fill" : (participant?.microphoneEnabled == true ? "mic.fill" : "mic.slash.fill"))
                         .font(.system(size: 9)).foregroundStyle(.white)
-                        .frame(width: 20, height: 20).background(Color(hex: 0x2D204C), in: Circle())
+                        .frame(width: 20, height: 20).background(KikiPalette.action, in: Circle())
                 }
             }
             HStack(spacing: 3) {
@@ -876,7 +878,7 @@ struct KikiRoomSeatTile: View {
                         .padding(.horizontal, 3).padding(.vertical, 2).background(accent, in: RoundedRectangle(cornerRadius: 3))
                 }
                 Text(member.map { $0.name + ($0.userID == localUserID ? " (我)" : "") } ?? "\(slot.index) 号麦\(slot.locked ? "·锁定" : "位")")
-                    .font(.system(size: 10)).foregroundStyle(member == nil ? secondary : .white).lineLimit(1)
+                    .font(.system(size: 10)).foregroundStyle(member == nil ? secondary : KikiPalette.text).lineLimit(1)
             }.frame(height: 14)
         }
         .frame(maxWidth: .infinity)

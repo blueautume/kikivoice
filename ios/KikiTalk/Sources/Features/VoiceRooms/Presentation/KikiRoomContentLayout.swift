@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The action column has its own hit area; it never covers seats or messages,
-/// and never consumes the keyboard-safe input row's width or height.
+/// Seats and listeners use the full room width. Only the conversation reserves
+/// a separate action column, above the keyboard-safe input row.
 struct KikiRoomContentLayout<Stage: View, Chat: View, Controls: View>: View {
     var hasChatContent = true
     @ViewBuilder var stage: (_ width: CGFloat, _ usesColumns: Bool) -> Stage
@@ -11,47 +11,39 @@ struct KikiRoomContentLayout<Stage: View, Chat: View, Controls: View>: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let contentWidth = max(0, geometry.size.width - 56)
-            let usesColumns = contentWidth >= 720
-            let stageWidth = usesColumns ? min(500, max(300, (contentWidth - 24) * 0.48)) : contentWidth
-            // Empty chat must not squeeze the eight seats when the keyboard opens.
-            // In a short window each pane can still scroll independently.
-            let chatReservation = hasChatContent ? min(80, geometry.size.height * 0.25) : 0
-            let stageLimit = max(0, geometry.size.height - chatReservation - 14)
-            let layout = usesColumns
-                ? AnyLayout(HStackLayout(alignment: .top, spacing: 24))
-                : AnyLayout(VStackLayout(spacing: 14))
-            HStack(alignment: .bottom, spacing: 12) {
-                layout {
-                    ScrollView {
-                        stage(stageWidth, usesColumns)
-                            .frame(maxWidth: .infinity)
-                            .background {
-                                GeometryReader { stageGeometry in
-                                    Color.clear.preference(key: KikiRoomStageHeightKey.self,
-                                                           value: stageGeometry.size.height)
-                                }
-                            }
-                    }
-                    .scrollDismissesKeyboard(.interactively)
-                    .frame(width: usesColumns ? stageWidth : nil,
-                           height: usesColumns ? nil : min(stageContentHeight, stageLimit))
-                    .frame(maxHeight: usesColumns ? .infinity : nil, alignment: .top)
-                    .onPreferenceChange(KikiRoomStageHeightKey.self) { stageContentHeight = $0 }
-                    .accessibilityIdentifier("livekit.room.stage")
-                    chat()
-                        .padding(usesColumns ? 16 : 0)
-                        .background(.white.opacity(usesColumns ? 0.035 : 0), in: RoundedRectangle(cornerRadius: 20))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                .frame(width: contentWidth, height: max(0, geometry.size.height))
+            let width = max(0, geometry.size.width)
+            let height = max(0, geometry.size.height)
+            // Do not reserve the entire four-button rail when the keyboard opens:
+            // the rail scrolls in a short conversation area instead of covering seats.
+            let conversationMinimum = min(max(0, height - 14), max(44, min(hasChatContent ? 64 : 44, height * 0.25)))
+            let stageLimit = max(0, height - conversationMinimum - 14)
+            let stageHeight = min(stageContentHeight, stageLimit)
+            VStack(spacing: 14) {
                 ScrollView {
-                    VStack(spacing: 6) { controls() }
+                    stage(width, width >= 720)
+                        .frame(maxWidth: .infinity)
+                        .background {
+                            GeometryReader { stageGeometry in
+                                Color.clear.preference(key: KikiRoomStageHeightKey.self,
+                                                       value: stageGeometry.size.height)
+                            }
+                        }
                 }
-                .scrollBounceBehavior(.basedOnSize)
-                .scrollIndicators(.hidden)
-                .frame(width: 44, height: min(144, max(0, geometry.size.height)))
-                .accessibilityIdentifier("livekit.room.actions")
+                .scrollDismissesKeyboard(.interactively)
+                .frame(height: stageHeight, alignment: .top)
+                .onPreferenceChange(KikiRoomStageHeightKey.self) { stageContentHeight = $0 }
+                .accessibilityIdentifier("livekit.room.stage")
+                HStack(alignment: .bottom, spacing: 12) {
+                    chat()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    ScrollView {
+                        VStack(spacing: 6) { controls() }
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .frame(width: 44, height: min(194, max(0, height - stageHeight - 14)))
+                    .accessibilityIdentifier("livekit.room.actions")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }

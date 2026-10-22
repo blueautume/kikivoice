@@ -201,7 +201,7 @@ private final class KikiVoiceRoomOverlayController: UIViewController {
         onLayout?()
     }
 
-    override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
+    override var preferredStatusBarStyle: UIStatusBarStyle { .default }
 }
 
 @MainActor
