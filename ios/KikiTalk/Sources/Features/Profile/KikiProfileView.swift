@@ -18,7 +18,6 @@ struct KikiProfileView: View {
                 activity
                 KikiGiftWalletCard(gifts: store.gifts)
                 library
-                preferences
                 footer
             }
             .padding(.horizontal, 22)
@@ -210,23 +209,6 @@ struct KikiProfileView: View {
         }
     }
 
-    private var preferences: some View {
-        VStack(spacing: 0) {
-            profileRow(symbol: "slider.horizontal.3", title: "设置", color: KikiPalette.secondary) {
-                activeSheet = .settings
-            }
-            rowDivider
-            profileRow(symbol: "hand.raised.fill", title: "隐私中心", color: KikiPalette.secondary) {
-                activeSheet = .privacy
-            }
-            rowDivider
-            profileRow(symbol: "sparkles", title: "关于 KikiTalk", color: KikiPalette.secondary) {
-                activeSheet = .about
-            }
-        }
-        .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 23))
-    }
-
     private var footer: some View {
         VStack(spacing: 6) {
             Text("KikiTalk")
@@ -306,10 +288,6 @@ struct KikiProfileView: View {
             KikiProfileRoomCollection(title: "我的房间", subtitle: "你创造的小小世界。", collection: .created, emptySymbol: "mic.badge.plus", emptyTitle: "你的第一个房间，正在等你", emptyMessage: "在「语聊」页面轻点右上角创建，邀请朋友来聊聊。", onSelect: chooseRoom)
         case .settings:
             KikiProfileSettings()
-        case .about:
-            KikiProfileAbout()
-        case .privacy:
-            KikiPrivacyCenter()
         }
     }
 
@@ -332,7 +310,7 @@ struct KikiProfileView: View {
 }
 
 private enum KikiProfileSheet: String, Identifiable {
-    case edit, favorites, history, created, settings, about, privacy
+    case edit, favorites, history, created, settings
     var id: String { rawValue }
 }
 
@@ -832,7 +810,7 @@ private struct KikiSettingsPrivacy: View {
                 .accessibilityIdentifier("settings.communitySafety")
             }
         }
-        .navigationTitle("隐私")
+        .navigationTitle("隐私中心")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showsLegal) { KikiPrivacyCenter() }
         .sheet(isPresented: $showsSafety) { KikiSafetyCenter(rtc: .shared) }

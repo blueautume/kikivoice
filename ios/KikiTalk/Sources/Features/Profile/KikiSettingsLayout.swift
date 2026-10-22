@@ -10,9 +10,9 @@ enum KikiSettingsDestination: String, CaseIterable, Identifiable {
         switch self {
         case .account: return "账户"
         case .notifications: return "通知"
-        case .privacy: return "隐私"
+        case .privacy: return "隐私中心"
         case .rating: return "给 KikiTalk 评分"
-        case .about: return "关于"
+        case .about: return "关于 KikiTalk"
         case .help: return "帮助与反馈"
         }
     }
