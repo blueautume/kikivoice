@@ -138,7 +138,7 @@ def outputs(source: dict) -> tuple[dict[Path, bytes], str]:
     digest = sha256(canonical(source)).hexdigest()
     resource = canonical({**source, "documentHash": digest}) + b"\n"
     result = {
-        ROOT / "application/Demo/Resources/KikiLegalDocuments.json": resource,
+        ROOT / "ios/KikiTalk/Resources/KikiLegalDocuments.json": resource,
         ROOT / "backend/app/legal_documents.json": resource,
     }
     for document in source["documents"]:

@@ -6,10 +6,11 @@
 
 - [当前架构](ARCHITECTURE.zh-CN.md)：清理后的工程、模块、依赖与服务分层。
 - [项目接手指南](PROJECT_HANDOVER.zh-CN.md)：用户 App、管理 App、两套后端、媒体、部署和数据。
-- [iOS 运行说明](../application/README.cn.md)：打开 RTCube.xcworkspace，选择 KikiTalk，使用 SPM。
-- [账号后端](../backend/README.zh-CN.md)、[语聊后端](../experiments/livekit/backend/README.zh-CN.md)、[运维 App](../experiments/livekit/admin-ios/README.zh-CN.md)：各自配置和操作入口。
+- [iOS 工程导航](../ios/README.md)：用户端 KikiTalk 与管理端 KikiVoiceOps。
+- [用户端运行说明](../ios/KikiTalk/README.cn.md)：打开 KikiTalk.xcworkspace，选择 KikiTalk，使用 SPM。
+- [账号后端](../backend/README.zh-CN.md)、[语聊后端](../experiments/livekit/backend/README.zh-CN.md)、[运维 App](../ios/KikiVoiceOps/README.zh-CN.md)：各自配置和操作入口。
 
-腾讯 iOS 组件/示例、旧 target/Pods、独立实验 iOS 和 vendor 已移除。`experiments/livekit` 中当前后端、管理 App、infra/shared 与验收资料继续保留。
+腾讯 iOS 组件/示例、旧 target/Pods、独立实验 iOS 和 vendor 已移除。两个当前App已统一到 `ios/`；`experiments/livekit` 中当前后端、infra/shared 与本地验收资料继续保留。
 
 ## 功能与交付记录
 

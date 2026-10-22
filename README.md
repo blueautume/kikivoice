@@ -1,33 +1,35 @@
 # KikiTalk
 
-[简体中文](README.cn.md) · [iOS development](application/README.md) · [Architecture](docs/ARCHITECTURE.zh-CN.md) · [Project handover](docs/PROJECT_HANDOVER.zh-CN.md)
+[简体中文](README.cn.md) · [iOS projects](ios/README.md) · [Architecture](docs/ARCHITECTURE.zh-CN.md) · [Project handover](docs/PROJECT_HANDOVER.zh-CN.md)
 
-KikiTalk is an iOS voice community with Apple sign-in, eight-seat voice rooms, moments, private messages, notifications, and a personal profile. Audio uses a self-hosted LiveKit service. Account/social and voice APIs are separate services.
+KikiTalk is an iOS voice community with Apple sign-in, eight-seat voice rooms, moments, private messages, notifications, and a personal profile. Audio uses self-hosted LiveKit. Account/social and voice APIs are separate services.
 
-## Run the iOS app
+## Run the iOS apps
 
-1. Open `application/RTCube.xcworkspace` in Xcode and select the **KikiTalk** scheme.
-2. Let Xcode resolve the pinned Swift packages. The app requires iOS 17 or later and supports iPhone and iPad.
-3. Use the project's signing configuration for the simulator; choose an authorized development team and device for a physical build.
+| App | Workspace | Scheme |
+| --- | --- | --- |
+| KikiTalk user app | `ios/KikiTalk/KikiTalk.xcworkspace` | KikiTalk |
+| KikiVoiceOps operations app | `ios/KikiVoiceOps/KikiVoiceOps.xcworkspace` | KikiVoiceOps |
 
-The project/workspace name `RTCube` is retained for the current app. The only application target in this project is KikiTalk, with KikiTalkTests for tests. Dependencies use Swift Package Manager; CocoaPods and Tencent SDK configuration are no longer part of the iOS setup.
+Open the desired workspace in Xcode. Both apps require iOS 17 or later and support iPhone/iPad. KikiTalk resolves its pinned LiveKit packages through Swift Package Manager; KikiVoiceOps uses system frameworks. Use the existing simulator signing settings, or an authorized development team and device for a physical build.
+
+See the [KikiTalk guide](ios/KikiTalk/README.md) and [KikiVoiceOps guide](ios/KikiVoiceOps/README.zh-CN.md). The former application/RTCube and experimental admin paths have been consolidated under `ios/`; CocoaPods and Tencent SDK configuration are no longer part of the setup.
 
 ## Repository map
 
 | Path | Purpose |
 | --- | --- |
-| `application/Demo/` | Current KikiTalk SwiftUI/UIKit application |
-| `application/DemoTests/` | Current client tests and explicitly enabled integration checks |
+| `ios/KikiTalk/` | User app: Sources/App, Core and Features; Tests, Resources, Configuration |
+| `ios/KikiVoiceOps/` | Independent operations app with the same main layout and local Scripts |
 | `backend/` | Account, social, APNs, and central operations identity service |
 | `experiments/livekit/backend/` | Current voice business API and LiveKit signal gateway |
-| `experiments/livekit/admin-ios/` | Independent KikiVoiceOps app for operations and moderation |
 | `experiments/livekit/infra/` | Media/API deployment configuration, maintenance, and probes |
 | `experiments/livekit/shared/` | Cross-service contracts and voice legal-document copy |
 | `experiments/livekit/validation/` | Local generated validation evidence; excluded from Git |
 | `website/dist/`, `legal/`, `tools/` | Website, legal source documents, and generation tools |
 | `docs/` | Current architecture, handover, and dated delivery records |
 
-The `experiments/livekit` name is historical; its backend, admin app, infrastructure, and contracts are used by the current product. The separate experimental iOS app, Tencent components/sample apps, old targets, CocoaPods setup, and vendor snapshots were removed during the 2026-10-22 iOS cleanup.
+The `experiments/livekit` name is historical; its backend, infrastructure, and contracts remain in use. The independent experimental iOS client, Tencent components/sample apps, old targets, CocoaPods setup, and vendor snapshots were removed during the 2026-10-22 iOS cleanup.
 
 ## Service boundaries
 
@@ -36,6 +38,6 @@ The `experiments/livekit` name is historical; its backend, admin app, infrastruc
 
 Account, voice, room, and operations credentials serve different purposes. Client code receives server-issued credentials; signing secrets stay outside the app.
 
-See the [account backend guide](backend/README.zh-CN.md), [voice service guide](experiments/livekit/backend/README.zh-CN.md), and [operations app guide](experiments/livekit/admin-ios/README.zh-CN.md) for their respective setup. Dated delivery records describe their own release batches and do not establish the current deployment or test status. Links to `output/` or `experiments/livekit/validation/` refer to local evidence excluded from Git; these files are not included in a clone.
+See the [account backend guide](backend/README.zh-CN.md) and [voice service guide](experiments/livekit/backend/README.zh-CN.md) for service setup. Dated delivery records describe their own release batches and do not establish the current deployment or test status. Links to `output/` or `experiments/livekit/validation/` refer to local evidence excluded from Git; these files are not included in a clone.
 
 The repository originated from Tencent TUIKit_iOS. Retained source and assets keep their applicable license notices; the current iOS application uses LiveKit rather than the former Tencent implementation.

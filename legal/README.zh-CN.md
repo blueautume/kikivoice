@@ -1,5 +1,7 @@
 # 协议内容与发布
 
+> **资源路径更新（2026-10-22）：** iOS 正文副本已迁至 `ios/KikiTalk/Resources/KikiLegalDocuments.json`，生成器输出定位同步更新。正式源、协议版本、正文、hash与后端/官网内容不因目录移动改变；下文2026-10-17的Pods/腾讯事实与官方参考保留为归档，当前工程见[接手指南](../docs/PROJECT_HANDOVER.zh-CN.md)。
+
 `documents.json` 是应用、后端与官网共用的唯一协议内容源。运营者为李浩（个人开发者），公开邮箱为 2114581274@qq.com，仅向 18 周岁及以上人士开放；这些信息来自本次用户确认。
 
 在仓库根目录执行：
@@ -11,7 +13,7 @@ python3 tools/build_legal_documents.py --check
 
 构建器按 UTF-8 的 `json.dumps(source, sort_keys=True, separators=(',', ':'), ensure_ascii=False)` 结果计算 SHA-256，向生成资源增加顶层 `documentHash`。iOS 和后端的资源字节完全一致；文末保留一个换行，不参与源文档哈希。
 
-输出包括 iOS 本地资源 `application/Demo/Resources/KikiLegalDocuments.json`、后端资源 `backend/app/legal_documents.json`、官网 4 个当前页面与 4 个版本留存页面。网站只依赖本站 CSS/SVG，不加载第三方字体、脚本、分析或表单。正文中的 HTTPS 链接仅供用户主动查阅参考规则。
+输出包括 iOS 本地资源 `ios/KikiTalk/Resources/KikiLegalDocuments.json`、后端资源 `backend/app/legal_documents.json`、官网 4 个当前页面与 4 个版本留存页面。网站只依赖本站 CSS/SVG，不加载第三方字体、脚本、分析或表单。正文中的 HTTPS 链接仅供用户主动查阅参考规则。
 
 主体、联系邮箱、年龄条件、版本和协议结构缺失，或含常见待填占位词时会终止构建。构建成功仅表示内容结构及资源一致，不等于法律审查、云端配置核验或 App Store 审核已完成。
 
@@ -28,7 +30,7 @@ python3 tools/build_legal_documents.py --check
 - 版本同意不代替公开头像、声音/画面等具体场景的明确授权，也不代替操作系统权限。
 - App Store 隐私标签需按最终归档和服务端实际处理填写，不能直接复制 SDK 清单里的 `Linked=false`，也不能因未录制就完全忽略实时音视频及诊断处理。
 
-## 事实与官方参考（核对日：2026-10-17）
+## 归档：事实与官方参考（核对日：2026-10-17）
 
 本项目事实依据为 `application/Podfile` 的 KikiTalk 目标、其 Pods 目标配置、`KikiAPIClient`、`KikiDemoStore`、`KikiRTCService`、`KikiProfileView`、`backend/app/main.py` 及部署配置。未读取服务器密钥或应用签名秘密。
 

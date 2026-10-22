@@ -1,5 +1,7 @@
 # KikiTalk 免费体验钻石、礼物与装饰
 
+> **目录迁移（2026-10-22）：** 当前用户端为 `ios/KikiTalk`，管理端为 `ios/KikiVoiceOps`，均按 Sources/App、Core、Features 与 Tests/Resources/Configuration 组织；原 application/RTCube 和 experiments/livekit/admin-ios 路径只用于识别历史。可点源码链接已映射新位置，旧构建命令和验收仍按原批次阅读。本次未修改正式协议、后端或线上环境。
+
 > **证据位置：** 下文 `output/`、`experiments/livekit/validation/` 的截图和结果为本地归档，未纳入 Git，克隆仓库不会自动取得；保留链接用于追溯当时记录。
 
 ## 当前发布状态：LiveKit，2026-10-20
@@ -156,7 +158,7 @@ Release `/tmp/KikiTalk-gift-receive-fix-20261020.xcarchive` 签名及资源检�
 | 星河火箭 | 4999钻 | 火箭升空、尾焰、烟花与光环 | 3.2秒 |
 | 宇宙之心 | 10000钻 | 皇冠宝石心、羽翼、星环及行星场景 | 4秒 |
 
-五款GIF和透明PNG海报均为程序绘制的原创资产，GIF合计约3.02MiB。生成器为 `tools/generate_kiki_gifts.py`；资源位于 `application/Demo/Resources/Gifts/`，清单记录尺寸、帧数和时长。正式App随包携带素材，无需运行时下载大动画。
+五款GIF和透明PNG海报均为程序绘制的原创资产，GIF合计约3.02MiB。生成器为 `tools/generate_kiki_gifts.py`；资源位于 `ios/KikiTalk/Resources/Gifts/`，清单记录尺寸、帧数和时长。正式App随包携带素材，无需运行时下载大动画。
 
 ## 数据与同步
 

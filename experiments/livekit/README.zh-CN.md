@@ -5,22 +5,21 @@
 | 目录 | 当前职责 |
 | --- | --- |
 | `backend/` | 正式语聊业务 API、房间准入/麦位/聊天/礼物、LiveKit 信令网关 |
-| `admin-ios/` | 独立 KikiVoiceOps 管理 App；Passkey 运维身份、看板和社区治理 |
 | `infra/` | 语聊媒体/API 配置、部署、维护、备份与探针 |
 | `shared/` | 跨服务契约、语聊协议副本 |
 | `validation/` | 本地生成、按日期归档的验收证据，未纳入 Git |
 
-用户 App 的唯一主线在 `application/Demo/`。打开仓库根目录的 `application/RTCube.xcworkspace`，选择 **KikiTalk**；管理端打开 `admin-ios/KikiVoiceOps.xcworkspace`，选择 **KikiVoiceOps**。用户端依赖通过 SPM 管理，管理端使用系统框架。
+两个当前 iOS App 已统一迁入仓库根 `ios/`：用户端打开 `ios/KikiTalk/KikiTalk.xcworkspace`，选择 **KikiTalk**；管理端打开 `ios/KikiVoiceOps/KikiVoiceOps.xcworkspace`，选择 **KikiVoiceOps**。原 `admin-ios/` 不再位于本目录。用户端依赖通过SPM管理，管理端使用系统框架；见[iOS工程导航](../../ios/README.md)。
 
 旧 `ios/KikiLiveKitLab` 实验客户端和 `vendor/` 腾讯参考快照已在本次 iOS 清理移除。正式 Apple 账号由 `kiki.group` 认证，再桥接到 `furby.top` 的独立语聊会话；生产使用 `VOICE_AUTH_MODE=account`。运维只向 `kiki.group` 进行 Passkey 登录，由中央身份的逐项 ACL 授权。此清理没有部署后端、变更生产配置或修改正式协议。
 
-当前开发入口见[项目接手指南](../../docs/PROJECT_HANDOVER.zh-CN.md)和[架构说明](../../docs/ARCHITECTURE.zh-CN.md)；服务及管理端各自说明见[语聊后端](backend/README.zh-CN.md)、[管理 App](admin-ios/README.zh-CN.md)。
+当前开发入口见[项目接手指南](../../docs/PROJECT_HANDOVER.zh-CN.md)和[架构说明](../../docs/ARCHITECTURE.zh-CN.md)；服务及管理端各自说明见[语聊后端](backend/README.zh-CN.md)、[管理 App](../../ios/KikiVoiceOps/README.zh-CN.md)。
 
 ## 归档范围
 
-**以下保留 2026-10-19 独立实验阶段的原始配置、运行步骤及验收。** 其中旧 iOS 路径、邀请码身份、vendor、双口令运维、固定协议版本和当时的功能限制已不构成当前入口；相关工程已移除，不能执行旧客户端命令。实验后台、infra、shared 仍保留，具体行为以其当前代码与生产配置为准。历史通过数量、截图、证书及部署状态不代表 2026-10-22 重新验证。下文 `validation/` 链接指本地归档证据，该目录与根 `output/` 均未纳入 Git，克隆仓库不会自动取得。
+**以下保留 2026-10-19 独立实验阶段的原始配置、运行步骤及验收。** 当前两App已迁入 `ios/`，原 `application/RTCube` 与 `experiments/livekit/admin-ios` 路径仅用于识别历史；当前可点源码/说明链接已映射到新位置。 其中旧 iOS 路径、邀请码身份、vendor、双口令运维、固定协议版本和当时的功能限制已不构成当前入口；相关工程已移除，不能执行旧客户端命令。实验后台、infra、shared 仍保留，具体行为以其当前代码与生产配置为准。历史通过数量、截图、证书及部署状态不代表 2026-10-22 重新验证。下文 `validation/` 链接指本地归档证据，该目录与根 `output/` 均未纳入 Git，克隆仓库不会自动取得。
 
-> **归档：切换初期说明（2026-10-19）：** 当前工作区正在将本目录已验证的语聊能力移植至原 `application/RTCube.xcworkspace` 的 KikiTalk。正式应用保留 Apple 登录，账号服务为 `kiki.group`（`43.138.219.160`），自建语聊为 `furby.top`（`139.224.50.108`）；语聊使用 `VOICE_AUTH_MODE=account`，64 人总准入上限、最多4房且每房32人。独立运维 App 已实现两台服务器分别登录及分别展示指标。 服务器实际部署、备份、协议及真机待验状态见 [LiveKit 停机切换](../../docs/LIVEKIT_CUTOVER.zh-CN.md)。
+> **归档：切换初期说明（2026-10-19）：** 当前工作区正在将本目录已验证的语聊能力移植至原 `ios/KikiTalk/KikiTalk.xcworkspace` 的 KikiTalk。正式应用保留 Apple 登录，账号服务为 `kiki.group`（`43.138.219.160`），自建语聊为 `furby.top`（`139.224.50.108`）；语聊使用 `VOICE_AUTH_MODE=account`，64 人总准入上限、最多4房且每房32人。独立运维 App 已实现两台服务器分别登录及分别展示指标。 服务器实际部署、备份、协议及真机待验状态见 [LiveKit 停机切换](../../docs/LIVEKIT_CUTOVER.zh-CN.md)。
 
 > **归档：后续运维认证说明：** 运维 App 现在只向 `kiki.group` 进行 Passkey 注册/登录，由中央运维身份的独立 ACL 决定能否查看账号或语聊看板；新身份及第一位注册者均无默认权限。生产两端设置 `ADMIN_AUTH_MODE=passkey`，旧口令和 `/admin/v1` 会话不可用于生产，也没有密码回退。`furby.top` 只接收账号服务器签名的只读聚合请求，不另存运维姓名或权限。操作步骤与验收见 [运维 Passkey 说明](../../docs/OPS_PASSKEYS.zh-CN.md)。
 
@@ -34,7 +33,7 @@
 
 | 项目 | 现有 Kiki 语聊 | LiveKit 实验 |
 | --- | --- | --- |
-| iOS 工程 / scheme | `application/RTCube.xcworkspace` / KikiTalk | `ios/KikiLiveKitLab.xcworkspace` / KikiLiveKitLab |
+| iOS 工程 / scheme | `ios/KikiTalk/KikiTalk.xcworkspace` / KikiTalk | `ios/KikiLiveKitLab.xcworkspace` / KikiLiveKitLab |
 | Bundle ID | `com.kikitalk.demo` | `com.kikitalk.livekitlab` |
 | 桌面名称 | Kiki语聊 | Kiki实验版 |
 | 业务域名 | `https://kiki.group` | `https://furby.top` |
@@ -50,7 +49,7 @@ P1 提供房间最小化和返回同一连接、HTTP 权威聊天与幂等发送
 
 普通语聊显式使用 Opus 语音档（最大 24 kbps），保留 SDK 的 DTX 静音抑制和 RED 冗余；避免默认音乐档为纯语音占用额外带宽。容量验收以连续合成音频、24 kbps 最大码率、关闭 DTX 且保留 RED 测试，覆盖多人持续发言的负载；不代表将来音乐或立体声模式的容量。
 
-另有完全独立的只读运营运维 App，见 [`admin-ios/README.zh-CN.md`](admin-ios/README.zh-CN.md)。它使用单独 Bundle ID 和中央 Passkey 运维会话，不与普通语聊客户端会话互通；下文旧管理口令仅为历史记录。
+另有完全独立的只读运营运维 App，见 [`../../ios/KikiVoiceOps/README.zh-CN.md`](../../ios/KikiVoiceOps/README.zh-CN.md)。它使用单独 Bundle ID 和中央 Passkey 运维会话，不与普通语聊客户端会话互通；下文旧管理口令仅为历史记录。
 
 实验 App 使用独立 Bundle ID、Keychain service、协议确认和用户偏好存储，不覆盖正式 App 或恢复其账号。实验后台不导入正式后台代码、环境文件或数据库。
 
@@ -141,7 +140,7 @@ TCP 443 的 HTTP/WebSocket 流量经 HAProxy 转发给 Nginx，再到 API `8010`
 
 ### 历史：双服务口令首版（生产已停用）
 
-以下独立口令、旧 Keychain 和 `/admin/v1` 描述只保留首版实现与验收历史，不可作为生产登录方式。双服务首版说明见 [`admin-ios/README.zh-CN.md`](admin-ios/README.zh-CN.md)。在 Xcode 打开 `experiments/livekit/admin-ios/KikiVoiceOps.xcworkspace`，选择 `KikiVoiceOps`；主屏幕名称“Kiki运维”，Bundle ID `com.kikitalk.voiceops`，不覆盖语聊 App。看板只读，没有结束房间、封禁或重启服务器等操作。
+以下独立口令、旧 Keychain 和 `/admin/v1` 描述只保留首版实现与验收历史，不可作为生产登录方式。双服务首版说明见 [`../../ios/KikiVoiceOps/README.zh-CN.md`](../../ios/KikiVoiceOps/README.zh-CN.md)。在 Xcode 打开 `ios/KikiVoiceOps/KikiVoiceOps.xcworkspace`，选择 `KikiVoiceOps`；主屏幕名称“Kiki运维”，Bundle ID `com.kikitalk.voiceops`，不覆盖语聊 App。看板只读，没有结束房间、封禁或重启服务器等操作。
 
 顶部分别选择 **语聊服务 `furby.top`** 和 **账号服务 `kiki.group`**，使用不同口令、Keychain 会话和数据模型。语聊口令路径为 `~/.config/kikitalk-livekit-lab/admin-passphrase`，账号口令路径为 `~/.config/kikitalk/admin-passphrase`，均为项目外 `0600` 文件；服务器各自仅配置自己的 PBKDF2 哈希，管理会话最长 8 小时。这里的 Apple 管理登录仍未实现，和正式 KikiTalk 的 Apple 业务登录分开。
 

@@ -1,8 +1,10 @@
 # KikiTalk 自建语聊停机切换
 
+> **目录迁移（2026-10-22）：** 当前用户端为 `ios/KikiTalk`，管理端为 `ios/KikiVoiceOps`，均按 Sources/App、Core、Features 与 Tests/Resources/Configuration 组织；原 application/RTCube 和 experiments/livekit/admin-ios 路径只用于识别历史。可点源码链接已映射新位置，旧构建命令和验收仍按原批次阅读。本次未修改正式协议、后端或线上环境。
+
 > **证据位置：** 下文 `output/`、`experiments/livekit/validation/` 的截图和结果为本地归档，未纳入 Git，克隆仓库不会自动取得；保留链接用于追溯当时记录。
 
-> **源码入口更新（2026-10-22）：** 自建语聊已由主 App 承接；旧腾讯组件、示例 target/Pods、独立实验 iOS 和 vendor 快照已移除。当前使用 `application/RTCube.xcworkspace` 的 KikiTalk；独立 KikiVoiceOps、两套后端、infra/shared 和验收资料保留。下文为各日期切换及后续发布的归档记录，不表示本次清理重新发布或完成相同验收。现行结构见[接手指南](PROJECT_HANDOVER.zh-CN.md)。
+> **源码入口更新（2026-10-22）：** 自建语聊已由主 App 承接；旧腾讯组件、示例 target/Pods、独立实验 iOS 和 vendor 快照已移除。当前使用 `ios/KikiTalk/KikiTalk.xcworkspace` 的 KikiTalk；独立 KikiVoiceOps、两套后端、infra/shared 和验收资料保留。下文为各日期切换及后续发布的归档记录，不表示本次清理重新发布或完成相同验收。现行结构见[接手指南](PROJECT_HANDOVER.zh-CN.md)。
 
 > 2026-10-20 前台收礼修复已覆盖安装：手工 UIKit 房间控制器缺少 SwiftUI 场景环境，导致接收端被误判为后台、轮询未启动。已改为跟随实际窗口生命周期；17 项回归及 iPhone / iPad 两次真实服务页面自动接收、GIF 播放验证通过，详情见 [收礼修复记录](GIFTS.zh-CN.md#前台接收端不显示礼物修复2026-10-20)。
 
@@ -14,7 +16,7 @@
 
 > 运维登录已于同日升级为统一 Passkey 与逐看板人工授权，见 [当前运维账户说明](OPS_PASSKEYS.zh-CN.md)。下文双口令配置属于语聊切换当时的执行记录。
 
-日期：2026-10-19。本轮直接修改原 `application/RTCube.xcworkspace` 的 **KikiTalk** 应用，将实验 Demo 已实现的语聊能力接入原界面；保留 Apple 登录，账号与语聊继续使用独立服务器。采用停机替换，不做旧账号、资料、房间、收藏、历史或积分迁移。部署与真实验收结果以本文末尾记录为准，代码及离线测试完成不等于已经上线或完成真机验收。
+日期：2026-10-19。本轮直接修改原 `ios/KikiTalk/KikiTalk.xcworkspace` 的 **KikiTalk** 应用，将实验 Demo 已实现的语聊能力接入原界面；保留 Apple 登录，账号与语聊继续使用独立服务器。采用停机替换，不做旧账号、资料、房间、收藏、历史或积分迁移。部署与真实验收结果以本文末尾记录为准，代码及离线测试完成不等于已经上线或完成真机验收。
 
 原腾讯版本的设计和验收记录保留在 [Kiki Demo 历史说明](KIKI_DEMO.zh-CN.md) 和 [隐私/App Store 历史记录](APP_STORE_PRIVACY.zh-CN.md)。它们中的腾讯 SDK、视频、美颜、礼物和旧验收数量不代表本次切换后的运行状态。
 
@@ -39,7 +41,7 @@
 - 本期不提供耳返、变声、混响等语音音效。视频直播入口隐藏，创建/加入视频请求明确拒绝。礼物及积分相关入口关闭；不把原腾讯或旧免费礼物数据迁入本次语聊实现。
 - 不做新旧媒体互通或灰度兼容；旧腾讯安装包应停止使用并更新到本次版本。保留的厂商参考代码与历史资源不表示仍有可用入口，最终发布包依赖与隐私清单仍以构建检查为准。
 
-应用入口为 `application/RTCube.xcworkspace`，scheme 为 `KikiTalk`；独立运维应用为 `experiments/livekit/admin-ios/KikiVoiceOps.xcworkspace`，scheme 为 `KikiVoiceOps`，两者不共享应用容器或账号凭据。切换时保留的 `experiments/livekit/ios/` 实验客户端及 vendor 快照已于 2026-10-22 清理，不再是运行入口。
+应用入口为 `ios/KikiTalk/KikiTalk.xcworkspace`，scheme 为 `KikiTalk`；独立运维应用为 `ios/KikiVoiceOps/KikiVoiceOps.xcworkspace`，scheme 为 `KikiVoiceOps`，两者不共享应用容器或账号凭据。切换时保留的 `experiments/livekit/ios/` 实验客户端及 vendor 快照已于 2026-10-22 清理，不再是运行入口。
 
 ## 容量配置
 
@@ -112,7 +114,7 @@
 
 ```bash
 xcodebuild test-without-building \
-  -workspace experiments/livekit/admin-ios/KikiVoiceOps.xcworkspace \
+  -workspace ios/KikiVoiceOps/KikiVoiceOps.xcworkspace \
   -scheme KikiVoiceOps \
   -destination 'platform=iOS Simulator,id=B1DC4560-BDAF-4264-AE5E-D94B23DB031B' \
   -derivedDataPath /tmp/kiki-ops-account-derived \

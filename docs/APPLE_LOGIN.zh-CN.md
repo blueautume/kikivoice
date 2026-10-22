@@ -1,6 +1,8 @@
 # KikiTalk Apple 登录
 
-> **当前入口（2026-10-22）：** 用户 App 为 `application/RTCube.xcworkspace` / KikiTalk，依赖 SPM LiveKit，已移除腾讯 iOS 组件及示例。下文 2026-10-17 发布、云端清理与验收条目为归档记录；本次仅清理 iOS，不更改账号后端、Apple 配置或正式协议。整体说明见[接手指南](PROJECT_HANDOVER.zh-CN.md)。
+> **目录迁移（2026-10-22）：** 当前用户端为 `ios/KikiTalk`，管理端为 `ios/KikiVoiceOps`，均按 Sources/App、Core、Features 与 Tests/Resources/Configuration 组织；原 application/RTCube 和 experiments/livekit/admin-ios 路径只用于识别历史。可点源码链接已映射新位置，旧构建命令和验收仍按原批次阅读。本次未修改正式协议、后端或线上环境。
+
+> **当前入口（2026-10-22）：** 用户 App 为 `ios/KikiTalk/KikiTalk.xcworkspace` / KikiTalk，依赖 SPM LiveKit，已移除腾讯 iOS 组件及示例。下文 2026-10-17 发布、云端清理与验收条目为归档记录；本次仅清理 iOS，不更改账号后端、Apple 配置或正式协议。整体说明见[接手指南](PROJECT_HANDOVER.zh-CN.md)。
 
 
 ## 当前方案
@@ -58,7 +60,7 @@ https://kiki.group/v1/auth/apple/notifications
 ```bash
 backend/.venv/bin/python -m pytest -q backend/tests
 python3 tools/build_legal_documents.py --check
-xcodebuild -workspace application/RTCube.xcworkspace -scheme KikiTalk \
+xcodebuild -workspace ios/KikiTalk/KikiTalk.xcworkspace -scheme KikiTalk \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test
 ```

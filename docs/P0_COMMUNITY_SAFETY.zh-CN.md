@@ -1,5 +1,7 @@
 # P0 社区安全与运维交付说明
 
+> **目录迁移（2026-10-22）：** 当前用户端为 `ios/KikiTalk`，管理端为 `ios/KikiVoiceOps`，均按 Sources/App、Core、Features 与 Tests/Resources/Configuration 组织；原 application/RTCube 和 experiments/livekit/admin-ios 路径只用于识别历史。可点源码链接已映射新位置，旧构建命令和验收仍按原批次阅读。本次未修改正式协议、后端或线上环境。
+
 > **证据位置：** 下文 `output/`、`experiments/livekit/validation/` 的截图和结果为本地归档，未纳入 Git，克隆仓库不会自动取得；保留链接用于追溯当时记录。
 
 本轮按“仅中文语聊、小范围社区”的目标补齐容量以外的 P0 能力。记录日期为 **2026-10-19，Asia/Shanghai**。接口字段以 [P0 安全合约](../experiments/livekit/shared/p0-safety-contract.json) 为准；此文件记录权限、行为、保留规则与维护边界。
@@ -10,7 +12,7 @@
 | --- | --- | --- |
 | 账号服务 | `kiki.group / 43.138.219.160` | 普通用户 Apple 登录、资料、同意与注销；独立运维 Passkey 身份与逐项权限；账号运营数据及社区管理代理。 |
 | 语聊服务 | `furby.top / 139.224.50.108` | LiveKit 房间、麦位、文字、举报、个人拉黑、语聊限制、语聊运营与主机指标。 |
-| 独立运维 App | `experiments/livekit/admin-ios/KikiVoiceOps.xcworkspace` | 统一 Passkey 登录，按权限查看两个服务看板或使用社区管理。普通 KikiTalk 用户继续使用 Apple 登录。 |
+| 独立运维 App | `ios/KikiVoiceOps/KikiVoiceOps.xcworkspace` | 统一 Passkey 登录，按权限查看两个服务看板或使用社区管理。普通 KikiTalk 用户继续使用 Apple 登录。 |
 
 本轮包括：房主与房管的必要管理能力、安全中心、举报与处理、个人拉黑、基础文字过滤、账号隐私设置配合、运营指标、备份与隔离副本校验。未增加礼物、充值、VIP、关注、私信、动态、视频、音效或音频录制。
 

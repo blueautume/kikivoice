@@ -5,8 +5,9 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-let assetRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-    .appendingPathComponent("application/Demo/Assets.xcassets")
+let repositoryRoot = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent().deletingLastPathComponent()
+let assetRoot = repositoryRoot.appendingPathComponent("ios/KikiTalk/Resources/Assets.xcassets")
 let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
 func color(_ hex: UInt32, alpha: CGFloat = 1) -> CGColor {

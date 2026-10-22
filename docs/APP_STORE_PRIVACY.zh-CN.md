@@ -1,5 +1,7 @@
 # 隐私签署与 App Store 准备记录
 
+> **目录迁移（2026-10-22）：** 当前用户端为 `ios/KikiTalk`，管理端为 `ios/KikiVoiceOps`，均按 Sources/App、Core、Features 与 Tests/Resources/Configuration 组织；原 application/RTCube 和 experiments/livekit/admin-ios 路径只用于识别历史。可点源码链接已映射新位置，旧构建命令和验收仍按原批次阅读。本次未修改正式协议、后端或线上环境。
+
 > **证据位置：** 下文 `output/`、`experiments/livekit/validation/` 的截图和结果为本地归档，未纳入 Git，克隆仓库不会自动取得；保留链接用于追溯当时记录。
 
 > **文档范围更新（2026-10-22）：** 本页保留各日期的隐私实现、发布及待发布记录，不代替当前 App 隐私报告。当前 KikiTalk 使用系统 Apple 登录/APNs 与 SPM LiveKit；旧腾讯组件、RTCubeLab、Pods 和实验客户端已移除。下文腾讯/Kingfisher/SnapKit 及旧归档的清单数量只属于相应历史构建。此次清理不修改正式协议正文、协议版本或线上隐私页面；当前源码入口见[接手指南](PROJECT_HANDOVER.zh-CN.md)。

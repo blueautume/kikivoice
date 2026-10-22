@@ -20,7 +20,7 @@ import numpy as np
 from PIL import GifImagePlugin, Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "application/Demo/Resources/Gifts"
+OUTPUT = ROOT / "ios/KikiTalk/Resources/Gifts"
 S = 2
 TAU = math.tau
 GIF_ALPHA_CUTOFF = 40

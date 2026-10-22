@@ -1,10 +1,10 @@
 # KikiTalk 项目结构与接手指南
 
-更新日期：2026-10-22（iOS 旧实现清理）。面向准备逐步接手开发和运维的项目所有者。
+更新日期：2026-10-22（iOS 清理、工程更名与职责分组）。面向准备逐步接手开发和运维的项目所有者。
 
 当前 KikiTalk 由 **iOS 用户客户端、iOS 管理客户端、账号与社交服务、语聊业务服务、LiveKit 媒体服务、静态官网** 组成。两个 Python 后端分别运行在两台主机上；语聊业务 API 与 LiveKit 媒体进程运行在同一台语聊主机上。
 
-项目最初基于腾讯 TUIKit，当前主 App 使用 **Apple 登录、自建业务 API、开源 LiveKit 语音**。2026-10-22 已移除腾讯组件/示例、旧 target 与 Pods、LegacyTencent、独立实验 iOS 副本及 vendor 快照；清理前版本可从 Git 快照追溯。当前代码结构见[架构说明](ARCHITECTURE.zh-CN.md)。
+项目最初基于腾讯 TUIKit，当前主 App 使用 **Apple 登录、自建业务 API、开源 LiveKit 语音**。2026-10-22 已移除腾讯组件/示例、旧 target 与 Pods、LegacyTencent、独立实验 iOS 副本及 vendor 快照；清理前版本可从 Git 快照追溯。两个当前 App 已统一迁入 `ios/KikiTalk`、`ios/KikiVoiceOps`，用户工程由 RTCube 更名为 KikiTalk。当前代码结构见[架构说明](ARCHITECTURE.zh-CN.md)和[iOS 导航](../ios/README.md)。
 
 本指南描述当前工作区源码。现有部署记录用于说明服务分工；本次 iOS 清理没有发布后端或修改正式协议。应用版本以工程 MARKETING_VERSION / CURRENT_PROJECT_VERSION 及实际 App 产物为准；部分功能与协议变更仍标为本地待发布，不能据此推定现网已经运行相同版本。
 
@@ -12,8 +12,8 @@
 
 | 组成 | 主要代码位置 | 技术栈 | 负责的事情 |
 | --- | --- | --- | --- |
-| iOS 用户客户端 KikiTalk | `application/Demo/` | Swift、SwiftUI、UIKit、Combine、LiveKit Swift SDK | 语聊、动态、消息、个人页、登录、资料、礼物、通知 |
-| iOS 管理客户端 KikiVoiceOps | `experiments/livekit/admin-ios/` | Swift、SwiftUI、系统 Passkey、URLSession | 账号与语聊看板、社区治理、房间问题查询 |
+| iOS 用户客户端 KikiTalk | `ios/KikiTalk/Sources/` | Swift、SwiftUI、UIKit、Combine、LiveKit Swift SDK | 语聊、动态、消息、个人页、登录、资料、礼物、通知 |
+| iOS 管理客户端 KikiVoiceOps | `ios/KikiVoiceOps/` | Swift、SwiftUI、系统 Passkey、URLSession | 账号与语聊看板、社区治理、房间问题查询 |
 | 账号与社交服务 | `backend/` | Python 3.11+、FastAPI、SQLite、HTTPX | Apple 身份、账号会话、资料、关系、动态、私聊、APNs、运维身份和授权 |
 | 语聊业务服务 | `experiments/livekit/backend/` | Python、FastAPI、SQLite、LiveKit Server API、WebSocket | 房间目录、准入、八麦、房内权限、聊天、公告、礼物、拉黑及语聊治理 |
 | 实时媒体服务 | 外部 `livekit-server` 二进制；配置在 `experiments/livekit/infra/` | LiveKit Server、Go、WebRTC、Opus、TURN | 音频传输、转发、订阅与网络穿透；SFU 指选择性转发媒体的服务器 |
@@ -53,20 +53,28 @@ flowchart TB
 
 ```text
 TUIKit_iOS/
-├── application/
-│   ├── RTCube.xcworkspace       日常打开的工作区，选择 KikiTalk scheme
-│   ├── RTCube.xcodeproj         KikiTalk 与 KikiTalkTests 的构建配置
-│   ├── Demo/                   当前用户 App 源码、资源与隐私清单
-│   ├── DemoTests/              当前客户端测试
-│   └── README.md / README.cn.md 当前 iOS 开发入口
+├── ios/
+│   ├── README.md               两个 iOS 工程导航
+│   ├── KikiTalk/               用户 App，KikiTalk.xcworkspace / KikiTalk scheme
+│   │   ├── Sources/App/        应用入口、Root、AppStore、启动准备
+│   │   ├── Sources/Core/       网络、存储、通知、诊断与设计基础
+│   │   ├── Sources/Features/   Authentication/Privacy/VoiceRooms/Gifts/Social/Moments/Messaging/Profile
+│   │   ├── Tests/              镜像 App/Core/Features，另有 Integration
+│   │   ├── Resources/          Assets、礼物、协议、启动页与隐私清单
+│   │   └── Configuration/      Info.plist、entitlements
+│   └── KikiVoiceOps/           独立管理 App，KikiVoiceOps.xcworkspace / KikiVoiceOps scheme
+│       ├── Sources/            App/Core/Features（Dashboard/Community/Diagnostics）
+│       ├── Tests/              Authentication/Dashboard/Community/Diagnostics/Integration/Fixtures
+│       ├── Resources/          图标、隐私清单
+│       ├── Configuration/      Info.plist、entitlements
+│       └── Scripts/            工程和图标生成脚本
 ├── backend/                    当前账号、社交、APNs、中央运维身份服务
 │   ├── app/                    Python 应用
 │   ├── tests/                  单元及 API、跨服务测试
 │   └── deploy/                 账号服务部署、Nginx、systemd 和配置模板
 ├── experiments/livekit/
 │   ├── backend/                当前正式语聊业务服务
-│   ├── admin-ios/              当前独立 iOS 管理 App
-│   ├── infra/                  媒体和 API 部署、代理、维护、备份、探针
+│   ├── infra/                  媒体/API 部署、维护、备份、探针
 │   ├── shared/                 跨服务契约、协议副本
 │   └── validation/             本地生成验收证据，未纳入 Git
 ├── website/dist/               可直接部署的静态官网
@@ -77,64 +85,78 @@ TUIKit_iOS/
 └── AGENTS.md                   项目协作及版本递增约定
 ```
 
-**`experiments/livekit` 的名字仍来自实验阶段，但其中的后端、管理端和基础设施已被正式主线使用。** 日常关注 `application/Demo`、`backend`、`experiments/livekit/backend`、`experiments/livekit/admin-ios` 和 `infra`。独立实验 App 与腾讯参考组件已删除，目录名本身不能作为删除剩余服务的依据。
+**`experiments/livekit` 的名字仍来自实验阶段，但其后端和基础设施已被正式主线使用。** 用户端与管理端统一在 `ios/`；后端、infra/shared 保持原目录，不随 iOS 工程移动。独立实验 App 与腾讯参考组件已删除，历史目录名不能作为删除剩余服务的依据。
 
 ## 3 iOS 用户客户端
 
 ### 工程与开发方式
 
-打开 [RTCube.xcworkspace](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/RTCube.xcworkspace)，选择 **KikiTalk**，测试 target 为 **KikiTalkTests**。最低 iOS 17，支持 iPhone 和 iPad，工程使用 Swift 5 语言模式；这表示编译设置，不代表必须安装某个旧版 Swift 编译器。
+打开 [KikiTalk.xcworkspace](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/KikiTalk.xcworkspace)，选择 **KikiTalk**，测试 target 为 **KikiTalkTests**。最低 iOS 17，支持 iPhone 和 iPad，工程使用 Swift 5 语言模式；这表示编译设置，不代表必须安装某个旧版 Swift 编译器。
 
-主入口是 [KikiDemoApp.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiDemoApp.swift:4)。虽然文件和编译宏还带有 Demo 字样，它们目前就是主 App 的入口。当前四个页签为“语聊、动态、消息、我”。
+主入口是 [KikiTalkApp.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/App/KikiTalkApp.swift)。原 Demo 入口文件已按职责更名为 KikiTalkApp、KikiRootView 和 KikiAppStore。当前四个页签为“语聊、动态、消息、我”。
 
 界面以 SwiftUI 为主，房间呈现、窗口和浮层等场景使用 UIKit。状态通过 `ObservableObject`、`@Published` 和 Combine 驱动；网络和生命周期逻辑使用 `async/await`、Task、`@MainActor`。HTTP 使用系统 `URLSession`，JSON 使用 `Codable`；本地会话使用 Keychain。
 
-主 target 通过 **Swift Package Manager** 引入 LiveKit，精确版本见[SPM 锁文件](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/RTCube.xcworkspace/xcshareddata/swiftpm/Package.resolved)。旧腾讯参考 target、CocoaPods 配置及工作区 Pods 引用已移除，开发和测试使用 KikiTalk scheme。
+主 target 通过 **Swift Package Manager** 引入 LiveKit，精确版本见[SPM 锁文件](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/KikiTalk.xcworkspace/xcshareddata/swiftpm/Package.resolved)。旧腾讯参考 target、CocoaPods 配置及工作区 Pods 引用已移除，开发和测试使用 KikiTalk scheme。
 
 ### 主要业务代码
 
-下列文件均位于 `application/Demo/`。
+下列文件位于 `ios/KikiTalk/Sources/` 的 App、Core 和 Features 子目录，链接对应整理后的实际源码。
 
 | 阅读入口 | 主要职责 |
 | --- | --- |
-| [KikiDemoRootView.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiDemoRootView.swift) | 协议门禁、启动准备、登录和首次昵称、四页签主界面 |
-| [KikiDemoStore.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiDemoStore.swift:123) | 主业务状态中心，串起账号、资料、房间、社交、刷新、续租、退出与隐私撤回 |
-| [KikiAccountAPIClient.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiAccountAPIClient.swift:16) | 请求 `kiki.group`：Apple 登录、资料、社交、动态、私聊、推送、协议、换取语聊会话 |
-| [KikiAPIClient.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiAPIClient.swift:309) | 请求 `furby.top`：房间、麦位、聊天、礼物、收藏、足迹、安全治理；也定义共享模型 |
-| [KikiRTCService.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiRTCService.swift:161) | 连接 LiveKit、音轨和麦克风、成员事件、重连、房间呈现和媒体退出 |
-| [KikiLiveKitRoomView.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiLiveKitRoomView.swift) | 当前语聊房界面：八麦、成员、消息、公告和房间操作 |
-| [KikiRoomRuntime.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiRoomRuntime.swift) | 房间生命周期、聊天同步、音频中断及路由、网络诊断 |
-| [KikiSeatRequestSheet.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiSeatRequestSheet.swift) | 举手与上麦审批面板 |
-| [KikiRoomMessageInput.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiRoomMessageInput.swift) | 房间输入组件；相关文件处理键盘退出和消息展示 |
-| [KikiSocialModels.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiSocialModels.swift)、[KikiSocialViews.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiSocialViews.swift) | 用户主页、关系、消息入口、站内通知、举报及数据模型 |
-| [KikiMomentsViews.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiMomentsViews.swift) | 动态、图片、点赞、评论、发布和详情 |
-| [KikiDirectMessages.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiDirectMessages.swift)、[KikiInboxConversationRow.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiInboxConversationRow.swift) | 私聊详情和会话行，消息展示及列表操作 |
-| [KikiGifts.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiGifts.swift)、[KikiGiftViews.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiGiftViews.swift) | 免费体验钻石、礼物、装饰、赠送与效果播放 |
-| [KikiProfileView.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiProfileView.swift)、[KikiSettingsLayout.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiSettingsLayout.swift) | 个人资料、设置、收藏与足迹等 |
-| [KikiLegal.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiLegal.swift)、[KikiLegalViews.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiLegalViews.swift) | 协议读取、版本和同意记录、撤回与展示 |
-| [KikiPush.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiPush.swift)、[KikiStartupPermissions.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiStartupPermissions.swift) | APNs、系统通知权限、启动网络检查、通知点击导航 |
-| [KikiIncidents.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/Demo/KikiIncidents.swift) | 建房、入房及运行异常的关联记录和上报 |
+| [KikiRootView.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/App/KikiRootView.swift) | 协议门禁、启动准备、登录和首次昵称、四页签主界面 |
+| [KikiAppStore.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/App/KikiAppStore.swift) | 主业务状态中心，串起账号、资料、房间、社交、刷新、续租、退出与隐私撤回 |
+| [KikiAccountAPIClient.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Core/Networking/KikiAccountAPIClient.swift) | 请求 `kiki.group`：Apple 登录、资料、社交、动态、私聊、推送、协议、换取语聊会话 |
+| [KikiAPIClient.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Core/Networking/KikiAPIClient.swift) | 请求 `furby.top`：房间、麦位、聊天、礼物、收藏、足迹、安全治理；也定义共享模型 |
+| [KikiRTCService.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/VoiceRooms/Services/KikiRTCService.swift) | 连接 LiveKit、音轨和麦克风、成员事件、重连、房间呈现和媒体退出 |
+| [KikiLiveKitRoomView.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/VoiceRooms/Views/KikiLiveKitRoomView.swift) | 当前语聊房界面：八麦、成员、消息、公告和房间操作 |
+| [KikiRoomRuntime.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/VoiceRooms/Services/KikiRoomRuntime.swift) | 房间生命周期、聊天同步、音频中断及路由、网络诊断 |
+| [KikiSeatRequestSheet.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/VoiceRooms/Views/KikiSeatRequestSheet.swift) | 举手与上麦审批面板 |
+| [KikiRoomMessageInput.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/VoiceRooms/Chat/KikiRoomMessageInput.swift) | 房间输入组件；相关文件处理键盘退出和消息展示 |
+| [KikiSocialModels.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/Social/KikiSocialModels.swift)、[KikiSocialViews.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/Social/KikiSocialViews.swift) | 用户主页、关系、消息入口、站内通知、举报及数据模型 |
+| [KikiMomentsViews.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/Moments/KikiMomentsViews.swift) | 动态、图片、点赞、评论、发布和详情 |
+| [KikiDirectMessages.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/Messaging/KikiDirectMessages.swift)、[KikiInboxConversationRow.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/Messaging/KikiInboxConversationRow.swift) | 私聊详情和会话行，消息展示及列表操作 |
+| [KikiGifts.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/Gifts/KikiGifts.swift)、[KikiGiftViews.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/Gifts/KikiGiftViews.swift) | 免费体验钻石、礼物、装饰、赠送与效果播放 |
+| [KikiProfileView.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/Profile/KikiProfileView.swift)、[KikiSettingsLayout.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/Profile/KikiSettingsLayout.swift) | 个人资料、设置、收藏与足迹等 |
+| [KikiLegal.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/Privacy/KikiLegal.swift)、[KikiLegalViews.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Features/Privacy/KikiLegalViews.swift) | 协议读取、版本和同意记录、撤回与展示 |
+| [KikiPush.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Core/Notifications/KikiPush.swift)、[KikiStartupPermissions.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/App/KikiStartupPermissions.swift) | APNs、系统通知权限、启动网络检查、通知点击导航 |
+| [KikiIncidents.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/Sources/Core/Diagnostics/KikiIncidents.swift) | 建房、入房及运行异常的关联记录和上报 |
+
+AppStore 保留跨页业务状态和服务编排，RootView 保留门禁与导航。原集中源码中的若干完整顶层类型已抽为独立文件：
+
+| 新阅读入口 | 职责 |
+| --- | --- |
+| [KikiPalette.swift](../ios/KikiTalk/Sources/Core/DesignSystem/KikiPalette.swift)、[KikiAvatar.swift](../ios/KikiTalk/Sources/Core/DesignSystem/KikiAvatar.swift) | 共用颜色、预设头像绘制与自定义头像加载 |
+| [KikiIdentityStorage.swift](../ios/KikiTalk/Sources/Core/Storage/KikiIdentityStorage.swift)、[KikiHTTPSDelegate.swift](../ios/KikiTalk/Sources/Core/Networking/KikiHTTPSDelegate.swift) | 身份存储/Keychain，以及HTTPS重定向策略 |
+| [KikiRoom.swift](../ios/KikiTalk/Sources/Features/VoiceRooms/Models/KikiRoom.swift) | 房间模型和标题规则 |
+| [KikiDiscoverView.swift](../ios/KikiTalk/Sources/Features/VoiceRooms/Discovery/KikiDiscoverView.swift)、[KikiRoomCover.swift](../ios/KikiTalk/Sources/Features/VoiceRooms/Discovery/KikiRoomCover.swift) | 大厅、房间卡片与封面 |
+| [KikiDecoratedAvatar.swift](../ios/KikiTalk/Sources/Features/Gifts/KikiDecoratedAvatar.swift)、[KikiUnreadRequestGate.swift](../ios/KikiTalk/Sources/Features/Messaging/KikiUnreadRequestGate.swift) | 装饰头像、未读请求协调 |
+| [KikiRoomHostingController.swift](../ios/KikiTalk/Sources/Features/VoiceRooms/Presentation/KikiRoomHostingController.swift) | UIKit房间host与场景生命周期 |
+| [KikiRoomDiagnosticsView.swift](../ios/KikiTalk/Sources/Features/VoiceRooms/Views/KikiRoomDiagnosticsView.swift)、[KikiRoomAnnouncementView.swift](../ios/KikiTalk/Sources/Features/VoiceRooms/Views/KikiRoomAnnouncementView.swift) | 诊断与公告辅助界面 |
+
+这些文件仍在同一 App target 编译；Social、Profile、网络DTO和部分测试仍集中多项职责，本轮没有将全部大文件拆解为独立模块。管理端也按 App/Core/Features 组织，配置与资源独立。
 
 Apple 登录使用 AuthenticationServices；音频使用 AVFoundation 和 LiveKit；通知使用 UserNotifications/APNs；图片选择和处理使用 PhotosUI、UIKit、CoreImage、ImageIO 等系统框架。这些系统框架不属于另行下载的第三方开源依赖。
 
-当前开放语音房，视频直播请求在业务层被拒绝。仓库中的视频、美颜、会议与通话组件，不能据此视为当前 KikiTalk 已开放的产品功能。
+当前开放语音房，视频直播请求在业务层被拒绝；旧视频、美颜、会议和通话组件已移除。资源中的品牌图标/配色与业务代码独立，Info.plist 和 entitlements 统一放在 Configuration。
 
 ## 4 iOS 管理客户端
 
-管理 App 是单独的应用，工程为 [KikiVoiceOps.xcworkspace](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/admin-ios/KikiVoiceOps.xcworkspace)，scheme 为 **KikiVoiceOps**，Bundle ID 为 `com.kikitalk.voiceops`。最低 iOS 17，Swift 5 语言模式，当前工程版本为 **1.0（1）**。
+管理 App 是单独的应用，工程为 [KikiVoiceOps.xcworkspace](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiVoiceOps/KikiVoiceOps.xcworkspace)，scheme 为 **KikiVoiceOps**，Bundle ID 为 `com.kikitalk.voiceops`。最低 iOS 17，Swift 5 语言模式，当前工程版本为 **1.0（1）**。
 
 它使用 SwiftUI、Foundation、AuthenticationServices、Security/Keychain 和 UIKit 等系统能力，当前没有额外接入腾讯 SDK、LiveKit SDK 或第三方网络库。
 
 | 核心代码 | 职责 |
 | --- | --- |
-| [KikiVoiceOpsApp.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/admin-ios/App/KikiVoiceOpsApp.swift) | App 入口、前后台生命周期与后台页面遮罩 |
-| [OpsStore.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/admin-ios/App/OpsStore.swift)、[OpsViews.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/admin-ios/App/OpsViews.swift) | 管理状态、看板选择和界面 |
-| [PasskeyAuthorization.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/admin-ios/App/PasskeyAuthorization.swift) | 系统通行密钥创建与登录 |
-| [OpsIdentityAPI.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/admin-ios/App/OpsIdentityAPI.swift)、[OpsTransport.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/admin-ios/App/OpsTransport.swift) | 固定账号域名的管理请求与传输校验 |
-| [SessionVault.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/admin-ios/App/SessionVault.swift)、[VoiceService.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/admin-ios/App/VoiceService.swift) | Keychain 运维会话、服务和权限模型、请求允许列表 |
-| [OpsCommunityView.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/admin-ios/App/OpsCommunityView.swift)、[OpsModeration.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/admin-ios/App/OpsModeration.swift) | 语聊举报、限制和社区处置 |
-| [OpsSocialModeration.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/admin-ios/App/OpsSocialModeration.swift) | 账号服务中的动态、私聊等社交治理 |
-| [OpsIncidents.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/admin-ios/App/OpsIncidents.swift) | 房间技术问题查询与展示 |
+| [KikiVoiceOpsApp.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiVoiceOps/Sources/App/KikiVoiceOpsApp.swift) | App 入口、前后台生命周期与后台页面遮罩 |
+| [OpsStore.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiVoiceOps/Sources/App/OpsStore.swift)、[OpsViews.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiVoiceOps/Sources/Features/Dashboard/OpsViews.swift) | 管理状态、看板选择和界面 |
+| [PasskeyAuthorization.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiVoiceOps/Sources/Core/Security/PasskeyAuthorization.swift) | 系统通行密钥创建与登录 |
+| [OpsIdentityAPI.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiVoiceOps/Sources/Core/Networking/OpsIdentityAPI.swift)、[OpsTransport.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiVoiceOps/Sources/Core/Networking/OpsTransport.swift) | 固定账号域名的管理请求与传输校验 |
+| [SessionVault.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiVoiceOps/Sources/Core/Security/SessionVault.swift)、[OpsServiceModels.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiVoiceOps/Sources/Core/Models/OpsServiceModels.swift) | Keychain 运维会话、服务和权限模型、请求允许列表 |
+| [OpsCommunityView.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiVoiceOps/Sources/Features/Community/OpsCommunityView.swift)、[OpsModeration.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiVoiceOps/Sources/Features/Community/OpsModeration.swift) | 语聊举报、限制和社区处置 |
+| [OpsSocialModeration.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiVoiceOps/Sources/Features/Community/OpsSocialModeration.swift) | 账号服务中的动态、私聊等社交治理 |
+| [OpsIncidents.swift](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiVoiceOps/Sources/Features/Diagnostics/OpsIncidents.swift) | 房间技术问题查询与展示 |
 
 管理 App 统一向 **`kiki.group/admin/v2`** 注册、登录和请求数据。账号服务器保存运维身份、公钥、会话和权限；需要语聊数据时，由账号服务器签名请求 `furby.top`。App 不直接拿运维 Bearer 登录语聊服务器。
 
@@ -241,7 +263,7 @@ LiveKit Server 是下载运行的外部开源服务，源码本身没有完整�
 | [LiveKit WebRTC XCFramework](https://github.com/livekit/webrtc-xcframework) | 150.7871.3 | Swift SDK 间接引入的 WebRTC 媒体底座 | [包装仓库 MIT](https://github.com/livekit/webrtc-xcframework/blob/main/LICENSE)；底层及随包组件另有许可 |
 | [LiveKit UniFFI XCFramework](https://github.com/livekit/livekit-uniffi-xcframework) | 0.1.9 | Swift SDK 间接二进制依赖 | [Apache 2.0](https://github.com/livekit/livekit-uniffi-xcframework/blob/main/LICENSE) |
 
-精确解析结果见 [Package.resolved](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/RTCube.xcworkspace/xcshareddata/swiftpm/Package.resolved)。管理 App 当前使用系统框架，无额外三方包。
+精确解析结果见 [Package.resolved](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/KikiTalk.xcworkspace/xcshareddata/swiftpm/Package.resolved)。管理 App 当前使用系统框架，无额外三方包。
 
 ### 两套 Python 后端
 
@@ -312,7 +334,7 @@ Apple 登录、APNs、系统 Passkey、开发者签名和域名证书属于外�
 | 动态、私聊、关系 | SocialViews、MomentsViews、DirectMessages、AccountAPIClient | 根 backend 的 social、social_content；屏蔽策略还依赖语聊 social_policy |
 | 礼物、免费钻石、装饰 | Gifts、GiftViews、Resources/Gifts | 语聊 experience |
 | 系统通知 | Push、StartupPermissions | 根 backend 的 push |
-| 管理看板、社区治理 | admin-ios 的 OpsStore、OpsViews 和治理模块 | 根 ops_auth、admin、social_content；语聊 ops_gateway、safety、incidents |
+| 管理看板、社区治理 | ios/KikiVoiceOps 的 OpsStore、OpsViews 和治理模块 | 根 ops_auth、admin、social_content；语聊 ops_gateway、safety、incidents |
 
 上表为第 3 至第 6 节已链接文件的简称。跨端字段和权限变化时，还应同步契约与测试。
 
@@ -370,7 +392,7 @@ Apple 登录、APNs、系统 Passkey、开发者签名和域名证书属于外�
 
 ### 当前入口与历史材料
 
-根 README、application README 与[架构说明](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/ARCHITECTURE.zh-CN.md) 已更新为清理后的 KikiTalk 入口。[旧腾讯版说明](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/KIKI_DEMO.zh-CN.md)、切换与交付记录保留原日期的背景和验收，历史路径及运行命令不再代表当前可用工程。[商业版总体方案](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/COMMERCIAL_ARCHITECTURE.zh-CN.md) 和[商业模块规划](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/COMMERCIAL_MODULES.zh-CN.md) 已标记归档；所列收费、多端及扩容能力不代表已实现。
+根 README、两个 App 的 README 与[架构说明](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/ARCHITECTURE.zh-CN.md) 已更新为清理后的 KikiTalk 入口。[旧腾讯版说明](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/KIKI_DEMO.zh-CN.md)、切换与交付记录保留原日期的背景和验收，历史路径及运行命令不再代表当前可用工程。[商业版总体方案](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/COMMERCIAL_ARCHITECTURE.zh-CN.md) 和[商业模块规划](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/docs/COMMERCIAL_MODULES.zh-CN.md) 已标记归档；所列收费、多端及扩容能力不代表已实现。
 
 独立邀请码实验 App、RTCubeLab 及其他腾讯示例已移除。语聊后端保留 account/lab 模式的历史支持和配置名称，本次 iOS 清理不修改后端行为；正式主线继续使用 account 桥接。后端、管理 App、infra、shared 及历史验收资料仍保留。
 
@@ -378,7 +400,7 @@ Apple 登录、APNs、系统 Passkey、开发者签名和域名证书属于外�
 
 ## 11 建议按这个顺序接手
 
-1. **先运行主 App并认清入口。** 在 Xcode 打开 KikiTalk，先读 App、RootView、DemoStore；把四个页签与代码对应起来。
+1. **先运行主 App并认清入口。** 在 Xcode 打开 KikiTalk，先读 KikiTalkApp、KikiRootView、KikiAppStore；把四个页签与代码对应起来。
 2. **完整跟一遍登录到入房。** 从 AccountAPIClient 到账号 `main.py`、voice_bridge，再到语聊 account_bridge、main、RTCService。理解各会话与凭证的用途。
 3. **选择一个小功能横向阅读。** 比如“修改昵称”或“房间公告”，从页面、Store、API、服务端、SQL 到测试，建立自己的修改路径。
 4. **再读语音生命周期。** 重点看开麦权限、断线、后台、最小化、房主离开、隐私撤回和服务端清理。界面关闭与媒体断开是两个需要协调的动作。
@@ -390,16 +412,16 @@ Apple 登录、APNs、系统 Passkey、开发者签名和域名证书属于外�
 
 ```bash
 # 主 App：Xcode 选择 KikiTalk，使用现有签名配置运行或测试
-open /Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/application/RTCube.xcworkspace
+open /Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiTalk/KikiTalk.xcworkspace
 
 # 管理 App：选择 KikiVoiceOps
-open /Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/admin-ios/KikiVoiceOps.xcworkspace
+open /Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/ios/KikiVoiceOps/KikiVoiceOps.xcworkspace
 
 # 只核对主线协议生成产物，不修改文件
 python3 /Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/tools/build_legal_documents.py --check
 ```
 
-账号和语聊后端各自有 requirements-dev 与 tests。根账号开发依赖额外包含语聊依赖，用于两端 ASGI 契约与生命周期测试。建议在隔离虚拟环境中运行，具体入口见 [账号后端说明](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/backend/README.zh-CN.md) 和 [语聊后端说明](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/backend/README.zh-CN.md)。客户端和管理端测试分别位于各工程的 `DemoTests`、`Tests`；带公网集成开关的用例应按其约定配置，不把跳过集成用例等同于线上通过。
+账号和语聊后端各自有 requirements-dev 与 tests。根账号开发依赖额外包含语聊依赖，用于两端 ASGI 契约与生命周期测试。建议在隔离虚拟环境中运行，具体入口见 [账号后端说明](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/backend/README.zh-CN.md) 和 [语聊后端说明](/Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/experiments/livekit/backend/README.zh-CN.md)。客户端和管理端测试均位于各自项目的 `Tests`，JSON fixture 保留测试 bundle 资源；带公网集成开关的用例应按其约定配置，不把跳过集成用例等同于线上通过。
 
 ### 进一步阅读
 
@@ -417,4 +439,4 @@ python3 /Users/lihao/code/Xcode/kikitalk/TUIKit_iOS/tools/build_legal_documents.
 
 shared 中 `account-voice-contract` 描述授权交换；`ops-passkey-contract` 描述运维身份与聚合；`p0-safety-contract` 描述举报和治理；`p1-social-policy-contract` 描述跨服务屏蔽策略；`room-incidents-contract` 描述技术问题记录。旧 `admin-api-contract` 与 `account-admin-api-contract` 仍有被引用的看板数据结构，但其中 v1 口令登录流程属于历史。
 
-本轮仅新增接手说明，没有修改应用功能或修复代码，因此不触发 `AGENTS.md` 的应用版本递增。后续功能或修复应在操作前读取当前版本，并按同一轮只递增一次的约定更新 KikiTalk Debug 与 Release。
+应用版本约定见根 AGENTS.md，工程路径已同步到 `ios/KikiTalk/KikiTalk.xcodeproj/project.pbxproj`。后续功能或修复应先读取实际当前版本，再按同一轮只递增一次的约定更新 KikiTalk Debug 与 Release；本文不固定填写容易过期的应用版本。

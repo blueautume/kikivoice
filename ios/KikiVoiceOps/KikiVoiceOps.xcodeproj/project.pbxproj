@@ -1,0 +1,805 @@
+// !$*UTF8*$!
+{
+	"archiveVersion" = "1";
+	"classes" = {
+	};
+	"objectVersion" = "56";
+	"objects" = {
+		"0001139B41BB8440EB273D1E" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "OpsIncidents.swift";
+			"sourceTree" = "<group>";
+		};
+		"02FF0FCB18AC2749EFCF976C" = {
+			"fileRef" = "BF53325E6D7E21688D1AD2BC";
+			"isa" = "PBXBuildFile";
+		};
+		"04BB92315EAEAD4B963C3FE3" = {
+			"children" = (
+				"88178458E829057A4772FCD8",
+				"BF53325E6D7E21688D1AD2BC",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Networking";
+			"path" = "Networking";
+			"sourceTree" = "<group>";
+		};
+		"06C66BBD3BF4828F0C034C49" = {
+			"buildSettings" = {
+				"CLANG_ENABLE_MODULES" = "YES";
+				"CLANG_ENABLE_OBJC_ARC" = "YES";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+				"DEVELOPMENT_TEAM" = "A82X46N3WS";
+				"ENABLE_TESTABILITY" = "NO";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+				"SDKROOT" = "iphoneos";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"SWIFT_VERSION" = "5.0";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+			};
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+		};
+		"08405DCD78AD053EA0A66767" = {
+			"buildConfigurations" = (
+				"C2AE66FC23343F82AD018881",
+				"561FB830BE0E340069C839B9",
+			);
+			"defaultConfigurationIsVisible" = "0";
+			"defaultConfigurationName" = "Release";
+			"isa" = "XCConfigurationList";
+		};
+		"0965FA6BAEBF6B5FC3BD8141" = {
+			"fileRef" = "D675EFC16215AD8147F2A126";
+			"isa" = "PBXBuildFile";
+		};
+		"0E63074D910A6D0063223662" = {
+			"children" = (
+				"C14D6ABA370F84E2F057A647",
+				"D675EFC16215AD8147F2A126",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Security";
+			"path" = "Security";
+			"sourceTree" = "<group>";
+		};
+		"13C4608B5138EBE9B3A45A55" = {
+			"children" = (
+				"D60C3AFCB148A30B3AC2ADAC",
+				"62668654DF29E054C6397D3A",
+				"5456EC47345A817F1F426CB9",
+			);
+			"isa" = "PBXGroup";
+			"path" = "Sources";
+			"sourceTree" = "<group>";
+		};
+		"13D58F750C9F7A867F986420" = {
+			"buildActionMask" = "2147483647";
+			"files" = (
+			);
+			"isa" = "PBXFrameworksBuildPhase";
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"13FE17463898FC3B625791E1" = {
+			"buildSettings" = {
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+				"CODE_SIGN_ENTITLEMENTS" = "Configuration/KikiVoiceOps.entitlements";
+				"CURRENT_PROJECT_VERSION" = "1";
+				"DEVELOPMENT_TEAM" = "A82X46N3WS";
+				"INFOPLIST_FILE" = "Configuration/Info.plist";
+				"LD_RUNPATH_SEARCH_PATHS" = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"MARKETING_VERSION" = "1.0";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.kikitalk.voiceops";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"SWIFT_EMIT_LOC_STRINGS" = "YES";
+			};
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+		};
+		"190B156325615D3BEE8D253F" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.xml";
+			"path" = "PrivacyInfo.xcprivacy";
+			"sourceTree" = "<group>";
+		};
+		"19A00825BA730744226D7CAC" = {
+			"children" = (
+				"0001139B41BB8440EB273D1E",
+				"948C73B939EF8D015E565E17",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Diagnostics";
+			"path" = "Diagnostics";
+			"sourceTree" = "<group>";
+		};
+		"19A2044DC37F92FFE41D561B" = {
+			"children" = (
+				"2A88DFAE53FADA03D101C99B",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Authentication";
+			"path" = "Authentication";
+			"sourceTree" = "<group>";
+		};
+		"1CE6F7C4EB5E72AD008EDD8D" = {
+			"buildSettings" = {
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+				"CODE_SIGN_ENTITLEMENTS" = "Configuration/KikiVoiceOps.entitlements";
+				"CURRENT_PROJECT_VERSION" = "1";
+				"DEVELOPMENT_TEAM" = "A82X46N3WS";
+				"INFOPLIST_FILE" = "Configuration/Info.plist";
+				"LD_RUNPATH_SEARCH_PATHS" = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"MARKETING_VERSION" = "1.0";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.kikitalk.voiceops";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"SWIFT_EMIT_LOC_STRINGS" = "YES";
+			};
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+		};
+		"1EBAD8C32F121E04BC05E2B1" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "VoiceOpsTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"244210E48437B6556980A702" = {
+			"attributes" = {
+				"BuildIndependentTargetsInParallel" = "YES";
+				"LastUpgradeCheck" = "2650";
+				"TargetAttributes" = {
+					"8C1A045E96B998B40533C7FF" = {
+						"CreatedOnToolsVersion" = "26.5";
+						"SystemCapabilities" = {
+							"com.apple.AssociatedDomains" = {
+								"enabled" = "1";
+							};
+						};
+					};
+					"B70E7FC58E5219C3FB7E302C" = {
+						"CreatedOnToolsVersion" = "26.5";
+						"TestTargetID" = "8C1A045E96B998B40533C7FF";
+					};
+				};
+			};
+			"buildConfigurationList" = "AF797F0382D714D04A261BC4";
+			"compatibilityVersion" = "Xcode 14.0";
+			"developmentRegion" = "zh_CN";
+			"hasScannedForEncodings" = "0";
+			"isa" = "PBXProject";
+			"knownRegions" = (
+				"zh_CN",
+				"en",
+				"Base",
+			);
+			"mainGroup" = "CC5D242D023A9271190EA7C6";
+			"productRefGroup" = "AE7805B56D1DCAFAA071416F";
+			"projectDirPath" = "";
+			"projectRoot" = "";
+			"targets" = (
+				"8C1A045E96B998B40533C7FF",
+				"B70E7FC58E5219C3FB7E302C",
+			);
+		};
+		"25FC3D33176B6F4167EDA0F0" = {
+			"children" = (
+				"E72685212AF966A85FF3F9E9",
+				"38C6FBFCA30BBAFBF4E3C760",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Configuration";
+			"path" = "Configuration";
+			"sourceTree" = "<group>";
+		};
+		"2A88DFAE53FADA03D101C99B" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "AccountOpsTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"2C39201424DFC2D9D3CDC29E" = {
+			"fileRef" = "3BBCE02F491D11FC34AF1BE1";
+			"isa" = "PBXBuildFile";
+		};
+		"30A52AA528A191D77268261A" = {
+			"fileRef" = "43BDDA70E3D6EB2790A91509";
+			"isa" = "PBXBuildFile";
+		};
+		"31F4F158EFC3BEF9541783F8" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "KikiVoiceOpsApp.swift";
+			"sourceTree" = "<group>";
+		};
+		"38258A2FDB8C3F2B87187190" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "generate_app_icon.swift";
+			"sourceTree" = "<group>";
+		};
+		"38C6FBFCA30BBAFBF4E3C760" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.entitlements";
+			"path" = "KikiVoiceOps.entitlements";
+			"sourceTree" = "<group>";
+		};
+		"3A80989376F6C5C7DFB9F8A0" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "CommunityOpsTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"3BBCE02F491D11FC34AF1BE1" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "OpsModels.swift";
+			"sourceTree" = "<group>";
+		};
+		"3E430D07F4A926FA488C995F" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "OpsViews.swift";
+			"sourceTree" = "<group>";
+		};
+		"426C875197E74BC04B240F80" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "OpsModeration.swift";
+			"sourceTree" = "<group>";
+		};
+		"43BDDA70E3D6EB2790A91509" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "VoiceOpsIntegrationTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"449C44A4544FDA461D2A55F3" = {
+			"fileRef" = "76B7924F85A073DC522A7249";
+			"isa" = "PBXBuildFile";
+		};
+		"4AD441DFB1033D3B6CA64FBE" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "folder.assetcatalog";
+			"path" = "Assets.xcassets";
+			"sourceTree" = "<group>";
+		};
+		"4DEB5EC08CFBD796D7A2D88D" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.json";
+			"path" = "account-dashboard-fixture.json";
+			"sourceTree" = "<group>";
+		};
+		"4EBE6FC8FD6DEB2189DD06C2" = {
+			"children" = (
+				"68004AB4FFFA177881D270C3",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Diagnostics";
+			"path" = "Diagnostics";
+			"sourceTree" = "<group>";
+		};
+		"51CAEC57FC8AB6A9A8FF3C7A" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.json";
+			"path" = "dashboard-fixture.json";
+			"sourceTree" = "<group>";
+		};
+		"5456EC47345A817F1F426CB9" = {
+			"children" = (
+				"B5B5AB8DF1C23108E6865578",
+				"F14DCFD5B0993D615E9433B4",
+				"19A00825BA730744226D7CAC",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Features";
+			"path" = "Features";
+			"sourceTree" = "<group>";
+		};
+		"561FB830BE0E340069C839B9" = {
+			"buildSettings" = {
+				"BUNDLE_LOADER" = "$(TEST_HOST)";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"LD_RUNPATH_SEARCH_PATHS" = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.kikitalk.voiceops.tests";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/KikiVoiceOps.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/KikiVoiceOps";
+			};
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+		};
+		"62668654DF29E054C6397D3A" = {
+			"children" = (
+				"6C2FB8A81BF213EB4119BEB4",
+				"04BB92315EAEAD4B963C3FE3",
+				"0E63074D910A6D0063223662",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Core";
+			"path" = "Core";
+			"sourceTree" = "<group>";
+		};
+		"67269462ACF7B8FDA8BD8959" = {
+			"fileRef" = "51CAEC57FC8AB6A9A8FF3C7A";
+			"isa" = "PBXBuildFile";
+		};
+		"68004AB4FFFA177881D270C3" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "IncidentOpsTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"6863D690CDAF086170A9C280" = {
+			"children" = (
+				"1EBAD8C32F121E04BC05E2B1",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Dashboard";
+			"path" = "Dashboard";
+			"sourceTree" = "<group>";
+		};
+		"69CF21D3D158086EDB2DAB1F" = {
+			"buildConfigurations" = (
+				"1CE6F7C4EB5E72AD008EDD8D",
+				"13FE17463898FC3B625791E1",
+			);
+			"defaultConfigurationIsVisible" = "0";
+			"defaultConfigurationName" = "Release";
+			"isa" = "XCConfigurationList";
+		};
+		"6ACE7BC297BF23705D4E5F56" = {
+			"buildActionMask" = "2147483647";
+			"files" = (
+				"BE2AC13E19315B4289A899B4",
+				"94748634010E3B86F8398285",
+				"449C44A4544FDA461D2A55F3",
+				"CB514F04BC616C314C468CE7",
+				"02FF0FCB18AC2749EFCF976C",
+				"D65AA8CF34D16135A5B86CEF",
+				"0965FA6BAEBF6B5FC3BD8141",
+				"DC1D7C20F92A465F4EA062EF",
+				"C6CCC3C738B5F3CFD5710822",
+				"E55E64900A1175C48EE2D2AF",
+				"BC40BA0F9CF1B280D416C467",
+				"2C39201424DFC2D9D3CDC29E",
+				"E26C9097CE812ED683CAE617",
+				"E2DA1DB02B0F6155036FF587",
+				"6E5B2A7C764D163DEC251629",
+			);
+			"isa" = "PBXSourcesBuildPhase";
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"6C2FB8A81BF213EB4119BEB4" = {
+			"children" = (
+				"76B7924F85A073DC522A7249",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Models";
+			"path" = "Models";
+			"sourceTree" = "<group>";
+		};
+		"6C87B1D0C1CD14BA431267A3" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "SocialOpsTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"6DC4FAD667A85B8567F612FB" = {
+			"children" = (
+				"19A2044DC37F92FFE41D561B",
+				"AC5A844097A1D1943D012F0E",
+				"6863D690CDAF086170A9C280",
+				"4EBE6FC8FD6DEB2189DD06C2",
+				"70F0B61789EA193D69660484",
+				"F63D57027D19E342898F9878",
+			);
+			"isa" = "PBXGroup";
+			"path" = "Tests";
+			"sourceTree" = "<group>";
+		};
+		"6E5B2A7C764D163DEC251629" = {
+			"fileRef" = "948C73B939EF8D015E565E17";
+			"isa" = "PBXBuildFile";
+		};
+		"6F0A4CC74192D9E5C67D4404" = {
+			"buildSettings" = {
+				"CLANG_ENABLE_MODULES" = "YES";
+				"CLANG_ENABLE_OBJC_ARC" = "YES";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+				"DEVELOPMENT_TEAM" = "A82X46N3WS";
+				"ENABLE_TESTABILITY" = "YES";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+				"SDKROOT" = "iphoneos";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"SWIFT_VERSION" = "5.0";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+			};
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+		};
+		"70F09BF32F6D77A92FF191B4" = {
+			"explicitFileType" = "wrapper.cfbundle";
+			"isa" = "PBXFileReference";
+			"path" = "KikiVoiceOpsTests.xctest";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"70F0B61789EA193D69660484" = {
+			"children" = (
+				"4DEB5EC08CFBD796D7A2D88D",
+				"51CAEC57FC8AB6A9A8FF3C7A",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Fixtures";
+			"path" = "Fixtures";
+			"sourceTree" = "<group>";
+		};
+		"76B7924F85A073DC522A7249" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "OpsServiceModels.swift";
+			"sourceTree" = "<group>";
+		};
+		"78938EE0291D5A66915C3009" = {
+			"fileRef" = "68004AB4FFFA177881D270C3";
+			"isa" = "PBXBuildFile";
+		};
+		"81F31879437340D5CD6ED968" = {
+			"explicitFileType" = "wrapper.application";
+			"isa" = "PBXFileReference";
+			"path" = "KikiVoiceOps.app";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"854BE4B244C85E5520D0F1BF" = {
+			"fileRef" = "4DEB5EC08CFBD796D7A2D88D";
+			"isa" = "PBXBuildFile";
+		};
+		"8619E39B688A33CB92F66F7B" = {
+			"containerPortal" = "244210E48437B6556980A702";
+			"isa" = "PBXContainerItemProxy";
+			"proxyType" = "1";
+			"remoteGlobalIDString" = "8C1A045E96B998B40533C7FF";
+			"remoteInfo" = "KikiVoiceOps";
+		};
+		"877FCEF5065152B0F9D63C8A" = {
+			"fileRef" = "3A80989376F6C5C7DFB9F8A0";
+			"isa" = "PBXBuildFile";
+		};
+		"88178458E829057A4772FCD8" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "OpsIdentityAPI.swift";
+			"sourceTree" = "<group>";
+		};
+		"8C1A045E96B998B40533C7FF" = {
+			"buildConfigurationList" = "69CF21D3D158086EDB2DAB1F";
+			"buildPhases" = (
+				"6ACE7BC297BF23705D4E5F56",
+				"13D58F750C9F7A867F986420",
+				"EB12F685944315C425ABFF58",
+			);
+			"buildRules" = (
+			);
+			"dependencies" = (
+			);
+			"isa" = "PBXNativeTarget";
+			"name" = "KikiVoiceOps";
+			"productName" = "KikiVoiceOps";
+			"productReference" = "81F31879437340D5CD6ED968";
+			"productType" = "com.apple.product-type.application";
+		};
+		"923019BD38FF97989F221A61" = {
+			"buildActionMask" = "2147483647";
+			"files" = (
+				"BAB5468C8519D7D29A130605",
+				"877FCEF5065152B0F9D63C8A",
+				"A0B504D9FBFF23913BE96FC1",
+				"A04B5650133E0846AFF1BC1F",
+				"78938EE0291D5A66915C3009",
+				"30A52AA528A191D77268261A",
+			);
+			"isa" = "PBXSourcesBuildPhase";
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"94748634010E3B86F8398285" = {
+			"fileRef" = "B98DFD24822A57A2E19F74DF";
+			"isa" = "PBXBuildFile";
+		};
+		"948C73B939EF8D015E565E17" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "OpsIncidentsView.swift";
+			"sourceTree" = "<group>";
+		};
+		"A04B5650133E0846AFF1BC1F" = {
+			"fileRef" = "1EBAD8C32F121E04BC05E2B1";
+			"isa" = "PBXBuildFile";
+		};
+		"A0B504D9FBFF23913BE96FC1" = {
+			"fileRef" = "6C87B1D0C1CD14BA431267A3";
+			"isa" = "PBXBuildFile";
+		};
+		"AC5A844097A1D1943D012F0E" = {
+			"children" = (
+				"3A80989376F6C5C7DFB9F8A0",
+				"6C87B1D0C1CD14BA431267A3",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Community";
+			"path" = "Community";
+			"sourceTree" = "<group>";
+		};
+		"AE7805B56D1DCAFAA071416F" = {
+			"children" = (
+				"81F31879437340D5CD6ED968",
+				"70F09BF32F6D77A92FF191B4",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Products";
+			"sourceTree" = "<group>";
+		};
+		"AF797F0382D714D04A261BC4" = {
+			"buildConfigurations" = (
+				"6F0A4CC74192D9E5C67D4404",
+				"06C66BBD3BF4828F0C034C49",
+			);
+			"defaultConfigurationIsVisible" = "0";
+			"defaultConfigurationName" = "Release";
+			"isa" = "XCConfigurationList";
+		};
+		"B1BCBF1640E47C379E105818" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "OpsCommunityView.swift";
+			"sourceTree" = "<group>";
+		};
+		"B1F33F0DF5D562F7B2106E58" = {
+			"isa" = "PBXTargetDependency";
+			"target" = "8C1A045E96B998B40533C7FF";
+			"targetProxy" = "8619E39B688A33CB92F66F7B";
+		};
+		"B5B5AB8DF1C23108E6865578" = {
+			"children" = (
+				"B1BCBF1640E47C379E105818",
+				"426C875197E74BC04B240F80",
+				"C9633C7B1956E3D749604A6C",
+				"CB1D375D6A5305A1F29BBC3F",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Community";
+			"path" = "Community";
+			"sourceTree" = "<group>";
+		};
+		"B70E7FC58E5219C3FB7E302C" = {
+			"buildConfigurationList" = "08405DCD78AD053EA0A66767";
+			"buildPhases" = (
+				"923019BD38FF97989F221A61",
+				"C4EECED6B022BF4B525F7174",
+				"E4BB408D666ACFAF1A684EC9",
+			);
+			"buildRules" = (
+			);
+			"dependencies" = (
+				"B1F33F0DF5D562F7B2106E58",
+			);
+			"isa" = "PBXNativeTarget";
+			"name" = "KikiVoiceOpsTests";
+			"productName" = "KikiVoiceOpsTests";
+			"productReference" = "70F09BF32F6D77A92FF191B4";
+			"productType" = "com.apple.product-type.bundle.unit-test";
+		};
+		"B98DFD24822A57A2E19F74DF" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "OpsStore.swift";
+			"sourceTree" = "<group>";
+		};
+		"B9A73E7D7AC845889F7D3870" = {
+			"fileRef" = "4AD441DFB1033D3B6CA64FBE";
+			"isa" = "PBXBuildFile";
+		};
+		"BAB5468C8519D7D29A130605" = {
+			"fileRef" = "2A88DFAE53FADA03D101C99B";
+			"isa" = "PBXBuildFile";
+		};
+		"BC40BA0F9CF1B280D416C467" = {
+			"fileRef" = "CB1D375D6A5305A1F29BBC3F";
+			"isa" = "PBXBuildFile";
+		};
+		"BE2AC13E19315B4289A899B4" = {
+			"fileRef" = "31F4F158EFC3BEF9541783F8";
+			"isa" = "PBXBuildFile";
+		};
+		"BF53325E6D7E21688D1AD2BC" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "OpsTransport.swift";
+			"sourceTree" = "<group>";
+		};
+		"C14D6ABA370F84E2F057A647" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "PasskeyAuthorization.swift";
+			"sourceTree" = "<group>";
+		};
+		"C2AE66FC23343F82AD018881" = {
+			"buildSettings" = {
+				"BUNDLE_LOADER" = "$(TEST_HOST)";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"LD_RUNPATH_SEARCH_PATHS" = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.kikitalk.voiceops.tests";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/KikiVoiceOps.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/KikiVoiceOps";
+			};
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+		};
+		"C4EECED6B022BF4B525F7174" = {
+			"buildActionMask" = "2147483647";
+			"files" = (
+			);
+			"isa" = "PBXFrameworksBuildPhase";
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"C6CCC3C738B5F3CFD5710822" = {
+			"fileRef" = "426C875197E74BC04B240F80";
+			"isa" = "PBXBuildFile";
+		};
+		"C9633C7B1956E3D749604A6C" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "OpsSocialModeration.swift";
+			"sourceTree" = "<group>";
+		};
+		"C979150350645B24F8F323B7" = {
+			"children" = (
+				"38258A2FDB8C3F2B87187190",
+				"FAACA82714CD208776C95B4F",
+			);
+			"isa" = "PBXGroup";
+			"path" = "Scripts";
+			"sourceTree" = "<group>";
+		};
+		"CB1D375D6A5305A1F29BBC3F" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "OpsSocialModerationView.swift";
+			"sourceTree" = "<group>";
+		};
+		"CB514F04BC616C314C468CE7" = {
+			"fileRef" = "88178458E829057A4772FCD8";
+			"isa" = "PBXBuildFile";
+		};
+		"CC5D242D023A9271190EA7C6" = {
+			"children" = (
+				"13C4608B5138EBE9B3A45A55",
+				"6DC4FAD667A85B8567F612FB",
+				"EB7C665C87E232B45183E70C",
+				"25FC3D33176B6F4167EDA0F0",
+				"C979150350645B24F8F323B7",
+				"AE7805B56D1DCAFAA071416F",
+			);
+			"isa" = "PBXGroup";
+			"sourceTree" = "<group>";
+		};
+		"D3C2358BFDB254816ED9D71E" = {
+			"fileRef" = "190B156325615D3BEE8D253F";
+			"isa" = "PBXBuildFile";
+		};
+		"D60C3AFCB148A30B3AC2ADAC" = {
+			"children" = (
+				"31F4F158EFC3BEF9541783F8",
+				"B98DFD24822A57A2E19F74DF",
+			);
+			"isa" = "PBXGroup";
+			"name" = "App";
+			"path" = "App";
+			"sourceTree" = "<group>";
+		};
+		"D65AA8CF34D16135A5B86CEF" = {
+			"fileRef" = "C14D6ABA370F84E2F057A647";
+			"isa" = "PBXBuildFile";
+		};
+		"D675EFC16215AD8147F2A126" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "SessionVault.swift";
+			"sourceTree" = "<group>";
+		};
+		"DC1D7C20F92A465F4EA062EF" = {
+			"fileRef" = "B1BCBF1640E47C379E105818";
+			"isa" = "PBXBuildFile";
+		};
+		"E26C9097CE812ED683CAE617" = {
+			"fileRef" = "3E430D07F4A926FA488C995F";
+			"isa" = "PBXBuildFile";
+		};
+		"E2DA1DB02B0F6155036FF587" = {
+			"fileRef" = "0001139B41BB8440EB273D1E";
+			"isa" = "PBXBuildFile";
+		};
+		"E4BB408D666ACFAF1A684EC9" = {
+			"buildActionMask" = "2147483647";
+			"files" = (
+				"854BE4B244C85E5520D0F1BF",
+				"67269462ACF7B8FDA8BD8959",
+			);
+			"isa" = "PBXResourcesBuildPhase";
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"E55E64900A1175C48EE2D2AF" = {
+			"fileRef" = "C9633C7B1956E3D749604A6C";
+			"isa" = "PBXBuildFile";
+		};
+		"E72685212AF966A85FF3F9E9" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.xml";
+			"path" = "Info.plist";
+			"sourceTree" = "<group>";
+		};
+		"EB12F685944315C425ABFF58" = {
+			"buildActionMask" = "2147483647";
+			"files" = (
+				"B9A73E7D7AC845889F7D3870",
+				"D3C2358BFDB254816ED9D71E",
+			);
+			"isa" = "PBXResourcesBuildPhase";
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"EB7C665C87E232B45183E70C" = {
+			"children" = (
+				"4AD441DFB1033D3B6CA64FBE",
+				"190B156325615D3BEE8D253F",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Resources";
+			"path" = "Resources";
+			"sourceTree" = "<group>";
+		};
+		"F14DCFD5B0993D615E9433B4" = {
+			"children" = (
+				"3BBCE02F491D11FC34AF1BE1",
+				"3E430D07F4A926FA488C995F",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Dashboard";
+			"path" = "Dashboard";
+			"sourceTree" = "<group>";
+		};
+		"F63D57027D19E342898F9878" = {
+			"children" = (
+				"43BDDA70E3D6EB2790A91509",
+			);
+			"isa" = "PBXGroup";
+			"name" = "Integration";
+			"path" = "Integration";
+			"sourceTree" = "<group>";
+		};
+		"FAACA82714CD208776C95B4F" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.script.python";
+			"path" = "generate_project.py";
+			"sourceTree" = "<group>";
+		};
+	};
+	"rootObject" = "244210E48437B6556980A702";
+}

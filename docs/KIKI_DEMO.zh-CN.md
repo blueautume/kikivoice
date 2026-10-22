@@ -1,8 +1,10 @@
 # 归档：KikiTalk 腾讯版实现与验收
 
+> **目录迁移（2026-10-22）：** 当前用户端为 `ios/KikiTalk`，管理端为 `ios/KikiVoiceOps`，均按 Sources/App、Core、Features 与 Tests/Resources/Configuration 组织；原 application/RTCube 和 experiments/livekit/admin-ios 路径只用于识别历史。可点源码链接已映射新位置，旧构建命令和验收仍按原批次阅读。本次未修改正式协议、后端或线上环境。
+
 > **证据位置：** 下文 `output/`、`experiments/livekit/validation/` 的截图和结果为本地归档，未纳入 Git，克隆仓库不会自动取得；保留链接用于追溯当时记录。
 
-> **已归档（2026-10-22）：** 下文完整保留原腾讯版本的设计、运行命令、路径和验收，仅供追溯。相关 SDK、Pods、示例 target 及旧实现已从当前 iOS 仓库移除，不能按本文配置或验证当前 App。当前运行入口是 `application/RTCube.xcworkspace` → **KikiTalk**，依赖使用 SPM；详见[当前架构](ARCHITECTURE.zh-CN.md)、[接手指南](PROJECT_HANDOVER.zh-CN.md)和[切换记录](LIVEKIT_CUTOVER.zh-CN.md)。当前动态、私聊与免费体验礼物的状态以对应功能记录为准，本页历史成功数量不继承为新的验收。
+> **已归档（2026-10-22）：** 下文完整保留原腾讯版本的设计、运行命令、路径和验收，仅供追溯。相关 SDK、Pods、示例 target 及旧实现已从当前 iOS 仓库移除，不能按本文配置或验证当前 App。当前运行入口是 `ios/KikiTalk/KikiTalk.xcworkspace` → **KikiTalk**，依赖使用 SPM；详见[当前架构](ARCHITECTURE.zh-CN.md)、[接手指南](PROJECT_HANDOVER.zh-CN.md)和[切换记录](LIVEKIT_CUTOVER.zh-CN.md)。当前动态、私聊与免费体验礼物的状态以对应功能记录为准，本页历史成功数量不继承为新的验收。
 
 ## 实现方案
 
@@ -24,7 +26,7 @@
    pod install
    ```
 
-2. 使用 Xcode 打开 **`application/RTCube.xcworkspace`**。真实功能版需要 Pods，请使用 workspace。
+2. 使用 Xcode 打开 **`ios/KikiTalk/KikiTalk.xcworkspace`**。真实功能版需要 Pods，请使用 workspace。
 3. 选择 **KikiTalk** scheme、iPhone 模拟器或真机，按 `⌘R`。
 4. 首次打开先离线阅读协议，主动勾选同意及已满 18 周岁确认；登录页还需单独勾选协议与成年确认，然后点击系统 Apple 登录按钮并确认授权。两台设备联调使用两个不同的 Apple 账户，创建语聊房后另一台设备下拉刷新并加入。
 5. 真机首次运行时，在 Signing & Capabilities 中选择自己的开发团队，并允许麦克风/摄像头权限。
@@ -39,7 +41,7 @@
 
 品牌标识由紫色渐变、对话气泡和五段声波组成，提供默认、深色和系统着色三套 App 图标。源图均为 1024×1024、不含透明通道的 sRGB PNG，由 Xcode 生成各设备所需尺寸。
 
-原生启动页使用相同的向量标识、深色背景、品牌名及「听见，同频的你」标语，并适配安全区。恢复账号时沿用同一布局，仅在实际等待期间显示进度，不额外延长启动时间。启动页源文件为 `application/Demo/KikiLaunchScreen.storyboard`。
+原生启动页使用相同的向量标识、深色背景、品牌名及「听见，同频的你」标语，并适配安全区。恢复账号时沿用同一布局，仅在实际等待期间显示进度，不额外延长启动时间。启动页源文件为 `ios/KikiTalk/Resources/KikiLaunchScreen.storyboard`。
 
 已通过模拟器与真机构建，并在 iPhone 17 Pro 模拟器检查桌面图标和冷启动。上图右侧来自实际原生启动页截图，单独预览见 [启动页截图](images/kiki-launch-screen.png)。
 
@@ -79,7 +81,7 @@ swift tools/generate_kiki_brand.swift
 
 2026-10-20 已发布 r10 动态协议至账号服务、语聊服务与官网，iPhone「穷奇」及 iPad 已完成签名 Release 覆盖安装并启动。公网协议核对和使用临时签名身份、两个真实 LiveKit 客户端的 16 项生产冒烟检查通过，临时数据已清理；本轮不含本人 Apple 登录或真实麦克风听感验收。发布与验证记录见 [动态协议说明](APP_STORE_PRIVACY.zh-CN.md#动态协议获取与覆盖安装恢复2026-10-20)及[执行记录](../experiments/livekit/validation/experience-dynamic-legal-2026-10-20/)。
 
-离线协议资源为 `application/Demo/Resources/KikiLegalDocuments.json`。本 App 的 `PrivacyInfo.xcprivacy` 声明用于功能的账号关联资料与交互数据、无跟踪，以及 UserDefaults 的 CA92.1 理由；厂商 SDK 继续使用各自提供的隐私清单，不能用厂商声明替代应用自身的数据披露。
+离线协议资源为 `ios/KikiTalk/Resources/KikiLegalDocuments.json`。本 App 的 `PrivacyInfo.xcprivacy` 声明用于功能的账号关联资料与交互数据、无跟踪，以及 UserDefaults 的 CA92.1 理由；厂商 SDK 继续使用各自提供的隐私清单，不能用厂商声明替代应用自身的数据披露。
 
 ## 服务与密钥
 
@@ -111,7 +113,7 @@ Info.plist 已移除旧 IP 的 ATS 例外，所有请求遵循系统 ATS 规则�
 
 ```bash
 # iOS API 合约与房间模型测试
-xcodebuild -workspace application/RTCube.xcworkspace \
+xcodebuild -workspace ios/KikiTalk/KikiTalk.xcworkspace \
   -scheme KikiTalk \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- test
@@ -127,15 +129,15 @@ curl --fail https://kiki.group/health
 
 | 文件 | 职责 |
 | --- | --- |
-| `application/Demo/KikiLoginView.swift` | Apple 系统授权、nonce/state、协议与成年确认、首次昵称 |
-| `application/Demo/KikiLegal.swift` | 版本化本机确认、服务器状态与可重试撤回 |
-| `application/Demo/KikiLegalViews.swift` | 离线协议、首次门禁与隐私中心 |
-| `application/Demo/KikiAPIClient.swift` | HTTPS API、证书校验、Keychain |
-| `application/Demo/KikiDemoStore.swift` | 真实登录态、房间列表合并、资料和收藏同步 |
-| `application/Demo/KikiRTCService.swift` | SDK 登录、真实房间创建/加入、权限和退出回调 |
-| `application/Demo/KikiVoiceRoomFloatingOverlay.swift` | 语聊全局悬浮球、触摸穿透、拖动与键盘避让 |
-| `application/Demo/KikiDemoRootView.swift` | 双 Tab 和真实房间大厅 |
-| `application/Demo/KikiCreateRoomView.swift` | 创建表单和输入校验 |
-| `application/Demo/KikiProfileView.swift` | 资料、记录、退出和注销 |
+| `ios/KikiTalk/Sources/Features/Authentication/KikiLoginView.swift` | Apple 系统授权、nonce/state、协议与成年确认、首次昵称 |
+| `ios/KikiTalk/Sources/Features/Privacy/KikiLegal.swift` | 版本化本机确认、服务器状态与可重试撤回 |
+| `ios/KikiTalk/Sources/Features/Privacy/KikiLegalViews.swift` | 离线协议、首次门禁与隐私中心 |
+| `ios/KikiTalk/Sources/Core/Networking/KikiAPIClient.swift` | HTTPS API、证书校验、Keychain |
+| `ios/KikiTalk/Sources/App/KikiAppStore.swift` | 真实登录态、房间列表合并、资料和收藏同步 |
+| `ios/KikiTalk/Sources/Features/VoiceRooms/Services/KikiRTCService.swift` | SDK 登录、真实房间创建/加入、权限和退出回调 |
+| `ios/KikiTalk/Sources/Features/VoiceRooms/Presentation/KikiVoiceRoomFloatingOverlay.swift` | 语聊全局悬浮球、触摸穿透、拖动与键盘避让 |
+| `ios/KikiTalk/Sources/App/KikiRootView.swift` | 双 Tab 和真实房间大厅 |
+| `ios/KikiTalk/Sources/Features/VoiceRooms/Discovery/KikiCreateRoomView.swift` | 创建表单和输入校验 |
+| `ios/KikiTalk/Sources/Features/Profile/KikiProfileView.swift` | 资料、记录、退出和注销 |
 | `backend/app/main.py` | 账号、会话、资料、房间元数据和个人资料库 API |
 | `backend/app/usersig.py` | 腾讯云 UserSig 服务端签发 |
