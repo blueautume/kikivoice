@@ -304,7 +304,8 @@ struct KikiLiveKitRoomView: View {
         VStack(spacing: 9) {
             Circle().fill(KikiPalette.elevated).frame(width: avatarSize + 6, height: avatarSize + 6)
                 .overlay(Image(systemName: "mic").foregroundStyle(secondary))
-            Text("\(number) 号麦位").font(.system(size: 10)).foregroundStyle(secondary)
+            Text("\(number)").font(.system(size: 10)).foregroundStyle(secondary)
+                .accessibilityLabel("\(number)号麦位")
         }.frame(maxWidth: .infinity)
     }
 
@@ -933,13 +934,14 @@ struct KikiRoomSeatTile: View {
                         .padding(.horizontal, 3).padding(.vertical, 2)
                         .background(KikiPalette.roleBadgeBackground, in: RoundedRectangle(cornerRadius: 3))
                 }
-                Text(member.map { $0.name + ($0.userID == localUserID ? " (我)" : "") } ?? "\(slot.index) 号麦\(slot.locked ? "·锁定" : "位")")
+                Text(member.map { $0.name + ($0.userID == localUserID ? " (我)" : "") } ?? "\(slot.index)")
                     .font(.system(size: 10)).foregroundStyle(member == nil ? secondary : KikiPalette.text).lineLimit(1)
             }.frame(height: 14)
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(!online ? "连接中断，保留麦位等待重连" : (speaking ? "正在发言" : ""))
+        .accessibilityValue(member == nil ? (slot.locked ? "麦位已锁定" : "空麦位")
+                            : (!online ? "连接中断，保留麦位等待重连" : (speaking ? "正在发言" : "")))
     }
 }
 
