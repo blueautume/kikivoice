@@ -1892,14 +1892,14 @@ extension KikiConsentTests {
         let inboxPage = try await store.socialInbox()
         XCTAssertEqual(inboxPage.entries.count, 2, "The main inbox fixture must contain a private conversation and an individual interaction")
         let screens: [(String, AnyView)] = [
-            ("rooms-light", AnyView(KikiDiscoverView().environmentObject(store).preferredColorScheme(.light))),
+            ("rooms-light", mainTabVisualScreen(AnyView(KikiDiscoverView().environmentObject(store).preferredColorScheme(.light)))),
             ("create-room-light", AnyView(KikiCreateRoomView(isLive: false, onCreate: { _ in XCTFail("Visual fixtures must not create a room") }).environmentObject(store).preferredColorScheme(.light))),
-            ("moments-light", AnyView(KikiMomentsView(store: store).preferredColorScheme(.light))),
-            ("messages-unified-light", AnyView(KikiMessagesView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.light))),
+            ("moments-light", mainTabVisualScreen(AnyView(KikiMomentsView(store: store).preferredColorScheme(.light)))),
+            ("messages-unified-light", mainTabVisualScreen(AnyView(KikiMessagesView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.light)))),
             ("person-light", AnyView(KikiPublicProfileView(userID: person.id, store: store).preferredColorScheme(.light))),
             ("comments-dark", AnyView(KikiMomentCommentsView(moment: moment, store: store).preferredColorScheme(.dark))),
             ("direct-light", AnyView(KikiDirectConversationView(person: person, store: store).preferredColorScheme(.light))),
-            ("profile-large-text", AnyView(KikiProfileView().environmentObject(store).preferredColorScheme(.light).dynamicTypeSize(.accessibility1)))
+            ("profile-large-text", mainTabVisualScreen(AnyView(KikiProfileView().environmentObject(store).preferredColorScheme(.light).dynamicTypeSize(.accessibility1))))
         ]
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first { $0.isKeyWindow }
@@ -1950,6 +1950,163 @@ extension KikiConsentTests {
         }
         await store.logout()
     }
+
+    func testMainTabsKeepNativeToolbarFixedAndBlurStatusAreaWhileScrolling() async throws {
+        let identity = TestIdentity(values: ["sessionToken": "fixture-session", "appleSubject": "apple-subject", "appleSessionVersion": "2"])
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let mock = KikiAPIMockServer { request in
+            XCTAssertTrue(request.url?.host?.hasSuffix("example.invalid") == true,
+                          "Top chrome fixtures must never use a real account or server")
+            let (status, data) = try p1VisualResponse(request, documents: docs, expandsRoomList: true)
+            var body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            switch request.url?.path {
+            case "/v1/rooms":
+                let originals = try XCTUnwrap(body["rooms"] as? [[String: Any]])
+                body["rooms"] = (0..<24).map { index -> [String: Any] in
+                    var room = originals[index % originals.count]
+                    room["id"] = "lk_" + String(format: "%032x", index + 1)
+                    return room
+                }
+            case "/v1/social/moments":
+                let original = try XCTUnwrap((body["moments"] as? [[String: Any]])?.first)
+                body["moments"] = (0..<16).map { index -> [String: Any] in
+                    var moment = original
+                    moment["id"] = String(format: "%08x-0000-4000-8000-%012x", index + 1, index + 1)
+                    return moment
+                }
+            case "/v1/social/inbox":
+                let originals = try XCTUnwrap(body["entries"] as? [[String: Any]])
+                body["entries"] = try (0..<24).map { index -> [String: Any] in
+                    var entry = originals[index % originals.count]
+                    let key = entry["kind"] as? String == "direct" ? "conversation" : "notification"
+                    var item = try XCTUnwrap(entry[key] as? [String: Any])
+                    item["id"] = String(format: "%08x-0000-4000-8000-%012x", index + 1, index + 1)
+                    entry[key] = item
+                    return entry
+                }
+                body["unreadDirectMessageCount"] = 12
+                body["unreadNotificationCount"] = 12
+            default: break
+            }
+            return (status, try JSONSerialization.data(withJSONObject: body))
+        }
+        let consent = KikiConsentStore(documents: docs, defaults: defaults(), identity: identity,
+                                       apiProvider: { mock.client }, requiresRemoteDocuments: false)
+        try consent.accept()
+        let store = KikiAppStore(consent: consent, identity: identity, apiProvider: { mock.client },
+                                 voiceAPIProvider: { mock.voiceClient }, rtcProvider: { TestRTC() }, appleProvider: { TestApple() })
+        await store.start(); await store.refreshRooms(); await store.refreshSocialSummary()
+        XCTAssertTrue(store.isAuthenticated)
+        let pages: [(String, AnyView)] = [
+            ("rooms", AnyView(KikiDiscoverView().environmentObject(store))),
+            ("moments", AnyView(KikiMomentsView(store: store))),
+            ("messages", AnyView(KikiMessagesView(store: store).environment(\.scenePhase, .active))),
+            ("profile", AnyView(KikiProfileView().environmentObject(store)))
+        ]
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        let originalFrame = window.frame
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        let folder = URL(fileURLWithPath: "/tmp/kiki-main-top-screenshots", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        var manifest: [[String: Any]] = []
+        defer {
+            if let data = try? JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: folder.appendingPathComponent(device + "-geometry.json"))
+            }
+        }
+
+        func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
+        func visibleBar(in root: UIView) throws -> UINavigationBar {
+            try XCTUnwrap(descendants(root).compactMap { $0 as? UINavigationBar }.first {
+                !$0.isHidden && $0.alpha > 0.9 && $0.bounds.height > 20
+            }, "The real page must retain its native navigation toolbar")
+        }
+        func capture(_ name: String, topInset: CGFloat) throws {
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let attachment = XCTAttachment(image: image); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+            try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(name + ".png"))
+            // Include the actual status region and the transparent toolbar below
+            // it, so a misplaced material extending below the safe area is visible.
+            let top = UIGraphicsImageRenderer(size: CGSize(width: image.size.width, height: topInset + 44)).image { _ in
+                image.draw(at: .zero)
+            }
+            let cropped = XCTAttachment(image: top); cropped.name = name + "-top"; cropped.lifetime = .keepAlways; add(cropped)
+            try XCTUnwrap(top.pngData()).write(to: folder.appendingPathComponent(name + "-top.png"))
+        }
+
+        for (schemeName, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
+            for (name, page) in pages {
+                let host = UIHostingController(rootView: mainTabVisualScreen(page).preferredColorScheme(scheme))
+                host.safeAreaRegions = .all
+                window.rootViewController = host
+                // A compact real scene window keeps every production page,
+                // including Profile, genuinely scrollable on both device idioms.
+                window.frame = CGRect(origin: originalFrame.origin,
+                                      size: CGSize(width: originalFrame.width, height: min(originalFrame.height, 640)))
+                window.makeKeyAndVisible(); host.view.frame = window.bounds
+                try await Task.sleep(nanoseconds: 750_000_000)
+                window.layoutIfNeeded()
+                let topInset = host.view.safeAreaInsets.top
+                XCTAssertGreaterThan(topInset, 0, "The fixture must preserve the scene's real status safe area")
+                let prefix = device + "-" + name + "-" + schemeName
+                try capture(prefix + "-initial", topInset: topInset)
+                do {
+                    let scroll = try XCTUnwrap(momentScrollViews(host.view).filter {
+                        !($0 is UITextView) && $0.bounds.height > 100
+                            && $0.contentSize.height + $0.adjustedContentInset.top + $0.adjustedContentInset.bottom > $0.bounds.height + 100
+                    }.max { $0.contentSize.height < $1.contentSize.height }, "\(name) must display real scrollable fixture content")
+                    let beforeOffset = scroll.contentOffset.y
+                    let bar = name == "rooms" ? nil : try visibleBar(in: host.view)
+                    let beforeBar = bar.map { $0.convert($0.bounds, to: window) }
+                    let end = scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+                    scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: min(end, beforeOffset + 160)), animated: false)
+                    try await Task.sleep(nanoseconds: 250_000_000)
+                    window.layoutIfNeeded()
+                    XCTAssertGreaterThan(scroll.contentOffset.y, beforeOffset + 80, "\(name) must actually scroll before checking fixed controls")
+                    XCTAssertEqual(host.view.safeAreaInsets.top, topInset, accuracy: 0.5)
+                    if let bar, let beforeBar {
+                        XCTAssertTrue(try visibleBar(in: host.view) === bar)
+                        let afterBar = bar.convert(bar.bounds, to: window)
+                        XCTAssertEqual(afterBar.minX, beforeBar.minX, accuracy: 1, name)
+                        XCTAssertEqual(afterBar.minY, beforeBar.minY, accuracy: 1, name)
+                        XCTAssertEqual(afterBar.width, beforeBar.width, accuracy: 1, name)
+                        XCTAssertEqual(afterBar.height, beforeBar.height, accuracy: 1, name)
+                    }
+                    // iOS 26 can render SwiftUI toolbar actions in floating
+                    // siblings outside UINavigationBar. The bar assertions do
+                    // not verify those buttons' frames: compare each initial /
+                    // scrolled screenshot pair, including profile.settings.
+                    try capture(prefix + "-scrolled", topInset: topInset)
+                    manifest.append(["page": name, "scheme": schemeName, "statusHeight": topInset,
+                                     "window": NSCoder.string(for: window.bounds), "scrollBefore": beforeOffset,
+                                     "scrollAfter": scroll.contentOffset.y, "navigationBar": beforeBar.map { NSCoder.string(for: $0) } ?? "none",
+                                     "trailingActionVerification": "Manual comparison of initial and scrolled screenshots; native bar frame is not the button frame"])
+                } catch {
+                    let hierarchy = descendants(host.view).map {
+                        "\(type(of: $0)) frame=\($0.convert($0.bounds, to: window)) hidden=\($0.isHidden) alpha=\($0.alpha)"
+                    }.joined(separator: "\n")
+                    let attachment = XCTAttachment(string: hierarchy); attachment.name = prefix + "-native-hierarchy"; attachment.lifetime = .keepAlways; add(attachment)
+                    throw error
+                }
+            }
+        }
+        await store.logout()
+    }
+}
+
+@MainActor
+private func mainTabVisualScreen(_ page: AnyView) -> AnyView {
+    AnyView(KikiMainTabLayout(isRoomSearchFocused: false) { page } tabBar: {
+        // The footer's controls are outside this fixture's scope; retain their
+        // normal footprint while exercising the production top-area layout.
+        KikiPalette.background.frame(height: 60)
+    }.background(KikiPalette.background.ignoresSafeArea()))
 }
 
 extension KikiConsentTests {

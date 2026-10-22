@@ -122,18 +122,87 @@ final class KikiRoomPresentationTests: XCTestCase {
         }
     }
 
-    func testCreateRoomIconKeepsACompactNativeTouchTargetAtAnyTextSize() {
+    func testDiscoveryActionCapsulesKeepMatchingNativeTouchTargetsAtAnyTextSize() {
         for textSize in [DynamicTypeSize.large, .accessibility3] {
             let host = UIHostingController(rootView: KikiCreateRoomButton(isVisible: false, action: {})
                 .dynamicTypeSize(textSize))
             let size = host.sizeThatFits(in: CGSize(width: 375, height: 812))
+            let people = UIHostingController(rootView: KikiFindPeopleButton(isVisible: false, action: {})
+                .dynamicTypeSize(textSize)).sizeThatFits(in: CGSize(width: 375, height: 812))
             XCTAssertGreaterThanOrEqual(size.height, 44)
             XCTAssertEqual(size.height, KikiCreateRoomButton.touchHeight, accuracy: 0.01)
             XCTAssertEqual(size.width, KikiCreateRoomButton.capsuleHeight * 1.6, accuracy: 0.5,
                            "Hosting may round the capsule to a logical pixel")
+            XCTAssertEqual(people.width, size.width, accuracy: 0.5)
+            XCTAssertEqual(people.height, size.height, accuracy: 0.01)
             XCTAssertLessThan(KikiCreateRoomButton.capsuleHeight, size.height,
                               "A smaller capsule keeps the toolbar light without shrinking its native touch target")
             XCTAssertLessThan(size.width, 90, "The microphone action must leave space for the title and other toolbar controls")
+        }
+    }
+
+    func testDiscoverToolbarKeepsSearchAndBothCapsulesOnOneRowAcrossViewportsAndTextSizes() async throws {
+        let scene = try foregroundScene()
+        let previous = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        defer { window.isHidden = true; previous?.makeKeyAndVisible() }
+        let longQuery = "寻找今晚一起聊聊音乐和生活的朋友 " + String(repeating: "晚风", count: 10)
+        let cases: [(String, CGSize, ColorScheme, DynamicTypeSize, String)] = [
+            ("320-empty-light", CGSize(width: 320, height: 812), .light, .large, ""),
+            ("375-query-dark", CGSize(width: 375, height: 812), .dark, .large, longQuery),
+            ("402-empty-light", CGSize(width: 402, height: 874), .light, .large, ""),
+            ("ipad-landscape-query-dark", CGSize(width: 1133, height: 744), .dark, .large, longQuery),
+            ("320-accessibility-query-dark", CGSize(width: 320, height: 812), .dark, .accessibility3, longQuery),
+            ("375-accessibility-empty-light", CGSize(width: 375, height: 812), .light, .accessibility3, ""),
+            ("375-accessibility-query-dark", CGSize(width: 375, height: 812), .dark, .accessibility3, longQuery),
+            ("ipad-portrait-accessibility-query-light", CGSize(width: 744, height: 1133), .light, .accessibility3, longQuery),
+            ("ipad-landscape-accessibility-empty-dark", CGSize(width: 1133, height: 744), .dark, .accessibility3, "")
+        ]
+        var normalFontSize: CGFloat = 0
+        for (name, size, scheme, textSize, query) in cases {
+            let state = KikiDiscoverToolbarFixtureState()
+            let host = UIHostingController(rootView: KikiDiscoverToolbarFixture(query: query, state: state)
+                .preferredColorScheme(scheme).dynamicTypeSize(textSize))
+            host.safeAreaRegions = .container
+            window.rootViewController = host
+            window.frame = CGRect(origin: .zero, size: size)
+            host.view.frame = window.bounds
+            window.makeKeyAndVisible()
+            try await Task.sleep(nanoseconds: 150_000_000)
+            window.layoutIfNeeded()
+            func frame(_ key: String) throws -> CGRect {
+                let view = try XCTUnwrap(state.probes[key], "Missing \(key): \(name)")
+                XCTAssertTrue(view.window === window)
+                return view.convert(view.bounds, to: window)
+            }
+            let row = try frame("row"), search = try frame("search")
+            let people = try frame("people"), create = try frame("create")
+            XCTAssertEqual(row.width, min(size.width, 1120) - 40, accuracy: 1, name)
+            XCTAssertEqual(search.minX, row.minX, accuracy: 0.5, name)
+            XCTAssertEqual(people.minX - search.maxX, 8, accuracy: 0.5, name)
+            XCTAssertEqual(create.minX - people.maxX, 8, accuracy: 0.5, name)
+            XCTAssertEqual(create.maxX, row.maxX, accuracy: 0.5, name)
+            XCTAssertEqual(people.width, create.width, accuracy: 0.5, name)
+            XCTAssertEqual(people.width, KikiCreateRoomButton.capsuleHeight * 1.6, accuracy: 0.5, name)
+            for action in [people, create] {
+                XCTAssertEqual(action.height, 44, accuracy: 0.5, name)
+                XCTAssertEqual(action.midY, search.midY, accuracy: 0.5, name)
+                XCTAssertTrue(host.view.bounds.contains(action), name)
+            }
+            XCTAssertTrue(host.view.bounds.contains(search), name)
+            let field = try XCTUnwrap(descendants(of: host.view).compactMap { $0 as? UITextField }.first)
+            let fieldFrame = field.convert(field.bounds, to: window)
+            XCTAssertGreaterThan(fieldFrame.width, 30, "A long query must scroll inside the native field, not displace the actions: \(name)")
+            XCTAssertGreaterThanOrEqual(fieldFrame.minX, search.minX + 11, name)
+            XCTAssertLessThanOrEqual(fieldFrame.maxX, search.maxX - 11, name)
+            XCTAssertEqual(field.text, query)
+            XCTAssertFalse(field.isFirstResponder)
+            if textSize.isAccessibilitySize {
+                XCTAssertGreaterThan(try XCTUnwrap(field.font).pointSize, normalFontSize + 10)
+                XCTAssertGreaterThan(row.height, 49, "The row must grow for actual accessibility text rather than clip it")
+            } else { normalFontSize = try XCTUnwrap(field.font).pointSize }
+            XCTAssertEqual(state.actions, 0, "Layout and screenshots must not open a sheet or create a room")
+            try capture(name: "discover-toolbar-" + name, windows: [window], bounds: window.bounds)
         }
     }
 
@@ -523,6 +592,54 @@ private struct KikiRoomHeaderFixtureProbe: UIViewRepresentable {
     func updateUIView(_ view: UIView, context: Context) { state.probes[key] = view }
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
         CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
+}
+
+@MainActor
+private final class KikiDiscoverToolbarFixtureState {
+    var probes: [String: UIView] = [:]
+    var actions = 0
+}
+
+private struct KikiDiscoverToolbarFixtureProbe: UIViewRepresentable {
+    let key: String
+    let state: KikiDiscoverToolbarFixtureState
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(); view.isUserInteractionEnabled = false
+        state.probes[key] = view
+        return view
+    }
+    func updateUIView(_ view: UIView, context: Context) { state.probes[key] = view }
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+    }
+}
+
+private struct KikiDiscoverToolbarFixture: View {
+    @SwiftUI.State private var query: String
+    @FocusState private var isSearching: Bool
+    let state: KikiDiscoverToolbarFixtureState
+
+    init(query: String, state: KikiDiscoverToolbarFixtureState) {
+        _query = SwiftUI.State(initialValue: query)
+        self.state = state
+    }
+
+    var body: some View {
+        KikiDiscoverToolbar {
+            KikiDiscoverSearchField(query: $query, isSearching: $isSearching, onSubmit: {})
+                .background(KikiDiscoverToolbarFixtureProbe(key: "search", state: state))
+        } people: {
+            KikiFindPeopleButton(isVisible: false) { state.actions += 1 }
+                .background(KikiDiscoverToolbarFixtureProbe(key: "people", state: state))
+        } create: {
+            KikiCreateRoomButton(isVisible: false) { state.actions += 1 }
+                .background(KikiDiscoverToolbarFixtureProbe(key: "create", state: state))
+        }
+        .background(KikiDiscoverToolbarFixtureProbe(key: "row", state: state))
+        .padding(.horizontal, 20).padding(.top, 12).frame(maxWidth: 1120)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(KikiPalette.background.ignoresSafeArea())
     }
 }
 

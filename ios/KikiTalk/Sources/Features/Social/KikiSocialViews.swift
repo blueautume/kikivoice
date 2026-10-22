@@ -540,6 +540,7 @@ struct KikiMessagesView: View {
         NavigationStack {
             messageList
                 .navigationTitle("").navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
@@ -548,7 +549,7 @@ struct KikiMessagesView: View {
                             Button("全部删除", systemImage: "trash", role: .destructive) { Task { await prepareBulk(clear: true) } }
                         } label: {
                             if isPreparingBulk || activeBulk != nil { ProgressView() }
-                            else { Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle()) }
+                            else { Image(systemName: "ellipsis").font(.system(size: 20)).frame(width: 24, height: 24) }
                         }
                         .accessibilityLabel("消息操作").accessibilityIdentifier("messages.actions")
                         .disabled(!hasLoaded || isMutating || hasRetry)
@@ -633,6 +634,7 @@ struct KikiMessagesView: View {
                     .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
             }
         }.listStyle(.plain).scrollContentBackground(.hidden)
+            .kikiTransparentTopScrollEdge()
             .frame(maxWidth: 760).frame(maxWidth: .infinity)
             .background(KikiPalette.background.ignoresSafeArea())
             .refreshable { await reload() }

@@ -50,24 +50,14 @@ struct KikiDiscoverView: View {
 
     private func discoverContent(columns: [GridItem]) -> some View {
         VStack(spacing: 0) {
-            HStack {
-                Spacer()
-                Button { endSearch(); showsPeople = true } label: {
-                    Image(systemName: "person.crop.circle.badge.plus")
-                        .font(.system(size: KikiCreateRoomButton.symbolSize, weight: .semibold))
-                        .frame(width: 44, height: KikiCreateRoomButton.touchHeight)
-                }
-                    .accessibilityLabel("找朋友").accessibilityIdentifier("social.people")
+            KikiDiscoverToolbar {
+                KikiDiscoverSearchField(query: $query, isSearching: $isSearching, onSubmit: endSearch)
+            } people: {
+                KikiFindPeopleButton(isVisible: isActive) { endSearch(); showsPeople = true }
+            } create: {
                 KikiCreateRoomButton(isVisible: isActive, action: presentCreate)
                     .disabled(store.isJoiningRoom)
-            }.padding(.horizontal, 22).padding(.top, 15).padding(.bottom, 16)
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").foregroundStyle(KikiPalette.muted)
-                TextField("搜索房间或房主", text: $query).font(.body).autocorrectionDisabled().submitLabel(.search)
-                    .focused($isSearching).onSubmit(endSearch)
-                    .accessibilityIdentifier("roomSearchField")
-                if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(KikiPalette.muted) }.accessibilityLabel("清空搜索") }
-            }.padding(13).background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 14)).padding(.horizontal, 20)
+            }.padding(.horizontal, 20).padding(.top, 12)
             HStack(spacing: 20) {
                 filterButton("全部", selected: !followingOnly) { followingOnly = false }
                 filterButton("关注", selected: followingOnly) { followingOnly = true }
@@ -123,6 +113,48 @@ struct KikiDiscoverView: View {
     private func openPendingRoom() {
         guard let room = pendingRoom else { return }; pendingRoom = nil
         Task { do { try await store.startRoom(room) } catch { store.notify(error.localizedDescription); await store.refreshLibrary() } }
+    }
+}
+
+/// The search field receives all remaining width; the two action capsules keep
+/// their native touch dimensions even with accessibility text or a long query.
+struct KikiDiscoverToolbar<Search: View, People: View, Create: View>: View {
+    @ViewBuilder var search: () -> Search
+    @ViewBuilder var people: () -> People
+    @ViewBuilder var create: () -> Create
+
+    var body: some View {
+        HStack(spacing: 8) {
+            search().frame(minWidth: 0, maxWidth: .infinity)
+            people().fixedSize()
+            create().fixedSize()
+        }
+    }
+}
+
+struct KikiDiscoverSearchField: View {
+    @Binding var query: String
+    var isSearching: FocusState<Bool>.Binding
+    let onSubmit: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 17))
+                .foregroundStyle(KikiPalette.muted)
+            TextField("搜索房间或房主", text: $query).font(.body).autocorrectionDisabled().submitLabel(.search)
+                .focused(isSearching).onSubmit(onSubmit)
+                .accessibilityIdentifier("roomSearchField")
+                .frame(minWidth: 0, maxWidth: .infinity)
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 17))
+                        .foregroundStyle(KikiPalette.muted).frame(width: 24, height: 28)
+                }.accessibilityLabel("清空搜索")
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .frame(minHeight: 44)
+        .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 14))
     }
 }
 

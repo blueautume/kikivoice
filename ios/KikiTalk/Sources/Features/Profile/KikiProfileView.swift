@@ -11,21 +11,35 @@ struct KikiProfileView: View {
     @State private var relationship: KikiRelationshipKind?
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 28) {
-                settingsBar
-                identity
-                activity
-                KikiGiftWalletCard(gifts: store.gifts)
-                library
-                footer
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 28) {
+                    identity
+                    activity
+                    KikiGiftWalletCard(gifts: store.gifts)
+                    library
+                    footer
+                }
+                .padding(.horizontal, 22)
+                .padding(.top, 18)
+                .padding(.bottom, 30)
+                .frame(maxWidth: 720).frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 22)
-            .padding(.top, 18)
-            .padding(.bottom, 30)
-            .frame(maxWidth: 720).frame(maxWidth: .infinity)
+            .background(KikiPalette.background.ignoresSafeArea())
+            .kikiTransparentTopScrollEdge()
+            .navigationTitle("").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { activeSheet = .settings } label: {
+                        Image(systemName: "gearshape").font(.system(size: 20)).frame(width: 24, height: 24)
+                    }
+                    .accessibilityLabel("打开设置")
+                    .accessibilityIdentifier("profile.settings")
+                }
+            }
+            .refreshable { await store.refreshLibrary(); await store.refreshSocialSummary(); await store.refreshExperience() }
         }
-        .background(KikiPalette.background.ignoresSafeArea())
         .sheet(item: $activeSheet, onDismiss: openPendingRoom) { sheet in
             sheetContent(sheet)
                 .environmentObject(store)
@@ -33,16 +47,6 @@ struct KikiProfileView: View {
         }
         .sheet(item: $relationship) { KikiRelationshipsView(store: store, initialKind: $0) }
         .task(id: isActive) { if isActive { await store.refreshLibrary(); await store.refreshSocialSummary(); await store.refreshExperience() } }
-        .refreshable { await store.refreshLibrary(); await store.refreshSocialSummary(); await store.refreshExperience() }
-    }
-
-    private var settingsBar: some View {
-        HStack {
-            Spacer()
-            Button { activeSheet = .settings } label: {
-                Image(systemName: "gearshape").font(.title3).foregroundStyle(KikiPalette.text).frame(width: 44, height: 44)
-            }.accessibilityLabel("打开设置")
-        }
     }
 
     private var identity: some View {

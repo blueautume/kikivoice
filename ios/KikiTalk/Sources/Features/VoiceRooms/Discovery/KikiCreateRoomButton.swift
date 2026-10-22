@@ -1,10 +1,41 @@
 import SwiftUI
 
-/// A stable toolbar control. The brief highlight introduces the action without a timer or an idle animation loop.
 struct KikiCreateRoomButton: View {
+    static let capsuleHeight = KikiDiscoveryActionButton.capsuleHeight
+    static let touchHeight = KikiDiscoveryActionButton.touchHeight
+    static let symbolSize: CGFloat = 20
+    var widthToHeightRatio: CGFloat = 1.6
+    var isVisible: Bool = true
+    let action: () -> Void
+
+    var body: some View {
+        KikiDiscoveryActionButton(systemImage: "mic.fill", symbolSize: Self.symbolSize,
+                                  widthToHeightRatio: widthToHeightRatio, isVisible: isVisible, action: action)
+            .accessibilityLabel("创建语聊房")
+            .accessibilityHint("设置房间名称并开始语聊")
+            .accessibilityIdentifier("createRoom")
+    }
+}
+
+struct KikiFindPeopleButton: View {
+    var isVisible: Bool = true
+    let action: () -> Void
+
+    var body: some View {
+        KikiDiscoveryActionButton(systemImage: "person.badge.plus", symbolSize: 22,
+                                  isVisible: isVisible, action: action)
+            .accessibilityLabel("找朋友")
+            .accessibilityIdentifier("social.people")
+    }
+}
+
+/// Both discovery actions share their visual dimensions, touch area and brief
+/// highlight. There is no persistent timer or idle animation loop.
+private struct KikiDiscoveryActionButton: View {
     static let capsuleHeight: CGFloat = 36
     static let touchHeight: CGFloat = 44
-    static let symbolSize: CGFloat = 20
+    let systemImage: String
+    let symbolSize: CGFloat
     var widthToHeightRatio: CGFloat = 1.6
     var isVisible: Bool = true
     let action: () -> Void
@@ -17,8 +48,8 @@ struct KikiCreateRoomButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "mic.fill")
-                .font(.system(size: Self.symbolSize, weight: .semibold))
+            Image(systemName: systemImage)
+                .font(.system(size: symbolSize, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: Self.capsuleHeight * widthToHeightRatio, height: Self.capsuleHeight)
                 .background {
@@ -44,9 +75,6 @@ struct KikiCreateRoomButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("创建语聊房")
-        .accessibilityHint("设置房间名称并开始语聊")
-        .accessibilityIdentifier("createRoom")
         .task(id: animatesHighlight) {
             resetHighlight()
             guard animatesHighlight else { return }

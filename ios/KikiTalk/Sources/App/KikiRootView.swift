@@ -276,6 +276,16 @@ struct KikiMainTabLayout<Content: View, TabBar: View>: View {
             content().frame(maxWidth: .infinity, maxHeight: .infinity)
             if !isRoomSearchFocused && !searchKeyboardVisible { tabBar() }
         }
+        .overlay(alignment: .top) {
+            GeometryReader { geometry in
+                // Only the system status area gets a backdrop. The navigation
+                // controls below it float over the scrolling page content.
+                Rectangle().fill(.regularMaterial)
+                    .frame(height: geometry.safeAreaInsets.top)
+                    .offset(y: -geometry.safeAreaInsets.top)
+            }
+            .allowsHitTesting(false).accessibilityHidden(true)
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             if isRoomSearchFocused { searchKeyboardVisible = true }
         }
@@ -285,6 +295,15 @@ struct KikiMainTabLayout<Content: View, TabBar: View>: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
             searchKeyboardVisible = false
         }
+    }
+}
+
+extension View {
+    /// The shared status backdrop supplies the top protection. Disable the
+    /// additional iOS 26 scroll fade below it so content stays clear there.
+    @ViewBuilder func kikiTransparentTopScrollEdge() -> some View {
+        if #available(iOS 26.0, *) { scrollEdgeEffectHidden(true, for: .top) }
+        else { self }
     }
 }
 

@@ -270,11 +270,15 @@ struct KikiMomentsView: View {
                     if nextCursor != nil { Button(isLoading ? "正在加载…" : "加载更多") { Task { await loadMore() } }.disabled(isLoading) }
                 }.padding(.vertical, 16).frame(maxWidth: 720).frame(maxWidth: .infinity)
             }.background(KikiPalette.background.ignoresSafeArea()).refreshable { await reload() }
+                .kikiTransparentTopScrollEdge()
                 .navigationTitle("").navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(KikiPalette.background, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) { Button { showsComposer = true } label: { Image(systemName: "square.and.pencil") }.accessibilityLabel("发布动态") }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showsComposer = true } label: {
+                            Image(systemName: "square.and.pencil").font(.system(size: 20)).frame(width: 24, height: 24)
+                        }.accessibilityLabel("发布动态").accessibilityIdentifier("moments.compose")
+                    }
                 }
                 .task(id: isActive) { if isActive { await reload() } }
                 .onChange(of: store.socialRevision) { _ in if isActive { Task { await reload() } } }
