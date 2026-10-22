@@ -23,6 +23,8 @@ struct KikiLiveKitRoomView: View {
     @State private var selectedPerson: KikiPersonDestination?
     @State private var queuedPerson: KikiPersonDestination?
     @State private var isComposing = false
+    @State private var headerHeight: CGFloat = 44
+    @State private var stageContentHeight: CGFloat = 0
     @State private var roomNotice: String?
     @State private var roomNoticeID = UUID()
     @State private var hasPositionedChat = false
@@ -59,12 +61,17 @@ struct KikiLiveKitRoomView: View {
                     .ignoresSafeArea()
                 VStack(spacing: 14) {
                     header
-                    KikiRoomContentLayout(hasChatContent: !chatScrollIdentity.isEmpty || rtc.chatSyncNotice != nil) { width, columns in
+                        .background {
+                            GeometryReader { geometry in
+                                Color.clear.preference(key: KikiRoomHeaderHeightKey.self, value: geometry.size.height)
+                            }
+                        }
+                        .onPreferenceChange(KikiRoomHeaderHeightKey.self) { headerHeight = $0 }
+                    KikiRoomContentLayout(hasChatContent: !chatScrollIdentity.isEmpty || rtc.chatSyncNotice != nil,
+                                          onStageHeightChange: { stageContentHeight = $0 }) { width, columns in
                         roomStage(width: width, avatarSize: columns ? 68 : 55)
                     } chat: {
                         chat
-                    } controls: {
-                        roomActions
                     }
                 }
                 .padding(.horizontal, horizontalPadding).padding(.top, 10).padding(.bottom, 2)
@@ -78,6 +85,15 @@ struct KikiLiveKitRoomView: View {
             bottomBar
                 .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 8)
                 .frame(maxWidth: 1180).frame(maxWidth: .infinity)
+        }
+        .overlay {
+            if rtc.disconnectionReason == nil {
+                KikiRoomActionRail(hasChatContent: !chatScrollIdentity.isEmpty || rtc.chatSyncNotice != nil,
+                                   stageContentHeight: stageContentHeight, contentTopInset: headerHeight + 24) {
+                    roomActions
+                }
+                .foregroundStyle(KikiPalette.text)
+            }
         }
         .background(KikiRoomKeyboardDismissal(isEnabled: observesRoomTaps, onDismiss: endComposing))
         .overlay(alignment: .top) {
@@ -826,6 +842,11 @@ struct KikiLiveKitRoomView: View {
         .confirmationDialog("拉黑后，你将不再听到对方的声音或看到对方的房间文字。对方仍可能在公开房间听到你；可在设置解除。", isPresented: blockConfirmation(inParticipants: true), titleVisibility: .visible) { blockConfirmationButtons }
         .alert(pendingModeration?.title ?? "确认管理操作", isPresented: moderationConfirmation(inParticipants: true)) { moderationConfirmationButtons } message: { Text(pendingModeration?.message ?? "") }
     }
+}
+
+private struct KikiRoomHeaderHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 

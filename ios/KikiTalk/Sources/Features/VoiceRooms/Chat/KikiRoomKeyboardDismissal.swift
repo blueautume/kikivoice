@@ -176,7 +176,10 @@ enum KikiRoomKeyboardDismissalPolicy {
         guard let touchedView, touchedView.window === window, probe.window === window else { return false }
         var ancestor: UIView? = touchedView
         while let view = ancestor {
-            if view === probe || view is UITextInput || excludedIdentifiers.contains(view.accessibilityIdentifier ?? "") {
+            // SwiftUI may replace a representable's accessibility identifier;
+            // its native input container must still keep editing on padding taps.
+            if view === probe || view is KikiRoomMessageInput.InputView || view is UITextInput
+                || excludedIdentifiers.contains(view.accessibilityIdentifier ?? "") {
                 return false
             }
             if view === window { break }
