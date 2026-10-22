@@ -691,17 +691,19 @@ final class KikiGiftTests: XCTestCase {
         XCTAssertTrue(gifts.giftInventory.isEmpty)
     }
 
-    func testGiftRecipientsExcludeSenderForOwnerAndMemberAndKeepOnlyUniqueOnlineOthers() {
-        func member(_ id: String, _ name: String, role: KikiRoomRole = .member, online: Bool = true) -> KikiRoomMember {
+    func testGiftRecipientsRequirePositiveSeatAndExcludeSenderAudienceOfflineAndDuplicates() {
+        func member(_ id: String, _ name: String, role: KikiRoomRole = .member, online: Bool = true,
+                    seat: Int? = 1) -> KikiRoomMember {
             KikiRoomMember(userID: id, name: name, avatarIndex: 0, avatarURL: nil, role: role,
-                           seatIndex: nil, audioMuted: true, chatMuted: false, online: online,
+                           seatIndex: seat, audioMuted: true, chatMuted: false, online: online,
                            canPublishAudio: false, canPublishData: true)
         }
         let owner = member("owner", "Zoe", role: .owner)
         let alice = member("alice", "Alice")
         let bob = member("bob", "Bob")
         let members = [bob, member("offline", "Aaron", online: false), owner, alice,
-                       member("", "Empty ID"), bob]
+                       member("", "Empty ID"), bob, member("audience", "Audience", seat: nil),
+                       member("zero", "Zero seat", seat: 0), member("negative", "Negative seat", seat: -1)]
 
         XCTAssertEqual(KikiGiftRecipientPolicy.eligibleMembers(members, senderID: "owner", hostID: "owner").map(\.userID),
                        ["alice", "bob"], "The owner must not appear in their own recipient picker")
@@ -879,10 +881,11 @@ final class KikiGiftTests: XCTestCase {
         XCTAssertNil(queue.lastCombo)
     }
 
-    func testUnknownOutcomePausesTailAndRetryReusesFrozenUUIDWithoutDuplicateCombo() async throws {
+    func testTransientFailureAndRateLimitRecoverOriginalUUIDWithoutPausingOrDuplicateDebit() async throws {
         for status in [Int?.none, 500, 408, 429] {
             let requests = ExperienceLocked<[[String: Any]]>([])
             let persisted = ExperienceLocked(experienceSnapshot(balance: 40, giftInventory: [KikiGiftInventoryItem(giftID: "heart", quantity: 2)]))
+            let receipts = ExperienceLocked<[String: KikiGiftSendResult]>([:])
             let server = ExperienceMockServer { exchange in
                 switch exchange.request.url!.path {
                 case "/v1/gifts/catalog": try exchange.respond(experienceCatalog)
@@ -890,34 +893,50 @@ final class KikiGiftTests: XCTestCase {
                 default:
                     let body = try experienceBody(exchange.request)
                     let count = requests.withValue { $0.append(body); return $0.count }
+                    if count == 1, status == 429 {
+                        try exchange.respondError(429, headers: ["Retry-After": "60"])
+                        return
+                    }
+                    // Simulate the difficult case: the server committed, but
+                    // its first response was lost. Only a new UUID can debit.
+                    let requestID = try XCTUnwrap(body["requestID"] as? String)
+                    let receipt = receipts.withValue { receipts -> KikiGiftSendResult in
+                        if let receipt = receipts[requestID] { return receipt }
+                        let sequence = receipts.count + 1
+                        let remaining = 2 - sequence
+                        let bag = remaining > 0 ? [KikiGiftInventoryItem(giftID: "heart", quantity: remaining)] : []
+                        let receipt = KikiGiftSendResult(events: [experienceEvent("confirmed_\(sequence)", seq: sequence)], wallet: experienceWallet(40), totalCost: 0,
+                                                        giftInventory: bag, inventoryUsed: 1, diamondQuantity: 0, totalQuantity: 1)
+                        receipts[requestID] = receipt
+                        persisted.withValue { $0 = experienceSnapshot(balance: 40, giftInventory: bag) }
+                        return receipt
+                    }
                     if count == 1 {
                         if let status { try exchange.respondError(status) }
                         else { throw URLError(.networkConnectionLost) }
-                    } else {
-                        let remaining = 3 - count
-                        let bag = remaining > 0 ? [KikiGiftInventoryItem(giftID: "heart", quantity: remaining)] : []
-                        persisted.withValue { $0 = experienceSnapshot(balance: 40, giftInventory: bag) }
-                        try exchange.respond(KikiGiftSendResult(events: [experienceEvent("confirmed_\(count)", seq: count)], wallet: experienceWallet(40), totalCost: 0,
-                                                               giftInventory: bag, inventoryUsed: 1, diamondQuantity: 0, totalQuantity: 1))
-                    }
+                    } else { try exchange.respond(receipt) }
                 }
             }
             let gifts = KikiGiftStore()
             gifts.configure(api: server.client, token: "voice-session", userID: "me")
             await gifts.refresh()
-            let queue = gifts.sendQueue(for: "voice_one")
+            let clock = ExperienceQueueClock()
+            let queue = KikiGiftSendQueue(gifts: gifts, roomID: "voice_one", now: { clock.date }, sleep: { try await clock.sleep($0) })
+            clock.onSleep = {
+                XCTAssertFalse(queue.isPaused)
+                XCTAssertNil(queue.errorMessage, "Automatic recovery must not present a normal burst as a failed send")
+                XCTAssertNil(gifts.errorMessage, "The shared experience store must not leak a transient queue error")
+            }
+            defer { clock.onSleep = nil }
             XCTAssertTrue(queue.enqueue(gift: experienceGift, recipientIDs: ["host"]))
             XCTAssertTrue(queue.enqueue(gift: experienceGift, recipientIDs: ["host"]))
-            try await experienceAssertEventually { queue.isPaused && !queue.isSending }
-            XCTAssertEqual(requests.value.count, 1, "The uncertain head must block all later taps: \(String(describing: status))")
-            XCTAssertEqual(queue.pendingCount, 2)
-            XCTAssertNotNil(queue.errorMessage)
-            XCTAssertNil(queue.lastCombo)
-            XCTAssertEqual(gifts.wallet?.balance, 40)
-            XCTAssertEqual(gifts.giftCount("heart"), 2)
-            queue.retry()
             try await experienceAssertEventually { queue.pendingCount == 0 && !queue.isSending }
             XCTAssertEqual(requests.value.count, 3)
+            XCTAssertFalse(queue.isPaused)
+            XCTAssertNil(queue.errorMessage)
+            XCTAssertEqual(receipts.value.count, 2, "Exactly two physical taps may consume inventory")
+            if status == 429 { XCTAssertGreaterThanOrEqual(clock.delays.first ?? 0, 60) }
+            XCTAssertGreaterThanOrEqual(clock.delays.last ?? 0, 0.59, "The next physical tap must be paced even after the retry succeeded")
             XCTAssertEqual(requests.value[0]["requestID"] as? String, requests.value[1]["requestID"] as? String)
             XCTAssertEqual(requests.value[0]["recipientIDs"] as? [String], requests.value[1]["recipientIDs"] as? [String])
             XCTAssertNotEqual(requests.value[1]["requestID"] as? String, requests.value[2]["requestID"] as? String)
@@ -926,6 +945,228 @@ final class KikiGiftTests: XCTestCase {
             XCTAssertEqual(queue.lastCombo?.totalCost, 0)
             XCTAssertEqual(gifts.giftCount("heart"), 0)
         }
+    }
+
+    func testSustainedNetworkFailureRetainsOriginalHeadForManualRecovery() async throws {
+        let requests = ExperienceLocked<[[String: Any]]>([])
+        let recovering = ExperienceLocked(false)
+        let persisted = ExperienceLocked(experienceSnapshot(balance: 40))
+        let receipts = ExperienceLocked<[String: KikiGiftSendResult]>([:])
+        let server = ExperienceMockServer { exchange in
+            switch exchange.request.url!.path {
+            case "/v1/gifts/catalog": try exchange.respond(experienceCatalog)
+            case "/v1/me/experience": try exchange.respond(persisted.value)
+            default:
+                let body = try experienceBody(exchange.request)
+                requests.withValue { $0.append(body) }
+                guard recovering.value else { throw URLError(.networkConnectionLost) }
+                let id = try XCTUnwrap(body["requestID"] as? String)
+                let receipt = receipts.withValue { receipts -> KikiGiftSendResult in
+                    if let receipt = receipts[id] { return receipt }
+                    let count = receipts.count + 1
+                    let receipt = KikiGiftSendResult(events: [experienceEvent("recovered_\(count)", seq: count)], wallet: experienceWallet(40 - count), totalCost: 1,
+                                                    giftInventory: [], inventoryUsed: 0, diamondQuantity: 1, totalQuantity: 1)
+                    receipts[id] = receipt
+                    persisted.withValue { $0 = experienceSnapshot(balance: 40 - count) }
+                    return receipt
+                }
+                try exchange.respond(receipt)
+            }
+        }
+        let gifts = KikiGiftStore()
+        gifts.configure(api: server.client, token: "voice-session", userID: "me")
+        await gifts.refresh()
+        let clock = ExperienceQueueClock()
+        let queue = KikiGiftSendQueue(gifts: gifts, roomID: "voice_one", now: { clock.date }, sleep: { try await clock.sleep($0) })
+        XCTAssertTrue(queue.enqueue(gift: experienceGift, recipientIDs: ["host"]))
+        XCTAssertTrue(queue.enqueue(gift: experienceGift, recipientIDs: ["host"]))
+        try await experienceAssertEventually { queue.isPaused && !queue.isSending }
+        XCTAssertEqual(requests.value.count, 4, "A persistent failure must stop automatic network attempts")
+        XCTAssertEqual(Set(requests.value.compactMap { $0["requestID"] as? String }).count, 1)
+        XCTAssertEqual(queue.pendingCount, 2)
+        XCTAssertEqual(queue.errorMessage, "网络暂不可用，请重试。")
+        XCTAssertNil(queue.lastCombo)
+        XCTAssertEqual(gifts.wallet?.balance, 40)
+        XCTAssertEqual(queue.updateEligibleRecipients([]), 1, "A departed recipient cancels the unsent tail, but cannot discard an uncertain receipt")
+        queue.cancelWaiting()
+        XCTAssertEqual(queue.pendingCount, 1)
+        recovering.withValue { $0 = true }
+        queue.retry()
+        try await experienceAssertEventually { queue.pendingCount == 0 && !queue.isSending }
+        XCTAssertEqual(requests.value[0]["requestID"] as? String, requests.value[4]["requestID"] as? String)
+        XCTAssertEqual(requests.value.count, 5)
+        XCTAssertEqual(receipts.value.count, 1)
+        XCTAssertEqual(queue.lastCombo?.count, 1)
+        XCTAssertEqual(gifts.wallet?.balance, 39)
+    }
+
+    func testCancellingRateLimitSleepRemovesUnsubmittedHeadAndNeverResendsIt() async throws {
+        let requests = ExperienceLocked(0)
+        let server = ExperienceMockServer { exchange in
+            switch exchange.request.url!.path {
+            case "/v1/gifts/catalog": try exchange.respond(experienceCatalog)
+            case "/v1/me/experience": try exchange.respond(experienceSnapshot(balance: 40))
+            default:
+                requests.withValue { $0 += 1 }
+                try exchange.respondError(429, headers: ["Retry-After": "60"])
+            }
+        }
+        let gifts = KikiGiftStore()
+        gifts.configure(api: server.client, token: "voice-session", userID: "me")
+        await gifts.refresh()
+        var waiting: CheckedContinuation<Void, Never>?
+        defer { waiting?.resume() }
+        let queue = KikiGiftSendQueue(gifts: gifts, roomID: "voice_one", sleep: { delay in
+            XCTAssertGreaterThan(delay, 59)
+            // Deliberately finish after cancellation to exercise the old
+            // worker's generation guard, rather than relying on Task.sleep.
+            await withCheckedContinuation { waiting = $0 }
+        })
+        XCTAssertTrue(queue.enqueue(gift: experienceGift, recipientIDs: ["host"]))
+        XCTAssertTrue(queue.enqueue(gift: experienceGift, recipientIDs: ["host"]))
+        try await experienceAssertEventually { waiting != nil }
+        XCTAssertTrue(queue.isSending)
+        XCTAssertTrue(queue.isRetrying)
+        XCTAssertFalse(queue.isPaused)
+        XCTAssertNil(queue.errorMessage)
+        queue.cancelWaiting()
+        XCTAssertEqual(queue.pendingCount, 0, "A rejected 429 has no uncertain debit to retain")
+        XCTAssertFalse(queue.isSending)
+        waiting?.resume(); waiting = nil
+        await Task.yield()
+        XCTAssertEqual(requests.value, 1)
+        XCTAssertNil(queue.lastCombo)
+        XCTAssertEqual(gifts.wallet?.balance, 40)
+    }
+
+    func testReceiptRecoveryAfterStopRoomUpdatesWalletWithoutRestoringEventsOrRoomHint() async throws {
+        for reopenSameRoom in [false, true] {
+            let requests = ExperienceLocked<[[String: Any]]>([])
+            let roomReads = ExperienceLocked(0)
+            let bag = [KikiGiftInventoryItem(giftID: "heart", quantity: 1)]
+            let receipt = KikiGiftSendResult(events: presentationBatch("committed-before-stop", seq: 1, second: 0, recipientIDs: ["host", "alice"]), wallet: experienceWallet(39), totalCost: 1,
+                                            giftInventory: [], inventoryUsed: 1, diamondQuantity: 1, totalQuantity: 2)
+            let persisted = ExperienceLocked(experienceSnapshot(balance: 40, giftInventory: bag))
+            let server = ExperienceMockServer { exchange in
+                switch exchange.request.url!.path {
+                case "/v1/gifts/catalog": try exchange.respond(experienceCatalog)
+                case "/v1/me/experience": try exchange.respond(persisted.value)
+                default:
+                    if exchange.request.httpMethod == "GET" {
+                        roomReads.withValue { $0 += 1 }
+                        try exchange.respond(KikiGiftEventPage(events: [], cursor: 10, hasMore: false))
+                    } else {
+                        let body = try experienceBody(exchange.request)
+                        let count = requests.withValue { $0.append(body); return $0.count }
+                        if count == 1 {
+                            // The server committed the first UUID, but this
+                            // response did not deliver its receipt.
+                            persisted.withValue { $0 = experienceSnapshot(balance: 39) }
+                            try exchange.respondError(503)
+                        } else { try exchange.respond(receipt) }
+                    }
+                }
+            }
+            let gifts = KikiGiftStore()
+            gifts.configure(api: server.client, token: "voice-session", userID: "me")
+            await gifts.refresh()
+            var invalidatedRooms: [String] = []
+            gifts.onRoomGiftCommitted = { invalidatedRooms.append($0) }
+            var waiting: CheckedContinuation<Void, Never>?
+            defer { waiting?.resume() }
+            let queue = KikiGiftSendQueue(gifts: gifts, roomID: "voice_one", sleep: { _ in
+                await withCheckedContinuation { waiting = $0 }
+            })
+            XCTAssertTrue(queue.enqueue(gift: experienceGift, recipientIDs: ["host", "alice"]))
+            try await experienceAssertEventually { waiting != nil }
+            XCTAssertEqual(requests.value.count, 1)
+            gifts.stopRoom()
+            XCTAssertTrue(gifts.events.isEmpty)
+            XCTAssertNil(gifts.roomCursor)
+            if reopenSameRoom { await gifts.pollRoom(roomID: "voice_one") }
+            waiting?.resume(); waiting = nil
+            try await experienceAssertEventually { queue.pendingCount == 0 && !queue.isSending }
+            XCTAssertEqual(requests.value.count, 2, "Recovery is a second send invocation after stopRoom, rather than a late first response")
+            XCTAssertEqual(requests.value[0]["requestID"] as? String, requests.value[1]["requestID"] as? String)
+            XCTAssertEqual(gifts.wallet?.balance, 39)
+            XCTAssertEqual(gifts.giftCount("heart"), 0)
+            XCTAssertTrue(gifts.events.isEmpty, "An old receipt must not animate in a stopped or newly reopened presentation")
+            XCTAssertTrue(invalidatedRooms.isEmpty, "Receipt-only recovery must not emit an old-room RTC hint")
+            XCTAssertEqual(roomReads.value, reopenSameRoom ? 1 : 0)
+            XCTAssertEqual(gifts.roomCursor, reopenSameRoom ? 10 : nil)
+            XCTAssertEqual(queue.lastCombo?.count, 1, "The original monetary receipt is still confirmed once")
+        }
+    }
+
+    func testDepartedSeatCancelsWholeWaitingTapAndKeepsActualInFlightReceipt() async throws {
+        let requests = ExperienceLocked<[(ExperienceMockProtocol, [String: Any])]>([])
+        let persisted = ExperienceLocked(experienceSnapshot(balance: 40))
+        let server = ExperienceMockServer { exchange in
+            switch exchange.request.url!.path {
+            case "/v1/gifts/catalog": try exchange.respond(experienceCatalog)
+            case "/v1/me/experience": try exchange.respond(persisted.value)
+            default:
+                let body = try experienceBody(exchange.request)
+                requests.withValue { $0.append((exchange, body)) }
+            }
+        }
+        let gifts = KikiGiftStore()
+        gifts.configure(api: server.client, token: "voice-session", userID: "me")
+        await gifts.refresh()
+        let queue = gifts.sendQueue(for: "voice_one")
+        XCTAssertEqual(queue.updateEligibleRecipients(["host", "alice"]), 0)
+        XCTAssertTrue(queue.enqueue(gift: experienceGift, recipientIDs: ["host"]))
+        XCTAssertTrue(queue.enqueue(gift: experienceGift, recipientIDs: ["alice", "host"]))
+        try await experienceAssertEventually { requests.value.count == 1 }
+        XCTAssertEqual(queue.updateEligibleRecipients([]), 1)
+        XCTAssertEqual(queue.pendingCount, 1, "The already submitted head must still accept its original receipt")
+        XCTAssertNil(queue.nextQuote(gift: experienceGift, recipientIDs: ["host"]))
+        XCTAssertFalse(queue.enqueue(gift: experienceGift, recipientIDs: ["alice"]))
+        persisted.withValue { $0 = experienceSnapshot(balance: 39) }
+        try requests.value[0].0.respond(KikiGiftSendResult(events: [experienceEvent("seat-left-after-send", seq: 1)], wallet: experienceWallet(39), totalCost: 1,
+                                                        giftInventory: [], inventoryUsed: 0, diamondQuantity: 1, totalQuantity: 1))
+        try await experienceAssertEventually { queue.pendingCount == 0 && !queue.isSending }
+        XCTAssertEqual(requests.value.count, 1, "A multi-recipient waiting tap is cancelled whole, never rewritten under its UUID")
+        XCTAssertEqual(queue.lastCombo?.recipientIDs, ["host"])
+        XCTAssertEqual(queue.lastCombo?.count, 1)
+        XCTAssertEqual(gifts.wallet?.balance, 39)
+    }
+
+    func testCancellingHeadWaitingBehindAnotherExperienceWriteNeverSubmitsGift() async throws {
+        let equipment = ExperienceLocked<ExperienceMockProtocol?>(nil)
+        let giftRequests = ExperienceLocked(0)
+        let server = ExperienceMockServer { exchange in
+            switch exchange.request.url!.path {
+            case "/v1/gifts/catalog": try exchange.respond(experienceCatalog)
+            case "/v1/me/experience": try exchange.respond(experienceSnapshot(balance: 40, inventory: experienceInventory))
+            case "/v1/me/decorations/equipped":
+                if equipment.value == nil { equipment.withValue { $0 = exchange } }
+                else { try exchange.respond(experienceInventory) }
+            default:
+                giftRequests.withValue { $0 += 1 }
+                try exchange.respondError(409)
+            }
+        }
+        let gifts = KikiGiftStore()
+        gifts.configure(api: server.client, token: "voice-session", userID: "me")
+        await gifts.refresh()
+        let equip = Task { try await gifts.equip(kind: .avatarFrame, decorationID: "frame_violet") }
+        try await experienceAssertEventually { equipment.value != nil }
+        let queue = gifts.sendQueue(for: "voice_one")
+        XCTAssertTrue(queue.enqueue(gift: experienceGift, recipientIDs: ["host"]))
+        await Task.yield()
+        XCTAssertTrue(queue.isSending)
+        queue.cancelWaiting()
+        XCTAssertEqual(queue.pendingCount, 0, "A worker awaiting another mutation has not submitted its head")
+        XCTAssertFalse(queue.isSending)
+        try equipment.value?.respond(experienceInventory)
+        try await equip.value
+        // A subsequent write waits for the cancelled gift's mutation tail,
+        // proving it cannot submit later after this assertion has passed.
+        try await gifts.equip(kind: .avatarFrame, decorationID: "frame_violet")
+        XCTAssertEqual(giftRequests.value, 0)
+        XCTAssertNil(queue.lastCombo)
+        XCTAssertEqual(gifts.wallet?.balance, 40)
     }
 
     func testDefinitiveRejectionCancelsUnsentTailAndNeverChangesWalletInventoryOrCombo() async throws {
@@ -1235,6 +1476,22 @@ private func presentationBatch(_ id: String, seq: Int, second: Int, senderID: St
             batchRecipientCount: recipientIDs.count, createdAt: 2_000_000_000 + second)
     }
 }
+@MainActor
+private final class ExperienceQueueClock {
+    var date = Date(timeIntervalSince1970: 2_000_000_000)
+    var delays: [TimeInterval] = []
+    var onSleep: (() -> Void)?
+
+    func sleep(_ seconds: TimeInterval) async throws {
+        try Task.checkCancellation()
+        delays.append(seconds)
+        date = date.addingTimeInterval(seconds)
+        onSleep?()
+        await Task.yield()
+        try Task.checkCancellation()
+    }
+}
+
 @MainActor
 private func experienceAssertEventually(file: StaticString = #filePath, line: UInt = #line, _ condition: @escaping @MainActor () -> Bool) async throws {
     let deadline = Date().addingTimeInterval(3)

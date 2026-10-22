@@ -264,6 +264,15 @@ class ExperienceStore:
         if user_id in recipient_ids:
             raise HTTPException(422, "礼物只能送给别人，不能送给自己")
 
+    def validate_seated_gift_recipients(self, room_id, recipient_ids):
+        placeholders = ",".join("?" for _ in recipient_ids)
+        seated = {row[0] for row in self.db.execute("""SELECT s.user_id FROM room_seats s
+            JOIN room_members m ON m.room_id=s.room_id AND m.user_id=s.user_id AND m.active=1
+            WHERE s.room_id=? AND s.user_id IN (""" + placeholders + ")", (room_id, *recipient_ids))}
+        if seated != set(recipient_ids):
+            raise HTTPException(409, {"detail": "收礼人已离麦，请重新选择在线麦上成员",
+                                      "code": "gift_recipient_not_seated"})
+
     def gift_response(self, user_id, batch_id, cost, request_id, total_quantity):
         rows = self.events("e.batch_id=? ORDER BY e.seq", (batch_id,))
         settlement = self.db.execute("SELECT * FROM experience_gift_settlements WHERE user_id=? AND request_id=?",
@@ -288,6 +297,10 @@ class ExperienceStore:
             return self.gift_response(user_id, previous["batch_id"], previous["total_cost"],
                                       payload.requestID, total_quantity)
         self.validate_new_gift_recipients(user_id, payload.recipientIDs)
+        # Seat membership is authoritative, including muted seated members.
+        # Check the whole batch before claiming a pack, spending or rate limiting;
+        # the caller holds the room DB lock and the settlement transaction.
+        self.validate_seated_gift_recipients(room_id, payload.recipientIDs)
         self.limiter.check(("gift-burst", user_id), 20, 5)
         self.limiter.check(("gift-minute", user_id), 120, 60)
         self.ensure(user_id)

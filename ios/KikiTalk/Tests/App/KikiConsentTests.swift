@@ -2143,7 +2143,7 @@ extension KikiConsentTests {
         let members = names.enumerated().map { index, name in
             KikiRoomMember(userID: String(format: "kiki_fixture%04d", index + 2), name: name,
                            avatarIndex: index + 2, avatarURL: nil, role: index == 0 ? .owner : .member,
-                           seatIndex: index < 4 ? index : nil, audioMuted: false, chatMuted: false,
+                           seatIndex: index < 4 ? index + 1 : nil, audioMuted: false, chatMuted: false,
                            online: true, canPublishAudio: index < 4, canPublishData: true)
         }
         await store.gifts.refreshDecorations(userIDs: members.map(\.userID))
@@ -2193,6 +2193,49 @@ extension KikiConsentTests {
         let narrow = sizes[0]
         try await capture("experience-wallet-store-large-text-375x812", screen: AnyView(KikiExperienceCenterView(gifts: store.gifts).preferredColorScheme(.light).dynamicTypeSize(.accessibility1)), size: narrow)
         try await capture("experience-gift-panel-large-text-375x812", screen: AnyView(KikiGiftPanel(gifts: store.gifts, roomID: roomID, members: members, hostID: members[0].userID).preferredColorScheme(.light).dynamicTypeSize(.accessibility1)), size: narrow)
+        // Exercise the production SwiftUI sheet, not a shortened full-screen
+        // window. Large text gives the iPad form the same meaningful overflow.
+        window.frame = originalFrame
+        let sheetFixture = KikiGiftSheetVisualFixture(gifts: store.gifts, roomID: roomID, members: members,
+            hostID: members[0].userID)
+            .dynamicTypeSize(UIDevice.current.userInterfaceIdiom == .pad ? .accessibility1 : .large)
+            .preferredColorScheme(.light)
+        let sheetHost = UIHostingController(rootView: sheetFixture)
+        window.rootViewController = sheetHost
+        window.makeKeyAndVisible()
+        try await waitUntil { sheetHost.presentedViewController?.viewIfLoaded?.window != nil }
+        let presented = try XCTUnwrap(sheetHost.presentedViewController)
+        let sheet = try XCTUnwrap(presented.sheetPresentationController)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        window.layoutIfNeeded()
+        XCTAssertEqual(sheet.selectedDetentIdentifier, .medium)
+        XCTAssertLessThan(presented.view.bounds.height, window.bounds.height - 20)
+        let scroll = try XCTUnwrap(momentScrollViews(presented.view).filter {
+            $0.bounds.height > 100 && $0.contentSize.height + $0.adjustedContentInset.top + $0.adjustedContentInset.bottom > $0.bounds.height + 30
+        }.max { $0.bounds.height < $1.bounds.height }, "The real medium gift sheet must contain a scrollable gift grid")
+        func giftSheetViews(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(giftSheetViews) }
+        let navigationBar = try XCTUnwrap(giftSheetViews(presented.view).compactMap { $0 as? UINavigationBar }.first)
+        let beforeBar = navigationBar.convert(navigationBar.bounds, to: window)
+        func captureGiftSheet(_ phase: String) throws {
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            let name = device + "-experience-gift-medium-" + phase
+            let attachment = XCTAttachment(image: image); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+            try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(name + ".png"))
+        }
+        try captureGiftSheet("initial")
+        let beforeOffset = scroll.contentOffset.y
+        let bottom = scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: bottom), animated: false)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        window.layoutIfNeeded()
+        XCTAssertGreaterThan(scroll.contentOffset.y, beforeOffset + 30)
+        XCTAssertEqual(scroll.contentOffset.y, bottom, accuracy: 1, "The gift grid's real bottom must remain reachable at medium height")
+        XCTAssertEqual(sheet.selectedDetentIdentifier, .medium, "Scrolling content must not require expanding the sheet")
+        XCTAssertEqual(navigationBar.convert(navigationBar.bounds, to: window), beforeBar, "Balance and Done remain fixed while gift content scrolls")
+        try captureGiftSheet("scrolled")
+        sheetHost.dismiss(animated: false)
         XCTAssertTrue(requests.values.contains("GET /v1/gifts/catalog"))
         XCTAssertTrue(requests.values.contains("GET /v1/me/experience"))
         XCTAssertTrue(requests.values.contains("GET /v1/decorations/users"))
@@ -2222,7 +2265,7 @@ extension KikiConsentTests {
         let members = names.enumerated().map { index, name in
             KikiRoomMember(userID: String(format: "kiki_fixture%04d", index + 2), name: name,
                            avatarIndex: index + 2, avatarURL: nil, role: index == 0 ? .owner : .member,
-                           seatIndex: index < 4 ? index : nil, audioMuted: false, chatMuted: false,
+                           seatIndex: index < 4 ? index + 1 : nil, audioMuted: false, chatMuted: false,
                            online: true, canPublishAudio: index < 4, canPublishData: true)
         }
         let queue = gifts.sendQueue(for: roomID)
@@ -2269,7 +2312,7 @@ extension KikiConsentTests {
                 return own + view.subviews.flatMap { UIKitTexts($0) }
             }
             let labels = UIKitTexts(host.view)
-            XCTAssertFalse(labels.contains { $0 == "每人数量" || $0 == "× 10" || $0 == "× 99" }, "The old quantity choices must not be rendered")
+            XCTAssertFalse(labels.contains { $0 == "每人数量" || $0 == "× 10" || $0 == "× 99" || $0 == "已有礼物优先" || $0.contains("每次每人 1 份") || $0.hasPrefix("已送达 ") }, "Quantity summaries and duplicate combo feedback must not be rendered")
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                 XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
             }
@@ -2308,6 +2351,23 @@ extension KikiConsentTests {
         XCTAssertEqual(fixture.records.count, 3)
         XCTAssertEqual(fixture.requestPaths.filter { $0 == "POST /v1/rooms/" + roomID + "/gifts" }.count, 3)
         XCTAssertFalse(fixture.requestPaths.contains { $0.contains("/join") || $0.contains("/lease") || $0.hasPrefix("GET /v1/rooms/") }, "The fixture must not join, poll or use RTC")
+    }
+}
+
+@MainActor
+private struct KikiGiftSheetVisualFixture: View {
+    let gifts: KikiGiftStore
+    let roomID: String
+    let members: [KikiRoomMember]
+    let hostID: String
+    @State private var isPresented = false
+
+    var body: some View {
+        KikiPalette.background.ignoresSafeArea()
+            .onAppear { isPresented = true }
+            .sheet(isPresented: $isPresented) {
+                KikiGiftPanel(gifts: gifts, roomID: roomID, members: members, hostID: hostID).kikiRoomSheet()
+            }
     }
 }
 
@@ -2394,10 +2454,20 @@ extension KikiConsentTests {
                           recipientName: "云朵", giftID: "galaxy_rocket", giftName: "星河火箭", seq: 2,
                           quantity: 10, unitPrice: 4_999, batchRecipientCount: 2, createdAt: 1_792_422_000)
         ]
+        let comboEvents = [
+            KikiGiftEvent(id: "fixture-rocket-combo-1", roomID: roomID, batchID: "fixture-rocket-next-batch",
+                          senderUserID: "kiki_fixture0002", senderName: "小岛", recipientUserID: userID,
+                          recipientName: "穷奇", giftID: "galaxy_rocket", giftName: "星河火箭", seq: 3,
+                          quantity: 3, unitPrice: 4_999, batchRecipientCount: 2, createdAt: 1_792_422_001),
+            KikiGiftEvent(id: "fixture-rocket-combo-2", roomID: roomID, batchID: "fixture-rocket-next-batch",
+                          senderUserID: "kiki_fixture0002", senderName: "小岛", recipientUserID: "kiki_fixture0003",
+                          recipientName: "云朵", giftID: "galaxy_rocket", giftName: "星河火箭", seq: 4,
+                          quantity: 3, unitPrice: 4_999, batchRecipientCount: 2, createdAt: 1_792_422_001)
+        ]
         let nextEvent = KikiGiftEvent(id: "fixture-heart-next-batch", roomID: roomID, batchID: "fixture-heart-batch",
                                      senderUserID: "kiki_fixture0003", senderName: "云朵", recipientUserID: userID,
-                                     recipientName: "穷奇", giftID: "heart", giftName: "初见心动", seq: 3,
-                                     quantity: 1, unitPrice: 1, batchRecipientCount: 1, createdAt: 1_792_422_001)
+                                     recipientName: "穷奇", giftID: "heart", giftName: "初见心动", seq: 5,
+                                     quantity: 1, unitPrice: 1, batchRecipientCount: 1, createdAt: 1_792_422_002)
         let mock = KikiAPIMockServer { request in
             if request.url?.path == "/v1/rooms/" + roomID + "/gifts" {
                 XCTAssertEqual(request.httpMethod, "GET", "The overlay consumes confirmed server events and never sends a gift")
@@ -2409,8 +2479,9 @@ extension KikiConsentTests {
                 case "0": page = KikiGiftEventPage(events: events, cursor: 2, hasMore: false)
                 case "2" where roomPolls.values.filter({ $0 == "2" }).count == 1:
                     page = KikiGiftEventPage(events: events, cursor: 2, hasMore: false)
-                case "2": page = KikiGiftEventPage(events: [nextEvent], cursor: 3, hasMore: false)
-                default: page = KikiGiftEventPage(events: [], cursor: 3, hasMore: false)
+                case "2": page = KikiGiftEventPage(events: comboEvents, cursor: 4, hasMore: false)
+                case "4": page = KikiGiftEventPage(events: [nextEvent], cursor: 5, hasMore: false)
+                default: page = KikiGiftEventPage(events: [], cursor: 5, hasMore: false)
                 }
                 return (200, try JSONEncoder().encode(page))
             }
@@ -2500,16 +2571,27 @@ extension KikiConsentTests {
 
         await gifts.pollRoom(roomID: roomID)
         XCTAssertEqual(gifts.events.count, 2, "Repeating the confirmed page cannot duplicate event IDs")
+        await gifts.pollRoom(roomID: roomID)
+        XCTAssertEqual(gifts.events.count, 4)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        window.layoutIfNeeded()
+        XCTAssertTrue(animatedImages(in: host.view).first === animation, "A confirmed combo updates its counter without replacing or restarting the gift animation")
+        let comboImage = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+        }
+        let comboName = device + "-experience-confirmed-gift-combo"
+        try XCTUnwrap(comboImage.pngData()).write(to: folder.appendingPathComponent(comboName + ".png"))
+        let comboAttachment = XCTAttachment(image: comboImage); comboAttachment.name = comboName; comboAttachment.lifetime = .keepAlways; add(comboAttachment)
         try await Task.sleep(nanoseconds: 4_200_000_000)
         XCTAssertTrue(animatedImages(in: host.view).isEmpty, "Two recipients in one batch produce one presentation, with no second animation queued")
         await gifts.pollRoom(roomID: roomID)
-        XCTAssertEqual(gifts.events.count, 3)
+        XCTAssertEqual(gifts.events.count, 5)
         try await waitUntil { animatedImages(in: host.view).count == 1 }
         gifts.stopRoom()
         try await waitUntil { animatedImages(in: host.view).isEmpty }
         XCTAssertTrue(gifts.events.isEmpty, "Stopping the room must immediately clear confirmed events and the active presentation")
         XCTAssertEqual(gifts.wallet?.balance, 100_000_000, "Stopping room presentation keeps the account wallet")
-        XCTAssertEqual(roomPolls.values, ["baseline", "0", "2", "2"])
+        XCTAssertEqual(roomPolls.values, ["baseline", "0", "2", "2", "4"])
     }
 }
 

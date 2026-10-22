@@ -202,6 +202,7 @@ final class KikiGiftStore: ObservableObject {
     private var decorationRefreshID: UUID?
     private var roomID: String?
     private var roomGeneration: UInt64 = 0
+    fileprivate var roomPresentationGeneration: UInt64 { roomGeneration }
     private(set) var roomCursor: Int?
     private var pollTask: Task<Void, Never>?
     private var pollID: UUID?
@@ -389,17 +390,23 @@ final class KikiGiftStore: ObservableObject {
 
     @discardableResult
     func send(roomID: String, gift: KikiGiftItem, quantity: Int,
-              recipientIDs: [String], requestID: UUID) async throws -> KikiGiftSendResult {
+              recipientIDs: [String], requestID: UUID,
+              reportErrors: Bool = true,
+              presentationGeneration: UInt64? = nil,
+              beforeSend: @escaping @MainActor @Sendable () throws -> Void = {}) async throws -> KikiGiftSendResult {
         if let userID, recipientIDs.contains(userID) {
             throw KikiAPIError.server(422, "礼物只能赠送给其他成员，请重新选择收礼人。")
         }
         // A user may confirm the gift panel before the room driver's first
         // poll. Keep that confirmation visible without inventing a poll cursor.
-        if isAvailable, self.roomID == nil { self.roomID = roomID }
-        let expectedRoomGeneration = roomGeneration
-        return try await mutate(operation: { api, token in
-            try await api.sendGift(roomID: roomID, giftID: gift.id, quantity: quantity,
-                                   recipientIDs: recipientIDs, requestID: requestID, token: token)
+        let expectedRoomGeneration = presentationGeneration ?? roomGeneration
+        if isAvailable, self.roomID == nil, roomGeneration == expectedRoomGeneration { self.roomID = roomID }
+        return try await mutate(reportErrors: reportErrors, operation: { api, token in
+            // Other experience writes may precede this one. Authorize the
+            // frozen intent only when it is actually about to reach the API.
+            try await beforeSend()
+            return try await api.sendGift(roomID: roomID, giftID: gift.id, quantity: quantity,
+                                          recipientIDs: recipientIDs, requestID: requestID, token: token)
         }, apply: { result in
             // Drop this reservation before publishing the new inventory, even
             // if the queue worker has not resumed to remove its head yet.
@@ -414,8 +421,8 @@ final class KikiGiftStore: ObservableObject {
                 // its HTTP response is still in flight. That must not suppress
                 // this device's confirmation; event IDs deduplicate later polls.
                 self.appendEvents(result.events, roomID: roomID)
+                self.onRoomGiftCommitted?(roomID)
             }
-            self.onRoomGiftCommitted?(roomID)
         })
     }
 
@@ -535,6 +542,7 @@ final class KikiGiftStore: ObservableObject {
     /// the wallet or equipped state returned by a later write.
     @discardableResult
     private func mutate<Response: Sendable>(
+        reportErrors: Bool = true,
         operation: @escaping @Sendable (KikiAPIClient, String) async throws -> Response,
         apply: @escaping @MainActor (Response) -> Void
     ) async throws -> Response {
@@ -561,7 +569,7 @@ final class KikiGiftStore: ObservableObject {
                 self.errorMessage = nil
                 return response
             } catch {
-                if self.isCurrent(expectedEpoch), !(error is CancellationError) {
+                if reportErrors, self.isCurrent(expectedEpoch), !(error is CancellationError) {
                     self.errorMessage = error.localizedDescription
                 }
                 throw error
@@ -596,35 +604,49 @@ final class KikiGiftSendQueue: ObservableObject {
     @Published private(set) var pendingCount = 0
     @Published private(set) var isSending = false
     @Published private(set) var isPaused = false
+    @Published private(set) var isRetrying = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var lastCombo: KikiGiftCombo?
-    private struct Intent {
+    private struct Intent: Sendable {
         let id: UUID
         let gift: KikiGiftItem
         let recipientIDs: [String]
         let comboID: UUID
+        // Local presentation scope is captured on the first attempt, then
+        // retained with the immutable wire request across receipt recovery.
+        var presentationGeneration: UInt64? = nil
     }
     private weak var gifts: KikiGiftStore?
     private let roomID: String
+    private let now: @MainActor () -> Date
+    private let sleep: @MainActor (TimeInterval) async throws -> Void
     private var accountID: String?
     private var intents: [Intent] = []
     private var worker: Task<Void, Never>?
     private var generation = 0
     private var invalidated = false
+    private var eligibleRecipientIDs: Set<String>?
+    private var submittedIntentID: UUID?
+    private var uncertainIntentID: UUID?
+    private var automaticFailures = 0
+    private var nextAllowedSendAt = Date.distantPast
     private var latestTap: (giftID: String, recipients: [String], at: Date, comboID: UUID)?
     private var confirmedComboID: UUID?
-    var pendingGiftName: String? { intents.first?.gift.name }
-    var pendingRecipientCount: Int { intents.first?.recipientIDs.count ?? 0 }
-
-    init(gifts: KikiGiftStore, roomID: String) {
+    init(gifts: KikiGiftStore, roomID: String,
+         now: @escaping @MainActor () -> Date = { Date() },
+         sleep: @escaping @MainActor (TimeInterval) async throws -> Void = {
+             try await Task.sleep(nanoseconds: UInt64(max(0, $0) * 1_000_000_000))
+         }) {
         self.gifts = gifts; self.roomID = roomID; self.accountID = gifts.userID
+        self.now = now; self.sleep = sleep
     }
 
     func nextQuote(gift: KikiGiftItem, recipientIDs: [String]) -> KikiGiftSendQuote? {
         guard let gifts, !invalidated, gifts.isAvailable, let wallet = gifts.wallet,
               let senderID = gifts.userID, !recipientIDs.contains(senderID),
               !recipientIDs.isEmpty, recipientIDs.count <= 50,
-              Set(recipientIDs).count == recipientIDs.count, gift.price >= 0 else { return nil }
+              Set(recipientIDs).count == recipientIDs.count, gift.price >= 0,
+              eligibleRecipientIDs.map({ Set(recipientIDs).isSubset(of: $0) }) ?? true else { return nil }
         var quantities = Dictionary(gifts.giftInventory.map { ($0.giftID, max(0, $0.quantity)) }, uniquingKeysWith: max)
         var available = wallet.balance
         for intent in intents where !gifts.didCompleteGift(intent.id) {
@@ -648,7 +670,7 @@ final class KikiGiftSendQueue: ObservableObject {
               let quote = nextQuote(gift: gift, recipientIDs: recipientIDs), quote.isAffordable else { return false }
         if let accountID { guard accountID == gifts.userID else { return false } }
         else { accountID = gifts.userID }
-        let sortedRecipients = recipientIDs.sorted(), now = Date()
+        let sortedRecipients = recipientIDs.sorted(), now = now()
         let continues = latestTap?.giftID == gift.id && latestTap?.recipients == sortedRecipients
             && now.timeIntervalSince(latestTap?.at ?? .distantPast) <= 4
         let comboID = continues ? latestTap!.comboID : UUID()
@@ -662,15 +684,29 @@ final class KikiGiftSendQueue: ObservableObject {
 
     func retry() {
         guard isPaused, !intents.isEmpty, !invalidated else { return }
-        isPaused = false; errorMessage = nil
+        isPaused = false; errorMessage = nil; automaticFailures = 0
         start()
     }
 
-    func cancelWaiting() {
-        if isSending || isPaused {
-            intents = Array(intents.prefix(1))
-        } else { intents = [] }
+    /// Drop whole, immutable waiting taps when a selected member leaves a
+    /// seat. A submitted/uncertain tap retains its UUID to resolve its receipt.
+    @discardableResult
+    func updateEligibleRecipients(_ recipientIDs: Set<String>) -> Int {
+        eligibleRecipientIDs = recipientIDs
+        let previousCount = intents.count
+        intents.removeAll { intent in
+            intent.id != submittedIntentID && intent.id != uncertainIntentID
+                && !Set(intent.recipientIDs).isSubset(of: recipientIDs)
+        }
         pendingCount = intents.count
+        stopEmptyWorker()
+        return previousCount - intents.count
+    }
+
+    func cancelWaiting() {
+        intents.removeAll { $0.id != submittedIntentID && $0.id != uncertainIntentID }
+        pendingCount = intents.count
+        stopEmptyWorker()
     }
 
     func resetCombo() { lastCombo = nil; confirmedComboID = nil; latestTap = nil }
@@ -679,22 +715,29 @@ final class KikiGiftSendQueue: ObservableObject {
         generation += 1; invalidated = true
         worker?.cancel(); worker = nil
         intents = []; pendingCount = 0
-        isSending = false; isPaused = false; errorMessage = nil; lastCombo = nil
+        isSending = false; isPaused = false; isRetrying = false; errorMessage = nil; lastCombo = nil
+        submittedIntentID = nil; uncertainIntentID = nil; automaticFailures = 0
         latestTap = nil; confirmedComboID = nil
+    }
+
+    private func stopEmptyWorker() {
+        guard intents.isEmpty else { return }
+        generation += 1
+        worker?.cancel(); worker = nil
+        isSending = false; isPaused = false; isRetrying = false
+        automaticFailures = 0
     }
 
     private func start() {
         guard worker == nil, !intents.isEmpty, !isPaused, !invalidated else { return }
         let expectedGeneration = generation
-        // Set before scheduling, so cancelling a queued burst never discards
-        // a head whose worker has already been authorized to send.
         isSending = true
         worker = Task { @MainActor [weak self] in
             guard let self else { return }
             var refreshed = false
             defer {
                 if self.generation == expectedGeneration {
-                    self.worker = nil; self.isSending = false
+                    self.worker = nil; self.isSending = false; self.isRetrying = false
                     if refreshed, let gifts = self.gifts { Task { await gifts.refresh() } }
                 }
             }
@@ -703,12 +746,33 @@ final class KikiGiftSendQueue: ObservableObject {
                 guard let gifts = self.gifts, gifts.isAvailable, gifts.userID == self.accountID else {
                     self.invalidate(); return
                 }
+                if self.uncertainIntentID != intent.id, let eligible = self.eligibleRecipientIDs,
+                   !Set(intent.recipientIDs).isSubset(of: eligible) {
+                    self.intents.removeFirst(); self.pendingCount = self.intents.count
+                    continue
+                }
                 do {
+                    let delay = self.nextAllowedSendAt.timeIntervalSince(self.now())
+                    if delay > 0 { try await self.sleep(delay) }
+                    guard self.generation == expectedGeneration, !Task.isCancelled else { return }
+                    guard self.intents.first?.id == intent.id else { continue }
+                    let presentationGeneration = intent.presentationGeneration ?? gifts.roomPresentationGeneration
+                    self.intents[0].presentationGeneration = presentationGeneration
                     let receipt = try await gifts.send(roomID: self.roomID, gift: intent.gift, quantity: 1,
-                                                      recipientIDs: intent.recipientIDs, requestID: intent.id)
+                        recipientIDs: intent.recipientIDs, requestID: intent.id, reportErrors: false,
+                        presentationGeneration: presentationGeneration, beforeSend: { [weak self] in
+                            guard let self, self.generation == expectedGeneration, !self.invalidated,
+                                  self.intents.first?.id == intent.id else { throw CancellationError() }
+                            self.submittedIntentID = intent.id
+                            // 100 taps/minute stays below the server's gift
+                            // limits; a server cooldown can extend this delay.
+                            self.nextAllowedSendAt = self.now().addingTimeInterval(0.6)
+                        })
                     guard self.generation == expectedGeneration, !Task.isCancelled else { return }
                     self.intents.removeFirst(); self.pendingCount = self.intents.count
-                    let now = Date()
+                    self.submittedIntentID = nil; self.uncertainIntentID = nil
+                    self.automaticFailures = 0; self.isRetrying = false
+                    let now = self.now()
                     let previous = self.lastCombo
                     // A slow response must not split a burst whose taps were
                     // consecutive; only acknowledged taps increase its count.
@@ -723,18 +787,49 @@ final class KikiGiftSendQueue: ObservableObject {
                     refreshed = true
                 } catch {
                     guard self.generation == expectedGeneration, !Task.isCancelled else { return }
+                    guard self.intents.first?.id == intent.id else { continue }
+                    self.submittedIntentID = nil
+                    if let error = error as? KikiAPIError, case .rateLimited(let delay, _) = error {
+                        self.nextAllowedSendAt = max(self.nextAllowedSendAt, self.now().addingTimeInterval(TimeInterval(delay)))
+                        self.isRetrying = true; self.errorMessage = nil
+                        continue
+                    }
                     if let error = error as? KikiAPIError, case .server(let status, _) = error,
                        (400..<500).contains(status), status != 408, status != 429 {
-                        self.intents = []; self.pendingCount = 0
-                        self.errorMessage = "赠送未完成，已停止后续待发：\(error.localizedDescription)"
+                        if self.uncertainIntentID == intent.id {
+                            self.intents = [intent]; self.pendingCount = 1; self.isPaused = true
+                        } else {
+                            self.intents = []; self.pendingCount = 0
+                        }
+                        self.errorMessage = error.localizedDescription
                     } else {
+                        self.uncertainIntentID = intent.id
+                        self.automaticFailures += 1
+                        if Self.canAutomaticallyRetry(error), self.automaticFailures <= 3 {
+                            let backoff = 0.6 * pow(2, Double(self.automaticFailures - 1))
+                            self.nextAllowedSendAt = max(self.nextAllowedSendAt, self.now().addingTimeInterval(backoff))
+                            self.isRetrying = true; self.errorMessage = nil
+                            continue
+                        }
                         self.isPaused = true
-                        self.errorMessage = "上一笔尚未确认，后续已暂停。重试不会重复扣背包或钻石。"
+                        self.errorMessage = Self.canAutomaticallyRetry(error) ? "网络暂不可用，请重试。" : error.localizedDescription
                     }
                     return
                 }
             }
         }
+    }
+
+    private static func canAutomaticallyRetry(_ error: Error) -> Bool {
+        if let failure = error as? KikiTransportFailure { return failure.code != .networkTLSFailed }
+        if let error = error as? KikiAPIError {
+            switch error {
+            case .server(let status, _): return status == 408 || (500..<600).contains(status)
+            case .invalidResponse: return true
+            default: return false
+            }
+        }
+        return false
     }
 }
 

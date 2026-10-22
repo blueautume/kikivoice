@@ -11,8 +11,17 @@ import pytest
 from app.experience import GiftSend, INITIAL_DIAMONDS, EVENT_RETENTION_SECONDS, STARTER_GIFT_PACK
 from app.main import create_app
 from conftest import headers, login
-from test_room_actions import act, setup_room, token
+from test_room_actions import act, setup_room as setup_listener_room, token
 from test_account_bridge import account_service, exchange, profile, signed
+
+
+def setup_room(lab, count=2):
+    """Gift fixtures explicitly seat their eligible recipients through real actions."""
+    room, accounts, tokens = setup_listener_room(lab, count)
+    for account in accounts[1:]:
+        act(lab, room, account, 'request_seat')
+        act(lab, room, accounts[0], 'approve_request', targetUserID=account['user']['id'])
+    return room, accounts, tokens
 
 
 def snapshot(lab, account):
@@ -283,6 +292,81 @@ def test_store_rejects_self_before_any_wallet_bag_or_limiter_mutation(lab):
                 giftID='flower_rain', quantity=2,
                 recipientIDs=[owner['user']['id'], member['user']['id']], requestID=uuid.uuid4()))
     assert rejected.value.status_code == 422
+    assert gift_mutation_state(lab) == before
+
+
+@pytest.mark.parametrize('claimed_pack', [False, True], ids=['no-wallet', 'existing-bag'])
+@pytest.mark.parametrize('audience_first', [False, True], ids=['audience-last', 'audience-first'])
+def test_online_audience_rejects_whole_batch_before_any_experience_mutation(lab, claimed_pack, audience_first):
+    room, (owner, sender, audience), _ = setup_listener_room(lab, 3)
+    if claimed_pack:
+        snapshot(lab, sender)
+    assert audience['user']['id'] in lab.rtc.rooms[room['id']]
+    recipients = [audience, owner] if audience_first else [owner, audience]
+    before = gift_mutation_state(lab)
+    identifier = str(uuid.uuid4())
+    for _ in range(2):
+        rejected = send(lab, room, sender, recipients, giftID='flower_rain', quantity=2,
+                        request_id=identifier, status=409)
+        assert rejected == {'detail': '收礼人已离麦，请重新选择在线麦上成员',
+                            'code': 'gift_recipient_not_seated'}
+        assert gift_mutation_state(lab) == before
+    # A rejected request has no settlement receipt. The same payload may succeed
+    # only after the real seat action makes every current recipient eligible.
+    act(lab, room, audience, 'request_seat')
+    act(lab, room, owner, 'approve_request', targetUserID=audience['user']['id'])
+    result = send(lab, room, sender, recipients, giftID='flower_rain', quantity=2, request_id=identifier)
+    assert {event['recipientUserID'] for event in result['events']} == {
+        owner['user']['id'], audience['user']['id']}
+    assert (result['inventoryUsed'], result['diamondQuantity'], result['totalCost']) == (3, 1, 99)
+    assert not lab.app.state.db.execute('SELECT 1 FROM room_seats WHERE room_id=? AND user_id=?',
+                                       (room['id'], sender['user']['id'])).fetchone(), 'Listeners can still send'
+
+
+def test_receiver_needs_current_seat_even_when_admin_but_muted_seated_member_can_receive(lab):
+    room, (owner, sender, recipient), _ = setup_listener_room(lab, 3)
+    act(lab, room, owner, 'set_admin', targetUserID=recipient['user']['id'], enabled=True)
+    before = gift_mutation_state(lab)
+    rejected = send(lab, room, sender, [recipient], status=409)
+    assert rejected['code'] == 'gift_recipient_not_seated'
+    assert gift_mutation_state(lab) == before
+    act(lab, room, recipient, 'request_seat')
+    act(lab, room, owner, 'approve_request', targetUserID=recipient['user']['id'])
+    act(lab, room, owner, 'mute_audio', targetUserID=recipient['user']['id'], enabled=True)
+    result = send(lab, room, sender, [recipient])
+    assert [event['recipientUserID'] for event in result['events']] == [recipient['user']['id']]
+
+
+@pytest.mark.parametrize('action', ['leave_seat', 'remove_seat'])
+def test_current_seat_loss_rejects_new_batch_but_preserves_committed_retry(lab, action):
+    room, (owner, sender, recipient), _ = setup_room(lab, 3)
+    identifier = str(uuid.uuid4())
+    original = send(lab, room, sender, [owner, recipient], giftID='flower_rain', quantity=2,
+                    request_id=identifier)
+    if action == 'leave_seat':
+        act(lab, room, recipient, action)
+    else:
+        act(lab, room, owner, action, targetUserID=recipient['user']['id'])
+    assert recipient['user']['id'] in lab.rtc.rooms[room['id']], 'Leaving the mic does not leave the room'
+    before = gift_mutation_state(lab)
+    rejected = send(lab, room, sender, [owner, recipient], giftID='flower_rain', quantity=2, status=409)
+    assert rejected['code'] == 'gift_recipient_not_seated'
+    assert gift_mutation_state(lab) == before
+    assert send(lab, room, sender, [recipient, owner], giftID='flower_rain', quantity=2,
+                request_id=identifier) == original
+    assert gift_mutation_state(lab) == before
+
+
+def test_store_does_not_settle_an_active_listener_without_a_current_seat(lab):
+    room, (owner, sender, audience), _ = setup_listener_room(lab, 3)
+    before = gift_mutation_state(lab)
+    with pytest.raises(HTTPException) as rejected:
+        with lab.app.state.db:
+            lab.app.state.experience.send(room['id'], sender['user']['id'], GiftSend(
+                giftID='flower_rain', quantity=2,
+                recipientIDs=[owner['user']['id'], audience['user']['id']], requestID=uuid.uuid4()))
+    assert rejected.value.status_code == 409
+    assert rejected.value.detail['code'] == 'gift_recipient_not_seated'
     assert gift_mutation_state(lab) == before
 
 

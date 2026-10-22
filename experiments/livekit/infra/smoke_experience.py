@@ -236,6 +236,13 @@ async def run(output=None, api_only=False):
                     while not all(room.isconnected() and len(room.remote_participants) == 1 for room in rooms):
                         await asyncio.sleep(.1)
                 check("twoRealLiveKitClientsConnectedWithoutMicrophones", all(not room.local_participant.track_publications for room in rooms))
+                await call("POST", f"/v1/rooms/{room_id}/actions", 1, {"action": "request_seat"})
+                seated = (await call("POST", f"/v1/rooms/{room_id}/actions", 0,
+                    {"action": "approve_request", "targetUserID": identities[1]})).json()
+                recipient = next((member for member in seated["members"] if member["userID"] == identities[1]), None)
+                check("syntheticRecipientOnlineAndActuallySeatedBeforeGift", recipient is not None
+                      and recipient["online"] and recipient["seatIndex"] is not None
+                      and any(seat["userID"] == identities[1] for seat in seated["seats"]))
                 baseline = (await call("GET", f"/v1/rooms/{room_id}/gifts", 1)).json()
                 check("newRoomDoesNotReplayHistory", baseline["events"] == [] and baseline["cursor"] == 0)
                 body = {"giftID": "flower_rain", "quantity": 10, "recipientIDs": [identities[1]], "requestID": str(uuid.uuid4())}

@@ -16,6 +16,7 @@ private struct KikiRoomSheetModifier: ViewModifier {
         content
             .presentationDetents([.medium, .large], selection: $selection)
             .presentationDragIndicator(.visible)
+            .presentationContentInteraction(.scrolls)
             .presentationBackground(KikiPalette.background)
             .presentationCompactAdaptation(.sheet)
             .tint(KikiPalette.purple)

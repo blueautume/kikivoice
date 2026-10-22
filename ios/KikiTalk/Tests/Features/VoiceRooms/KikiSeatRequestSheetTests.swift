@@ -67,6 +67,7 @@ final class KikiSeatRequestSheetTests: XCTestCase {
                     XCTAssertTrue(identifiers.contains(.medium), "The approval sheet must support the medium height")
                     XCTAssertTrue(identifiers.contains(.large), "The approval sheet must be expandable for long lists and large text")
                     XCTAssertTrue(controller.prefersGrabberVisible)
+                    XCTAssertFalse(controller.prefersScrollingExpandsWhenScrolledToEdge)
                     if presented.traitCollection.verticalSizeClass != .compact {
                         XCTAssertEqual(controller.selectedDetentIdentifier, .medium)
                     }
@@ -104,7 +105,12 @@ final class KikiSeatRequestSheetTests: XCTestCase {
             ("announcement-disabled", AnyView(KikiRoomAnnouncementContent(text: .constant(announcement), canManageRoom: true,
                 canUseRoom: false, isSaving: false, announcement: announcement, onSave: { saveCalls += 1 }, onClose: {}))),
             ("gift-panel", AnyView(KikiGiftPanel(gifts: gifts, roomID: "fixture-room", members: [], hostID: nil))),
-            ("experience-center", AnyView(KikiExperienceCenterView(gifts: gifts)))
+            ("experience-center", AnyView(KikiExperienceCenterView(gifts: gifts))),
+            ("scrollable-content", AnyView(NavigationStack {
+                ScrollView {
+                    LazyVStack { ForEach(1...40, id: \.self) { Text("房内内容 \($0)").frame(maxWidth: .infinity).padding(20) } }
+                }.navigationTitle("房内列表").navigationBarTitleDisplayMode(.inline)
+            }))
         ]
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -134,8 +140,22 @@ final class KikiSeatRequestSheetTests: XCTestCase {
                 XCTAssertEqual(presented.traitCollection.userInterfaceStyle, scheme == .dark ? .dark : .light)
                 XCTAssertEqual(Set(sheet.detents.map(\.identifier)), Set([.medium, .large]))
                 XCTAssertTrue(sheet.prefersGrabberVisible)
+                XCTAssertFalse(sheet.prefersScrollingExpandsWhenScrolledToEdge,
+                               "Room content must scroll at medium height instead of expanding the sheet")
                 XCTAssertEqual(sheet.selectedDetentIdentifier, .medium, "Each newly presented room sheet must start half-screen")
                 let mediumHeight = presented.view.bounds.height
+                if name == "scrollable-content" {
+                    func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
+                    let scroll = try XCTUnwrap(descendants(presented.view).compactMap { $0 as? UIScrollView }
+                        .first { $0.contentSize.height > $0.bounds.height + 200 })
+                    let before = scroll.contentOffset.y
+                    scroll.setContentOffset(CGPoint(x: 0, y: before + 200), animated: false)
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                    window.layoutIfNeeded()
+                    XCTAssertGreaterThan(scroll.contentOffset.y, before + 100)
+                    XCTAssertEqual(sheet.selectedDetentIdentifier, .medium)
+                    XCTAssertEqual(presented.view.bounds.height, mediumHeight, accuracy: 1)
+                }
                 try capture(window: window, name: name + (scheme == .dark ? "-dark-medium" : "-light-medium"))
                 sheet.animateChanges { sheet.selectedDetentIdentifier = .large }
                 try await Task.sleep(nanoseconds: 450_000_000)

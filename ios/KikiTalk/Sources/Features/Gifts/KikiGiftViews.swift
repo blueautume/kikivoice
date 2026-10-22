@@ -306,7 +306,7 @@ enum KikiGiftRecipientPolicy {
     static func eligibleMembers(_ members: [KikiRoomMember], senderID: String?, hostID: String?) -> [KikiRoomMember] {
         guard let senderID, !senderID.isEmpty else { return [] }
         var seen: Set<String> = []
-        return members.filter { $0.online && !$0.userID.isEmpty && $0.userID != senderID && seen.insert($0.userID).inserted }
+        return members.filter { $0.online && ($0.seatIndex ?? 0) > 0 && !$0.userID.isEmpty && $0.userID != senderID && seen.insert($0.userID).inserted }
             .sorted { left, right in
                 if (left.userID == hostID) != (right.userID == hostID) { return left.userID == hostID }
                 return left.name.localizedStandardCompare(right.name) == .orderedAscending
@@ -331,7 +331,6 @@ struct KikiGiftPanel: View {
     @State private var showsCenter = false
     @State private var contentWidth: CGFloat = 343
     @State private var selectionError: String?
-    @State private var backpackNotice: String?
 
     init(gifts: KikiGiftStore, roomID: String, members: [KikiRoomMember], hostID: String?) {
         self.gifts = gifts
@@ -358,11 +357,6 @@ struct KikiGiftPanel: View {
         guard let selection else { return nil }
         return sendQueue.nextQuote(gift: selection, recipientIDs: selectedIDs.sorted())
     }
-    private var matchingCombo: KikiGiftCombo? {
-        guard let combo = sendQueue.lastCombo, combo.giftID == selectedGiftID,
-              combo.recipientIDs.sorted() == selectedIDs.sorted() else { return nil }
-        return combo
-    }
     private var columns: [GridItem] {
         let count = dynamicTypeSize.isAccessibilitySize
             ? max(2, min(4, Int((contentWidth + 10) / 150)))
@@ -374,11 +368,9 @@ struct KikiGiftPanel: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    wallet
                     recipientPicker
                     giftPicker
-                    sendFeedback
-                    if let backpackNotice { KikiExperienceMessage(text: backpackNotice, isError: false) }
+                    sendError
                     if let selectionError { KikiExperienceMessage(text: selectionError, isError: true) }
                 }
                 .background {
@@ -388,9 +380,11 @@ struct KikiGiftPanel: View {
             }
             .onPreferenceChange(ContentWidth.self) { contentWidth = $0 }
             .background(KikiPalette.background).foregroundStyle(KikiPalette.text)
-            .safeAreaInset(edge: .bottom, spacing: 0) { sendSummary }
             .navigationTitle("送礼物").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { balanceButton }
+                ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } }
+            }
             .task {
                 reconcileRecipients()
                 if selectedGiftID == nil { selectedGiftID = orderedGifts.first?.id }
@@ -403,7 +397,6 @@ struct KikiGiftPanel: View {
                 // inventory exhaustion moves the selected card out of the backpack.
                 if tab == .backpack, oldValue > 0, newValue == 0 {
                     tab = .all
-                    backpackNotice = "背包中的该礼物已用完，继续 Send 将按钻石结算。"
                 }
             }
             .onChange(of: gifts.userID) { selectedIDs = []; dismiss() }
@@ -413,19 +406,20 @@ struct KikiGiftPanel: View {
         .accessibilityIdentifier("gift.panel")
     }
 
-    private var wallet: some View {
+    private var balanceButton: some View {
         Button { showsCenter = true } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "diamond.fill").foregroundStyle(KikiPalette.purple)
-                Text(gifts.wallet == nil ? "正在同步体验钻石" : gifts.balanceText)
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(KikiPalette.text).monospacedDigit()
-                    .lineLimit(1).minimumScaleFactor(0.6)
-                Text("体验钻石").font(.caption).foregroundStyle(KikiPalette.secondary)
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(KikiPalette.muted)
-            }.padding(.horizontal, 14).padding(.vertical, 12)
-                .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 16))
-        }.buttonStyle(.plain).accessibilityIdentifier("gift.wallet")
+            HStack(spacing: 4) {
+                Image(systemName: "diamond.fill").font(.system(size: 13))
+                    .frame(width: 13, height: 16).fixedSize()
+                Text(gifts.wallet == nil ? "—" : gifts.balanceText)
+                    .font(.system(size: 13, weight: .semibold))
+                    .monospacedDigit().contentTransition(.numericText())
+                    .lineLimit(1).minimumScaleFactor(0.75)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }.frame(width: 96, height: 24)
+        }
+        .accessibilityLabel(gifts.wallet == nil ? "钻石余额同步中，查看钻石与装扮" : "钻石余额 \(gifts.balanceText)，查看钻石与装扮")
+        .accessibilityIdentifier("gift.wallet")
     }
 
     private var recipientPicker: some View {
@@ -440,7 +434,7 @@ struct KikiGiftPanel: View {
                 }.font(.caption.weight(.medium)).disabled(recipients.isEmpty)
             }
             if recipients.isEmpty {
-                Text(gifts.isAvailable ? "暂无其他在线成员可以接收礼物。" : "正在同步在线成员，连接房间后就能选择收礼人。")
+                Text(gifts.isAvailable ? "暂无可收礼的麦上成员" : "正在同步麦上成员…")
                     .font(.subheadline).foregroundStyle(KikiPalette.secondary).padding(.vertical, 12)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -461,7 +455,7 @@ struct KikiGiftPanel: View {
             selectionError = nil
             if selected { selectedIDs.remove(member.userID) }
             else if selectedIDs.count < 32 { selectedIDs.insert(member.userID) }
-            else { selectionError = "每次最多选择 32 位在线成员。" }
+            else { selectionError = "每次最多选择 32 人。" }
             initializedRecipients = true
         } label: {
             VStack(spacing: 6) {
@@ -495,7 +489,6 @@ struct KikiGiftPanel: View {
                         .accessibilityIdentifier(value == .all ? "gift.tab.all" : "gift.tab.backpack")
                 }
                 Spacer(minLength: 0)
-                Text("已有礼物优先").font(.caption2).foregroundStyle(KikiPalette.secondary)
             }
             if gifts.giftItems.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
@@ -509,8 +502,6 @@ struct KikiGiftPanel: View {
                 VStack(spacing: 10) {
                     Image(systemName: "shippingbox").font(.title).foregroundStyle(KikiPalette.lavender)
                     Text("背包里的礼物已送完").font(.subheadline.weight(.medium))
-                    Text("切换到“礼物”，可使用体验钻石继续赠送。")
-                        .font(.caption).foregroundStyle(KikiPalette.secondary).multilineTextAlignment(.center)
                     Button("查看礼物") { tab = .all }.buttonStyle(.bordered)
                 }.frame(maxWidth: .infinity).padding(.vertical, 28)
             } else {
@@ -525,7 +516,7 @@ struct KikiGiftPanel: View {
         let selected = selection?.id == gift.id
         let count = ownedCount(gift)
         return VStack(spacing: 0) {
-            Button { selectedGiftID = gift.id; selectionError = nil; backpackNotice = nil } label: {
+            Button { selectedGiftID = gift.id; selectionError = nil } label: {
                 VStack(spacing: 6) {
                     KikiGiftPoster(giftID: gift.id).frame(height: dynamicTypeSize.isAccessibilitySize ? 80 : 68)
                     Text(gift.name).font(.caption.weight(.medium)).foregroundStyle(KikiPalette.text)
@@ -550,10 +541,6 @@ struct KikiGiftPanel: View {
                 HStack(spacing: 5) {
                     Spacer(minLength: 0)
                     Text("Send").font(.subheadline.weight(.semibold))
-                    if let combo = matchingCombo, selected {
-                        Text("×\(combo.count)").font(.caption.weight(.bold)).monospacedDigit()
-                            .contentTransition(.numericText())
-                    }
                     Spacer(minLength: 0)
                 }
                 .padding(.vertical, 9).foregroundStyle(.white)
@@ -579,95 +566,34 @@ struct KikiGiftPanel: View {
         !selectedIDs.isEmpty && selectedIDs.count <= 32 && quote?.isAffordable == true
     }
     private func enqueue(_ gift: KikiGiftItem) {
+        reconcileRecipients()
         guard canSend else { return }
         if sendQueue.enqueue(gift: gift, recipientIDs: selectedIDs.sorted()) { selectionError = nil }
     }
 
-    @ViewBuilder private var sendFeedback: some View {
-        if let combo = matchingCombo {
-            HStack(spacing: 12) {
-                KikiGiftPoster(giftID: combo.giftID).frame(width: 46, height: 46)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("已送达 \(combo.recipientIDs.count) 位成员").font(.subheadline.weight(.medium))
-                    Text("背包 \(combo.inventoryUsed) 份 · \(KikiExperienceFormat.diamonds(combo.totalCost)) 钻石")
-                        .font(.caption).foregroundStyle(KikiPalette.secondary)
+    @ViewBuilder private var sendError: some View {
+        if let error = sendQueue.errorMessage {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(error)
+                    .font(.footnote).foregroundStyle(KikiPalette.lavender)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if sendQueue.isPaused {
+                    Button("重试") { sendQueue.retry() }
+                        .font(.footnote.weight(.semibold)).accessibilityIdentifier("gift.retry")
                 }
-                Spacer(minLength: 4)
-                Text("×\(combo.count)").font(.system(.title, design: .rounded).weight(.bold))
-                    .foregroundStyle(KikiPalette.purple).monospacedDigit().contentTransition(.numericText())
-                    .accessibilityIdentifier("gift.combo")
-            }.padding(13).frame(maxWidth: .infinity, alignment: .leading)
-                .background(KikiPalette.purple.opacity(0.10), in: RoundedRectangle(cornerRadius: 17))
-                .animation(.easeOut(duration: 0.2), value: combo.count)
+            }
+            .padding(.vertical, 8).accessibilityIdentifier("gift.sendError")
+        } else if let error = gifts.errorMessage, !gifts.giftItems.isEmpty {
+            KikiInlineError(message: error) { Task { await gifts.refresh() } }
+        } else if let quote, !quote.isAffordable {
+            Text("钻石不足，请更换礼物或减少收礼人。")
+                .font(.footnote).foregroundStyle(KikiPalette.secondary)
         }
     }
 
-    private var sendSummary: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(selectedIDs.count) 人 · 每次每人 1 份").font(.caption.weight(.medium))
-                Spacer(minLength: 3)
-                if let quote {
-                    HStack(spacing: 7) {
-                        if quote.inventoryUsed > 0 {
-                            Text("背包 \(quote.inventoryUsed) 份").foregroundStyle(KikiPalette.mint)
-                        }
-                        if quote.totalCost > 0 || quote.inventoryUsed == 0 {
-                            Label(KikiExperienceFormat.diamonds(quote.totalCost), systemImage: "diamond.fill")
-                                .foregroundStyle(KikiPalette.purple)
-                        }
-                    }.font(.caption.weight(.semibold)).monospacedDigit()
-                }
-            }
-            if let error = sendQueue.errorMessage {
-                Text(error).font(.caption).foregroundStyle(KikiPalette.lavender)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if selectedIDs.isEmpty {
-                Text("先选择要送的人，再点击礼物下方的 Send。")
-                    .font(.caption2).foregroundStyle(KikiPalette.secondary)
-            } else if selection == nil {
-                Text("请先选择一款礼物，再点击下方的 Send。")
-                    .font(.caption2).foregroundStyle(KikiPalette.secondary)
-            } else if quote == nil {
-                Text("正在同步礼物和余额，请稍后重试。")
-                    .font(.caption2).foregroundStyle(KikiPalette.secondary)
-            } else if let quote, !quote.isAffordable {
-                Text("体验钻石余额不足，请选择其他礼物或减少收礼人数。")
-                    .font(.caption2).foregroundStyle(KikiPalette.secondary)
-            } else if let quote, quote.diamondQuantity > 0 {
-                Text(quote.inventoryUsed > 0 ? "背包不足的 \(quote.diamondQuantity) 份使用钻石；继续点 Send 即可连送。" : "继续点 Send 即可连送，每次按所选人数扣钻。")
-                    .font(.caption2).foregroundStyle(KikiPalette.secondary)
-            } else {
-                Text("优先使用背包礼物，继续点 Send 即可连送。")
-                    .font(.caption2).foregroundStyle(KikiPalette.secondary)
-            }
-            if sendQueue.isPaused {
-                Text("待确认：\(sendQueue.pendingGiftName ?? "礼物")，\(sendQueue.pendingRecipientCount) 人各 1 份。重试核对同一笔，确认前不会发送下一笔。")
-                    .font(.caption2).foregroundStyle(KikiPalette.secondary)
-            }
-            if sendQueue.pendingCount > 0 || sendQueue.isPaused {
-                HStack(spacing: 9) {
-                    if sendQueue.isSending { ProgressView().controlSize(.mini) }
-                    Text(sendQueue.isPaused ? "上一笔待确认，已暂停连送" : "待确认 \(sendQueue.pendingCount) 笔")
-                        .font(.caption2).foregroundStyle(KikiPalette.secondary)
-                    Spacer(minLength: 3)
-                    if sendQueue.isPaused {
-                        Button("重试确认") { sendQueue.retry() }
-                            .font(.caption.weight(.semibold)).accessibilityIdentifier("gift.retry")
-                    }
-                    if sendQueue.pendingCount > (sendQueue.isSending || sendQueue.isPaused ? 1 : 0) {
-                        Button("取消待发") { sendQueue.cancelWaiting() }
-                            .font(.caption).accessibilityIdentifier("gift.cancelWaiting")
-                    }
-                }
-            }
-        }.padding(.horizontal, 16).padding(.vertical, 12)
-            .frame(maxWidth: 760, alignment: .leading).frame(maxWidth: .infinity)
-            .background(.regularMaterial)
-    }
-
     private func selectTab(_ value: GiftTab) {
-        tab = value; selectionError = nil; backpackNotice = nil
+        tab = value; selectionError = nil
         if value == .backpack, selectedGiftStock == 0,
            let firstOwned = gifts.orderedGiftItems.first(where: { gifts.giftCount($0.id) > 0 }) {
             selectedGiftID = firstOwned.id
@@ -675,7 +601,9 @@ struct KikiGiftPanel: View {
     }
 
     private func reconcileRecipients() {
-        selectedIDs.formIntersection(Set(recipients.map(\.userID)))
+        let eligibleIDs = Set(recipients.map(\.userID))
+        sendQueue.updateEligibleRecipients(eligibleIDs)
+        selectedIDs.formIntersection(eligibleIDs)
         if !initializedRecipients, let target = recipients.first(where: { $0.userID == hostID }) ?? recipients.first {
             selectedIDs = [target.userID]; initializedRecipients = true
         }
@@ -703,6 +631,9 @@ struct KikiGiftPresentationOverlay: View {
                         }
                         Spacer(minLength: 0)
                         Text("×\(item.quantity)").font(.title3.bold()).monospacedDigit()
+                            .contentTransition(.numericText(value: Double(item.quantity)))
+                            .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: item.quantity)
+                            .id(item.id)
                     }
                     .padding(13).frame(maxWidth: 430).foregroundStyle(.white)
                     .background(LinearGradient(colors: [Color(hex: 0x7656AD).opacity(0.95), Color(hex: 0x3D315C).opacity(0.94)], startPoint: .leading, endPoint: .trailing), in: RoundedRectangle(cornerRadius: 18))
@@ -710,9 +641,6 @@ struct KikiGiftPresentationOverlay: View {
                     KikiGiftAnimatedImage(giftID: event.giftID, animated: !reduceMotion)
                         .id(item.id)
                         .frame(width: min(max(0, geometry.size.width - 32), 370), height: min(max(0, geometry.size.height * 0.52), 440))
-                    Text("\(event.giftName) × \(item.quantity)")
-                        .font(.headline).foregroundStyle(.white).padding(.horizontal, 18).padding(.vertical, 9)
-                        .background(.black.opacity(0.35), in: Capsule())
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 16).padding(.top, 84).padding(.bottom, 70)
