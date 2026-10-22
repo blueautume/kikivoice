@@ -23,12 +23,12 @@ struct KikiLiveKitRoomView: View {
     @State private var showsSafety = false
     @State private var selectedPerson: KikiPersonDestination?
     @State private var queuedPerson: KikiPersonDestination?
-    @State private var stageContentHeight: CGFloat = 0
     @State private var isComposing = false
     @State private var roomNotice: String?
     @State private var roomNoticeID = UUID()
-    @State private var isNearChatBottom = true
     @State private var hasPositionedChat = false
+    @State private var chatTracking = KikiRoomChatTracking()
+    @GestureState private var isDraggingChat = false
     private let accent = Color(hex: 0x8B66FF)
     private let secondary = Color.white.opacity(0.66)
 
@@ -54,18 +54,24 @@ struct KikiLiveKitRoomView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let horizontalPadding: CGFloat = geometry.size.width >= 700 ? 24 : 18
-            let contentWidth = min(1180, max(0, geometry.size.width - horizontalPadding * 2))
-            let usesColumns = contentWidth >= 720
+            let horizontalPadding: CGFloat = 18
+            let contentWidth = max(0, min(1180, geometry.size.width) - horizontalPadding * 2)
+            let usesColumns = contentWidth - 56 >= 720
             ZStack {
                 KikiRoomDecorationBackground(decorationID: gifts.appearance(for: rtc.roomInfo?.hostID ?? "").roomBackground)
                     .ignoresSafeArea()
                 VStack(spacing: usesColumns ? 20 : 14) {
                     header
-                    adaptiveLayout(usesColumns: usesColumns)
+                    KikiRoomContentLayout(hasChatContent: !chatScrollIdentity.isEmpty || rtc.chatSyncNotice != nil) { width, columns in
+                        roomStage(width: width, avatarSize: columns ? 68 : 55)
+                    } chat: {
+                        chat
+                    } controls: {
+                        roomActions
+                    }
                 }
+                .padding(.horizontal, horizontalPadding).padding(.top, 10).padding(.bottom, 2)
                 .frame(maxWidth: 1180)
-                .padding(.horizontal, horizontalPadding).padding(.top, 10).padding(.bottom, 8)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .foregroundStyle(.white)
                 if let reason = rtc.disconnectionReason { endedRoom(reason) }
@@ -147,38 +153,6 @@ struct KikiLiveKitRoomView: View {
         .sheet(isPresented: $showsTitleEditor) { titleEditor }
     }
 
-    private func adaptiveLayout(usesColumns: Bool) -> some View {
-        GeometryReader { geometry in
-            let stageWidth = usesColumns ? min(500, max(340, (geometry.size.width - 24) * 0.48)) : geometry.size.width
-            // Reserve space for messages and input when a keyboard or a short window reduces the height.
-            let minimumChatHeight = min(180, max(0, geometry.size.height - 14))
-            let stageHeightLimit = max(0, geometry.size.height - minimumChatHeight - 14)
-            // Keep the same scroll view and text field when rotation or multitasking changes the layout.
-            let layout = usesColumns
-                ? AnyLayout(HStackLayout(alignment: .top, spacing: 24))
-                : AnyLayout(VStackLayout(spacing: 14))
-            layout {
-                ScrollView {
-                    roomStage(width: stageWidth, avatarSize: usesColumns ? 68 : 55)
-                        .background {
-                            GeometryReader { stageGeometry in
-                                Color.clear.preference(key: KikiRoomStageHeightKey.self, value: stageGeometry.size.height)
-                            }
-                        }
-                }
-                .scrollDismissesKeyboard(.interactively)
-                .frame(width: usesColumns ? stageWidth : nil,
-                       height: usesColumns ? nil : min(stageContentHeight, stageHeightLimit))
-                .frame(maxHeight: usesColumns ? .infinity : nil, alignment: .top)
-                .onPreferenceChange(KikiRoomStageHeightKey.self) { stageContentHeight = $0 }
-                chatPane
-                    .padding(usesColumns ? 16 : 0)
-                    .background(.white.opacity(usesColumns ? 0.035 : 0), in: RoundedRectangle(cornerRadius: 20))
-                    .frame(minHeight: usesColumns ? 0 : minimumChatHeight)
-            }
-        }
-    }
-
     private func roomStage(width: CGFloat, avatarSize: CGFloat) -> some View {
         VStack(spacing: 14) {
             connectionBanner
@@ -186,10 +160,6 @@ struct KikiLiveKitRoomView: View {
             audienceStrip
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private var chatPane: some View {
-        chat.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var header: some View {
@@ -404,15 +374,29 @@ struct KikiLiveKitRoomView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 4)
                     .background {
                         GeometryReader { content in
-                            Color.clear.preference(key: KikiRoomChatBottomKey.self,
-                                                   value: content.frame(in: .named("livekit.room.chat")).maxY)
+                            Color.clear.preference(key: KikiRoomChatViewportKey.self,
+                                                   value: KikiRoomChatViewport(
+                                                    bottom: content.frame(in: .named("livekit.room.chat")).maxY,
+                                                    height: geometry.size.height, width: geometry.size.width))
                         }
                     }
                 }
                 .coordinateSpace(name: "livekit.room.chat")
                 .scrollDismissesKeyboard(.interactively)
-                .onPreferenceChange(KikiRoomChatBottomKey.self) { bottom in
-                    isNearChatBottom = bottom <= geometry.size.height + 50
+                .simultaneousGesture(DragGesture(minimumDistance: 1).updating($isDraggingChat) { _, dragging, _ in
+                    dragging = true
+                })
+                .onChange(of: isDraggingChat) { _, dragging in
+                    guard dragging else { return }
+                    chatTracking.beganDragging()
+                }
+                .onPreferenceChange(KikiRoomChatViewportKey.self) { current in
+                    guard let request = chatTracking.update(current, hasPositionedChat: hasPositionedChat,
+                                                            isDragging: isDraggingChat) else { return }
+                    DispatchQueue.main.async {
+                        guard chatTracking.mayRestore(request, isDragging: isDraggingChat) else { return }
+                        proxy.scrollTo("livekit.room.chat.bottom", anchor: .bottom)
+                    }
                 }
                 .onChange(of: chatScrollIdentity, initial: true) { previous, current in
                     guard previous != current || !hasPositionedChat else { return }
@@ -421,7 +405,7 @@ struct KikiLiveKitRoomView: View {
                     let localSend = rtc.pendingMessage.map { pending in
                         !previous.contains { $0.hasPrefix("pending-" + pending.clientMessageID) }
                     } ?? false
-                    guard isNearChatBottom || !hasPositionedChat || localSend else { return }
+                    guard chatTracking.isNearBottom || !hasPositionedChat || localSend else { return }
                     let animate = hasPositionedChat
                     hasPositionedChat = hasPositionedChat || !current.isEmpty
                     DispatchQueue.main.async {
@@ -508,7 +492,7 @@ struct KikiLiveKitRoomView: View {
     }
 
     private var bottomBar: some View {
-        KikiRoomComposerBar(isComposing: isComposing) {
+        KikiRoomComposerBar {
             KikiRoomMessageInput(text: $rtc.messageDraft, isFocused: $isComposing,
                                  placeholder: rtc.roomState?.me.chatMuted == true ? "已被禁言" : "说点什么…",
                                  isEnabled: rtc.canSendChat, onSubmit: send, onNotice: showRoomNotice)
@@ -519,23 +503,25 @@ struct KikiLiveKitRoomView: View {
                 .buttonStyle(.plain)
                 .disabled(!rtc.canSendChat || rtc.isSendingMessage || rtc.messageDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityLabel("发送消息").accessibilityIdentifier("livekit.room.send")
-        } controls: {
-                Button {
-                    endComposing()
-                    showsGifts = true
-                } label: { roomControlIcon("gift.fill", size: 42) }
-                    .buttonStyle(.plain).disabled(!rtc.canSendChat || !gifts.isAvailable)
-                    .accessibilityLabel("赠送礼物").accessibilityIdentifier("livekit.room.gifts")
-                Button { Task { await rtc.toggleMicrophone() } } label: {
-                    roomControlIcon(rtc.microphoneEnabled ? "mic.fill" : "mic.slash.fill", size: 42,
-                                    active: rtc.microphoneEnabled, loading: rtc.isChangingMicrophone)
-                }
-                .buttonStyle(.plain)
-                .disabled((!rtc.canUseRoom && !rtc.microphoneEnabled) || (!rtc.microphoneEnabled && !rtc.canPublishAudio) || rtc.isChangingMicrophone)
-                .accessibilityLabel(rtc.microphoneEnabled ? "关闭麦克风" : "打开麦克风")
-                .accessibilityValue(rtc.microphoneStatus).accessibilityIdentifier("livekit.room.microphone")
-                seatRequestControl
         }
+    }
+
+    @ViewBuilder private var roomActions: some View {
+        Button {
+            endComposing()
+            showsGifts = true
+        } label: { roomControlIcon("gift.fill", size: 42) }
+            .buttonStyle(.plain).disabled(!rtc.canSendChat || !gifts.isAvailable)
+            .accessibilityLabel("赠送礼物").accessibilityIdentifier("livekit.room.gifts")
+        Button { Task { await rtc.toggleMicrophone() } } label: {
+            roomControlIcon(rtc.microphoneEnabled ? "mic.fill" : "mic.slash.fill", size: 42,
+                            active: rtc.microphoneEnabled, loading: rtc.isChangingMicrophone)
+        }
+        .buttonStyle(.plain)
+        .disabled((!rtc.canUseRoom && !rtc.microphoneEnabled) || (!rtc.microphoneEnabled && !rtc.canPublishAudio) || rtc.isChangingMicrophone)
+        .accessibilityLabel(rtc.microphoneEnabled ? "关闭麦克风" : "打开麦克风")
+        .accessibilityValue(rtc.microphoneStatus).accessibilityIdentifier("livekit.room.microphone")
+        seatRequestControl
     }
 
     private var titleEditor: some View {
@@ -899,14 +885,9 @@ struct KikiRoomSeatTile: View {
     }
 }
 
-private struct KikiRoomStageHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
-}
-
-private struct KikiRoomChatBottomKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+private struct KikiRoomChatViewportKey: PreferenceKey {
+    static let defaultValue = KikiRoomChatViewport()
+    static func reduce(value: inout KikiRoomChatViewport, nextValue: () -> KikiRoomChatViewport) { value = nextValue() }
 }
 
 private struct KikiPendingModeration {

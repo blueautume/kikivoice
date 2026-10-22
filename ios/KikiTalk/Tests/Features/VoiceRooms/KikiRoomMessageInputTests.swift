@@ -274,22 +274,27 @@ final class KikiRoomMessageInputTests: XCTestCase {
         let window = UIWindow(windowScene: scene)
         defer { window.endEditing(true); window.isHidden = true; previous?.makeKeyAndVisible() }
         let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
-        // A real keyboard belongs to the scene's physical viewport. Resizing its
-        // window to emulate another device would make the guide assertion invalid.
-        let cases: [(String, CGSize)] = inspectSoftwareKeyboard ? [
-            ("phone-native", scene.coordinateSpace.bounds.size)
+        let longDraft = "第一行：保留草稿\n第二行：系统表情 😀\n第三行：继续输入\n第四行：等待发送"
+        // Only the opt-in native viewport makes assertions about the physical
+        // software keyboard. Synthetic short windows exercise the same layout.
+        let cases: [(name: String, size: CGSize, draft: String, messages: Int, allSeats: Bool, scrolls: Bool)] = inspectSoftwareKeyboard ? [
+            ("phone-native", scene.coordinateSpace.bounds.size, "原生输入 😀 👩🏽‍💻", 2, true, false),
+            ("phone-native-four-lines", scene.coordinateSpace.bounds.size, longDraft, 1, false, false)
         ] : [
-            ("phone-375", CGSize(width: 375, height: 812)),
-            ("ipad-744", CGSize(width: 744, height: 1133))
+            ("phone-375", CGSize(width: 375, height: 812), "原生输入 😀 👩🏽‍💻", 3, true, false),
+            ("phone-keyboard-window", CGSize(width: 375, height: 520), "原生输入 😀", 1, true, false),
+            ("phone-four-lines", CGSize(width: 375, height: 520), longDraft, 1, false, false),
+            ("phone-tiny-window", CGSize(width: 375, height: 400), "小窗口草稿", 2, false, true),
+            ("phone-empty-chat", CGSize(width: 375, height: 520), "还没有消息", 0, true, false),
+            ("ipad-wide", CGSize(width: 1133, height: 744), "原生输入 😀", 3, true, false)
         ]
-        for (name, size) in cases {
-            let model = ScreenshotModel()
+        for item in cases {
+            let model = ScreenshotModel(text: item.draft, messageCount: item.messages)
+            defer { model.gifts.reset() }
             let host = UIHostingController(rootView: ComposerScreenshotFixture(model: model))
-            // Synthetic viewports exercise layout and focus independently of the
-            // scene's physical keyboard. The native opt-in retains keyboard geometry.
             host.safeAreaRegions = inspectSoftwareKeyboard ? .all : .container
             window.rootViewController = host
-            window.frame = CGRect(origin: .zero, size: size)
+            window.frame = CGRect(origin: .zero, size: item.size)
             host.view.frame = window.bounds
             window.makeKeyAndVisible()
             try await Task.sleep(nanoseconds: 120_000_000)
@@ -297,13 +302,16 @@ final class KikiRoomMessageInputTests: XCTestCase {
             let input = try XCTUnwrap(descendants(of: host.view).compactMap { $0 as? KikiRoomMessageInput.InputView }.first)
             let probe = try XCTUnwrap(descendants(of: host.view).compactMap { $0 as? KikiRoomKeyboardDismissal.Probe }.first)
             let dismissal = try XCTUnwrap(probe.coordinator)
-            XCTAssertEqual(host.view.bounds.size, size)
-            XCTAssertGreaterThan(input.textView.bounds.width, 50)
+            try await waitFor { model.probes["seat.8"]?.window != nil && input.bounds.width > 0 }
+            XCTAssertEqual(host.view.bounds.size, item.size)
+            XCTAssertGreaterThan(input.textView.bounds.width, 120)
             XCTAssertGreaterThanOrEqual(input.emojiButton.bounds.width, 40)
             XCTAssertFalse(input.textView.isFirstResponder)
             let idleFrame = input.convert(input.bounds, to: window)
+            let idleTextWidth = input.textView.bounds.width
             let inputIdentity = ObjectIdentifier(input)
-            try captureInputScreenshot(name: device + "-composer-" + name + "-idle", window: window)
+            try assertActionColumn(model: model, input: input, window: window)
+            try captureInputScreenshot(name: device + "-composer-" + item.name + "-idle", window: window)
 
             model.focused = true
             try await waitFor { input.textView.isFirstResponder }
@@ -328,17 +336,30 @@ final class KikiRoomMessageInputTests: XCTestCase {
                 XCTAssertLessThanOrEqual(gap, 32, "The composer must stay next to the actual keyboard instead of floating above it")
             }
             XCTAssertTrue(model.focused)
-            XCTAssertGreaterThan(input.textView.bounds.width, 120, "Collapsing the tools must widen the native composer")
+            XCTAssertEqual(input.convert(input.bounds, to: window).width, idleFrame.width, accuracy: 1,
+                           "The action column must never borrow width from the input row")
+            XCTAssertEqual(input.textView.bounds.width, idleTextWidth, accuracy: 1)
             XCTAssertEqual(ObjectIdentifier(input), inputIdentity)
+            XCTAssertEqual(input.textView.text, item.draft)
+            if item.draft == longDraft {
+                XCTAssertGreaterThanOrEqual(input.bounds.height, (input.textView.font?.lineHeight ?? 18) * 3 + 22,
+                                            "The four-line draft must exercise the expanded native input")
+            }
+            try assertActionColumn(model: model, input: input, window: window)
+            try await assertSeatReachability(model: model, window: window,
+                                            allVisible: item.allSeats, requiresScroll: item.scrolls)
             XCTAssertFalse(dismissal.acceptsTap(from: input))
             XCTAssertFalse(dismissal.acceptsTap(from: input.textView))
             XCTAssertFalse(dismissal.acceptsTap(from: input.emojiButton))
-            XCTAssertTrue(input.textView.isFirstResponder,
-                          "The native field and Emoji button are excluded from outside dismissal")
-            try captureInputScreenshot(name: device + "-composer-" + name + "-focused", window: window)
+            XCTAssertTrue(input.textView.isFirstResponder)
+            try captureInputScreenshot(name: device + "-composer-" + item.name + "-focused", window: window)
+            if inspectSoftwareKeyboard {
+                // Leave a stable native scene for a simulator screenshot, which
+                // also captures the keyboard owned by the system process.
+                try await Task.sleep(nanoseconds: 3_000_000_000)
+            }
             XCTAssertTrue(dismissal.acceptsTap(from: host.view))
-            // Exercise the same recognized-tap callback without fabricating a
-            // UITouch or claiming an automated physical tap on the keyboard.
+            // Invoke the recognized-tap callback without fabricating a UITouch.
             dismissal.dismissAfterRecognizedTap()
             try await waitFor { !input.textView.isFirstResponder && !model.focused }
             XCTAssertEqual(model.dismissals, 1)
@@ -349,20 +370,19 @@ final class KikiRoomMessageInputTests: XCTestCase {
                     try await Task.sleep(nanoseconds: 100_000_000)
                 }
                 window.layoutIfNeeded()
-                let height = host.view.keyboardLayoutGuide.layoutFrame.height
-                print("KikiRoomComposer software-keyboard-dismissed guideHeight=\(height)")
-                XCTAssertLessThanOrEqual(height, 100, "Outside dismissal must lower the actual software keyboard")
+                XCTAssertLessThanOrEqual(host.view.keyboardLayoutGuide.layoutFrame.height, 100,
+                                         "Outside dismissal must lower the actual software keyboard")
             }
             try await Task.sleep(nanoseconds: 350_000_000)
             window.layoutIfNeeded()
             let restoredFrame = input.convert(input.bounds, to: window)
             XCTAssertEqual(restoredFrame.minX, idleFrame.minX, accuracy: 1)
-            XCTAssertEqual(restoredFrame.maxY, idleFrame.maxY, accuracy: 1,
-                           "Dismissal must return the composer to its original safe-area bottom")
-            XCTAssertEqual(restoredFrame.width, idleFrame.width, accuracy: 1,
-                           "The tools must recover their stable slot, without appearing at the top of the screen")
+            XCTAssertEqual(restoredFrame.maxY, idleFrame.maxY, accuracy: 1)
+            XCTAssertEqual(restoredFrame.width, idleFrame.width, accuracy: 1)
             XCTAssertEqual(ObjectIdentifier(input), inputIdentity)
-            try captureInputScreenshot(name: device + "-composer-" + name + "-blurred", window: window)
+            XCTAssertEqual(input.textView.text, item.draft, "Outside dismissal must preserve the full draft")
+            try assertActionColumn(model: model, input: input, window: window)
+            try captureInputScreenshot(name: device + "-composer-" + item.name + "-blurred", window: window)
             model.text += "，收起后保留"
             await settle()
             XCTAssertFalse(input.textView.isFirstResponder)
@@ -370,6 +390,75 @@ final class KikiRoomMessageInputTests: XCTestCase {
             XCTAssertEqual(model.submissions, 0)
             host.view.endEditing(true)
         }
+    }
+
+    private func layoutFrame(_ key: String, model: ScreenshotModel, window: UIWindow) throws -> CGRect {
+        let probe = try XCTUnwrap(model.probes[key], "Missing fixture geometry: " + key)
+        return probe.convert(probe.bounds, to: window)
+    }
+
+    private func assertActionColumn(model: ScreenshotModel, input: UIView, window: UIWindow) throws {
+        let inputFrame = input.convert(input.bounds, to: window)
+        let body = try layoutFrame("content", model: model, window: window)
+        let buttons = try (0..<3).map { try layoutFrame("action.\($0)", model: model, window: window) }
+        for (index, frame) in buttons.enumerated() {
+            XCTAssertEqual(frame.width, 44, accuracy: 1)
+            XCTAssertEqual(frame.height, 44, accuracy: 1)
+            XCTAssertEqual(frame.maxX, body.maxX, accuracy: 1)
+            if index > 0 {
+                XCTAssertEqual(frame.midX, buttons[0].midX, accuracy: 1)
+                XCTAssertEqual(frame.minY - buttons[index - 1].maxY, 6, accuracy: 1)
+            }
+        }
+        let rail = try XCTUnwrap(scrollAncestor(of: try XCTUnwrap(model.probes["action.2"])))
+        let visibleRail = rail.convert(rail.bounds, to: window)
+        XCTAssertLessThanOrEqual(visibleRail.maxY, inputFrame.minY + 1,
+                                 "The independent action rail must stay above the composer")
+        XCTAssertEqual(visibleRail.maxY, body.maxY, accuracy: 1)
+        for number in 1...8 {
+            let seat = try layoutFrame("seat.\(number)", model: model, window: window)
+            XCTAssertLessThanOrEqual(seat.maxX, buttons[0].minX - 11,
+                                     "The right-hand action hit areas cannot cover any microphone seat")
+        }
+        let chat = try layoutFrame("chat", model: model, window: window)
+        XCTAssertLessThanOrEqual(chat.maxX, buttons[0].minX - 11,
+                                 "The action rail cannot cover the chat viewport")
+    }
+
+    private func assertSeatReachability(model: ScreenshotModel, window: UIWindow,
+                                       allVisible: Bool, requiresScroll: Bool) async throws {
+        let last = try XCTUnwrap(model.probes["seat.8"])
+        let scroll = try XCTUnwrap(scrollAncestor(of: last), "The production stage must remain scrollable in a short window")
+        let viewport = scroll.convert(scroll.bounds, to: window)
+        if allVisible {
+            for number in 1...8 {
+                let seat = try layoutFrame("seat.\(number)", model: model, window: window)
+                XCTAssertGreaterThanOrEqual(seat.minY, viewport.minY - 1, "Seat \(number) must be visible above the keyboard")
+                XCTAssertLessThanOrEqual(seat.maxY, viewport.maxY + 1, "Seat \(number) must not be clipped by chat or the composer")
+            }
+        } else {
+            if requiresScroll {
+                XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height + 1,
+                                     "The tiny-window fixture must actually exercise stage overflow")
+            }
+            let bottom = max(-scroll.adjustedContentInset.top,
+                             scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: bottom), animated: false)
+            window.layoutIfNeeded()
+            await settle()
+            let seat = last.convert(last.bounds, to: window)
+            XCTAssertGreaterThanOrEqual(seat.minY, viewport.minY - 1)
+            XCTAssertLessThanOrEqual(seat.maxY, viewport.maxY + 1, "The eighth seat must be reachable by scrolling")
+        }
+    }
+
+    private func scrollAncestor(of view: UIView) -> UIScrollView? {
+        var parent = view.superview
+        while let current = parent {
+            if let scroll = current as? UIScrollView { return scroll }
+            parent = current.superview
+        }
+        return nil
     }
 
     func testRealActiveEmojiModeSwitchesFromTextAndBackWithScreenshots() async throws {
@@ -524,48 +613,114 @@ final class KikiRoomMessageInputTests: XCTestCase {
 
     @MainActor
     private final class ScreenshotModel: ObservableObject {
-        @Published var text = "原生输入 😀 👩🏽‍💻"
+        @Published var text: String
         @Published var focused = false
+        let messageCount: Int
+        let gifts = KikiGiftStore()
+        var probes: [String: UIView] = [:]
         var dismissals = 0
         var submissions = 0
+        init(text: String, messageCount: Int) { self.text = text; self.messageCount = messageCount }
+    }
+
+    /// UIKit probes expose geometry even when SwiftUI omits virtual AX nodes.
+    private struct LayoutProbe: UIViewRepresentable {
+        let key: String
+        let model: ScreenshotModel
+        func makeUIView(context: Context) -> UIView {
+            let view = UIView()
+            view.isUserInteractionEnabled = false
+            model.probes[key] = view
+            return view
+        }
+        func updateUIView(_ view: UIView, context: Context) { model.probes[key] = view }
+        func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
+            CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+        }
     }
 
     private struct ComposerScreenshotFixture: View {
         @ObservedObject var model: ScreenshotModel
         var body: some View {
-            VStack(spacing: 20) {
-                Text("房间输入框").font(.title2.bold()).foregroundStyle(.white)
-                Text("系统 Emoji · 纯文本草稿").font(.subheadline).foregroundStyle(.white.opacity(0.65))
-                Spacer()
-                Image(systemName: "person.crop.circle.fill").font(.system(size: 62)).foregroundStyle(.purple)
-                Text("麦位与聊天背景可收起键盘").foregroundStyle(.white.opacity(0.7))
-                Spacer()
-
+            VStack(spacing: 14) {
+                HStack(spacing: 10) {
+                    KikiAvatar(index: 1, size: 36)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("今晚一起聊聊").font(.system(size: 17, weight: .semibold))
+                        Text("房主 小岛").font(.system(size: 11)).foregroundStyle(.white.opacity(0.66))
+                    }
+                    Spacer()
+                    Image(systemName: "ellipsis").frame(width: 44, height: 44)
+                    Image(systemName: "xmark").frame(width: 44, height: 44)
+                }.frame(height: 60)
+                KikiRoomContentLayout(hasChatContent: model.messageCount > 0) { width, columns in
+                    seats(width: width, avatarSize: columns ? 68 : 55)
+                } chat: {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(0..<model.messageCount, id: \.self) { index in
+                                KikiRoomChatBubbleRow(id: "fixture-\(index)", senderName: index == 0 ? "小岛" : "同频朋友",
+                                    text: index == 0 ? "大家晚上好，欢迎来聊天 😀" : "八个麦位和聊天都留在输入栏上方。",
+                                    isLocal: false, onOpenSender: {}) {
+                                        KikiAvatar(index: index + 1, size: 32)
+                                    } bubbleBackground: {
+                                        RoundedRectangle(cornerRadius: 15).fill(.black.opacity(0.22))
+                                    }
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }.background(LayoutProbe(key: "chat", model: model))
+                } controls: {
+                    ForEach(Array(["gift.fill", "mic.slash.fill", "figure.wave"].enumerated()), id: \.offset) { index, symbol in
+                        Button {} label: {
+                            Image(systemName: symbol).frame(width: 44, height: 44)
+                                .background(.white.opacity(0.10), in: Circle())
+                        }.background(LayoutProbe(key: "action.\(index)", model: model))
+                    }
+                }.background(LayoutProbe(key: "content", model: model))
             }
-            .padding(20)
+            .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 2)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(red: 0.09, green: 0.06, blue: 0.16).ignoresSafeArea())
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                KikiRoomComposerBar(isComposing: model.focused) {
+                KikiRoomComposerBar {
                     KikiRoomMessageInput(text: $model.text, isFocused: $model.focused,
                         placeholder: "说点什么…", isEnabled: true,
                         onSubmit: { model.submissions += 1 }, onNotice: { _ in })
                         .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 21))
                         .overlay(RoundedRectangle(cornerRadius: 21).stroke(.white.opacity(0.2), lineWidth: 1))
                 } send: {
-                    Button {} label: { Image(systemName: "paperplane.fill").frame(width: 44, height: 44) }
-                } controls: {
-                    ForEach(["gift.fill", "mic.slash.fill", "figure.wave"], id: \.self) { symbol in
-                        Button {} label: { Image(systemName: symbol).frame(width: 44, height: 44) }
-                    }
+                    Button { model.submissions += 1 } label: { Image(systemName: "paperplane.fill").frame(width: 44, height: 44) }
                 }
-                .foregroundStyle(.white).padding(.horizontal, 20).padding(.vertical, 8)
+                .padding(.horizontal, 18).padding(.vertical, 8)
             }
+            .foregroundStyle(.white)
             .background(KikiRoomKeyboardDismissal(isEnabled: true) {
                 model.dismissals += 1
                 model.focused = false
             })
             .preferredColorScheme(.dark)
+        }
+
+        private func seats(width: CGFloat, avatarSize: CGFloat) -> some View {
+            let columns = max(2, min(4, Int((width + 8) / (avatarSize + 14))))
+            let rows = (8 + columns - 1) / columns
+            // Eager rows ensure all eight genuine seat views have geometry probes,
+            // including the last row before scrolling a very short stage.
+            return VStack(spacing: 14) {
+                ForEach(0..<rows, id: \.self) { row in
+                    HStack(spacing: 8) {
+                        ForEach(0..<columns, id: \.self) { column in
+                            let number = row * columns + column + 1
+                            if number <= 8 {
+                                KikiRoomSeatTile(slot: KikiRoomSeat(index: number, userID: nil, locked: false, audioLocked: false),
+                                    member: nil, participant: nil, localUserID: "fixture-owner",
+                                    avatarSize: avatarSize, gifts: model.gifts)
+                                    .background(LayoutProbe(key: "seat.\(number)", model: model))
+                            } else { Color.clear.frame(maxWidth: .infinity) }
+                        }
+                    }
+                }
+            }.padding(.top, 4).padding(.bottom, 2)
         }
     }
 

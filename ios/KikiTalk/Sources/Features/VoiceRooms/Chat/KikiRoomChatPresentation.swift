@@ -1,5 +1,60 @@
 import SwiftUI
 
+struct KikiRoomChatViewport: Equatable {
+    var bottom: CGFloat = 0
+    var height: CGFloat = 0
+    var width: CGFloat = 0
+    var isNearBottom: Bool { bottom <= height + 50 }
+    // The bottom sentinel is followed by four points of content padding.
+    var isAtBottom: Bool { bottom <= height + 5 }
+}
+
+/// Preserve following intent across keyboard layout frames, while allowing a
+/// person's drag to invalidate even a restore already queued on the main thread.
+struct KikiRoomChatTracking: Equatable {
+    private var viewport: KikiRoomChatViewport?
+    private var restoreRevision: UInt = 0
+    private var pendingRestore: UInt?
+    private(set) var isNearBottom = true
+
+    mutating func beganDragging() {
+        pendingRestore = nil
+        isNearBottom = viewport?.isNearBottom ?? true
+    }
+
+    mutating func update(_ current: KikiRoomChatViewport, hasPositionedChat: Bool, isDragging: Bool) -> UInt? {
+        let resized = viewport.map {
+            abs($0.height - current.height) > 0.5 || abs($0.width - current.width) > 0.5
+        } ?? false
+        viewport = current
+        if isDragging {
+            pendingRestore = nil
+            isNearBottom = current.isNearBottom
+            return nil
+        }
+        // Capture the prior intent before a smaller viewport makes the same
+        // offset appear to be away from the bottom.
+        if resized, hasPositionedChat, isNearBottom, pendingRestore == nil {
+            restoreRevision &+= 1
+            pendingRestore = restoreRevision
+        }
+        if let pendingRestore {
+            isNearBottom = true
+            if current.isAtBottom {
+                self.pendingRestore = nil
+                return nil
+            }
+            return pendingRestore
+        }
+        isNearBottom = current.isNearBottom
+        return nil
+    }
+
+    func mayRestore(_ request: UInt, isDragging: Bool) -> Bool {
+        pendingRestore == request && !isDragging
+    }
+}
+
 /// Only online listeners appear here; seated speakers belong to the stage above.
 struct KikiRoomAudienceStrip<Avatar: View>: View {
     let listeners: [KikiRoomMember]

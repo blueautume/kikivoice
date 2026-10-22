@@ -1,23 +1,15 @@
 import SwiftUI
 import UIKit
 
-/// The optional tools retain their identity while editing. Their clipped slot
-/// collapses in place instead of removing and reinserting UIKit/SwiftUI controls.
-struct KikiRoomComposerBar<Composer: View, Send: View, Controls: View>: View {
-    let isComposing: Bool
+/// Keep the native input in one stable, full-width row above the keyboard.
+struct KikiRoomComposerBar<Composer: View, Send: View>: View {
     @ViewBuilder var composer: () -> Composer
     @ViewBuilder var send: () -> Send
-    @ViewBuilder var controls: () -> Controls
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 7) {
             composer().layoutPriority(1)
             send()
-            HStack(spacing: 7) { controls() }
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(width: isComposing ? 0 : 146, alignment: .trailing)
-                .clipped().opacity(isComposing ? 0 : 1)
-                .allowsHitTesting(!isComposing).accessibilityHidden(isComposing)
         }
         .accessibilityIdentifier("livekit.room.inputBar")
     }

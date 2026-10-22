@@ -5,6 +5,72 @@ import XCTest
 
 @MainActor
 final class KikiRoomChatPresentationTests: XCTestCase {
+    func testBottomFollowingSurvivesKeyboardResizeFramesUntilTheBottomIsRestored() throws {
+        var tracking = KikiRoomChatTracking()
+        XCTAssertNil(tracking.update(.init(bottom: 604, height: 600), hasPositionedChat: true, isDragging: false))
+        let request = try XCTUnwrap(tracking.update(.init(bottom: 604, height: 500),
+                                                    hasPositionedChat: true, isDragging: false))
+        XCTAssertEqual(tracking.update(.init(bottom: 550, height: 450), hasPositionedChat: true, isDragging: false), request)
+        XCTAssertEqual(tracking.update(.init(bottom: 470, height: 450), hasPositionedChat: true, isDragging: false), request,
+                       "Being within the 50-point following threshold must not finish a partially restored keyboard resize")
+        XCTAssertTrue(tracking.isNearBottom)
+        XCTAssertTrue(tracking.mayRestore(request, isDragging: false))
+        XCTAssertNil(tracking.update(.init(bottom: 454, height: 450), hasPositionedChat: true, isDragging: false))
+        XCTAssertTrue(tracking.isNearBottom)
+        XCTAssertFalse(tracking.mayRestore(request, isDragging: false), "The completed restore must invalidate queued work")
+    }
+
+    func testViewportResizeDoesNotPullAnOlderMessageReaderToTheBottom() {
+        var tracking = KikiRoomChatTracking()
+        XCTAssertNil(tracking.update(.init(bottom: 900, height: 500), hasPositionedChat: true, isDragging: false))
+        XCTAssertFalse(tracking.isNearBottom)
+        for height in [CGFloat(400), 320, 450, 500] {
+            XCTAssertNil(tracking.update(.init(bottom: 900, height: height), hasPositionedChat: true, isDragging: false))
+            XCTAssertFalse(tracking.isNearBottom)
+        }
+    }
+
+    func testEqualHeightWidthReductionRestoresTheBottomAfterMessageWrapping() throws {
+        var tracking = KikiRoomChatTracking()
+        XCTAssertNil(tracking.update(.init(bottom: 504, height: 500, width: 700),
+                                     hasPositionedChat: true, isDragging: false))
+        let request = try XCTUnwrap(tracking.update(.init(bottom: 680, height: 500, width: 400),
+                                                    hasPositionedChat: true, isDragging: false))
+        XCTAssertTrue(tracking.mayRestore(request, isDragging: false))
+        XCTAssertNil(tracking.update(.init(bottom: 504, height: 500, width: 400),
+                                     hasPositionedChat: true, isDragging: false))
+        XCTAssertFalse(tracking.mayRestore(request, isDragging: false))
+        XCTAssertTrue(tracking.isNearBottom)
+    }
+
+    func testDraggingCancelsAQueuedRestoreEvenAfterANewerResizeBegins() throws {
+        var tracking = KikiRoomChatTracking()
+        _ = tracking.update(.init(bottom: 504, height: 500), hasPositionedChat: true, isDragging: false)
+        let cancelled = try XCTUnwrap(tracking.update(.init(bottom: 504, height: 300),
+                                                      hasPositionedChat: true, isDragging: false))
+        tracking.beganDragging()
+        XCTAssertFalse(tracking.mayRestore(cancelled, isDragging: false), "A queued closure must stay cancelled after the drag ends")
+        XCTAssertNil(tracking.update(.init(bottom: 700, height: 280), hasPositionedChat: true, isDragging: true))
+        XCTAssertNil(tracking.update(.init(bottom: 700, height: 280), hasPositionedChat: true, isDragging: false))
+        XCTAssertFalse(tracking.isNearBottom)
+        _ = tracking.update(.init(bottom: 284, height: 280), hasPositionedChat: true, isDragging: false)
+        let replacement = try XCTUnwrap(tracking.update(.init(bottom: 284, height: 200),
+                                                        hasPositionedChat: true, isDragging: false))
+        XCTAssertNotEqual(replacement, cancelled)
+        XCTAssertFalse(tracking.mayRestore(cancelled, isDragging: false))
+        XCTAssertFalse(tracking.mayRestore(replacement, isDragging: true))
+        XCTAssertTrue(tracking.mayRestore(replacement, isDragging: false))
+    }
+
+    func testNewMessagesAtTheSameViewportSizeDoNotRequestAResizeRestore() {
+        var tracking = KikiRoomChatTracking()
+        _ = tracking.update(.init(bottom: 504, height: 500), hasPositionedChat: true, isDragging: false)
+        XCTAssertNil(tracking.update(.init(bottom: 620, height: 500), hasPositionedChat: true, isDragging: false),
+                     "Ordinary message following belongs to the timeline/local-send handler")
+        XCTAssertFalse(tracking.isNearBottom)
+        XCTAssertNil(tracking.update(.init(bottom: 680, height: 500), hasPositionedChat: true, isDragging: false))
+    }
+
     func testAnnouncementPollingKeepsOneStableRowAndAnUpdateReplacesIt() {
         let original = KikiRoomAnnouncement(text: "欢迎来到房间", revision: 4, updatedAt: 110, updatedByUserID: "host")
         let first = timeline(announcement: original)
