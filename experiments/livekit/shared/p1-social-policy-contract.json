@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "transport": {
+    "method": "POST",
+    "signature": "account-voice-v1\\nPOST\\n<exact path>\\n<timestamp>\\n<nonce>\\n<sha256(body)>",
+    "headers": [
+      "X-Kiki-Timestamp",
+      "X-Kiki-Nonce",
+      "X-Kiki-Signature"
+    ],
+    "queryParameters": false,
+    "maximumBodyBytes": 16384,
+    "nonceScope": "shared with account/session, revoke, delete and incident; 30-second timestamp window"
+  },
+  "policy": {
+    "path": "/internal/v1/account/social-policy",
+    "requestSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accountID": {
+          "pattern": "^kiki_[a-zA-Z0-9_]{8,64}$",
+          "title": "Accountid",
+          "type": "string"
+        },
+        "targetIDs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Targetids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "accountID"
+      ],
+      "title": "PolicyQuery",
+      "type": "object"
+    },
+    "response": {
+      "schemaVersion": 1,
+      "accountID": "request accountID",
+      "blockedUserIDs": [
+        "both directions, unique full account IDs ordered ascending"
+      ],
+      "currentRooms": [
+        {
+          "userID": "one requested targetID",
+          "roomID": "lk_<32 lowercase hex>"
+        }
+      ],
+      "roomsStale": "Boolean"
+    },
+    "blockedUserIDsLimit": 10000,
+    "overflowStatus": 503,
+    "currentRoomRules": [
+      "Never creates a voice user/session/admission or performs SFU RPC.",
+      "Only targetIDs, at most one current room per target, newest first.",
+      "Requires fresh successful existing admin SFU sample at most 15 seconds old, positive SFU room count, DB active room, undeleted host, active host member, valid unrevoked unexpired account voice session, current legal consent and no platform voice ban.",
+      "Bilateral blocks are checked from the authoritative database for every request.",
+      "If media sample is unknown/stale/failed: currentRooms is empty, roomsStale true; blockedUserIDs remains complete.",
+      "Actor voice ban does not restrict account social policy; actor need not have a voice user record."
+    ]
+  },
+  "block": {
+    "path": "/internal/v1/account/social-block",
+    "requestSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accountID": {
+          "pattern": "^kiki_[a-zA-Z0-9_]{8,64}$",
+          "title": "Accountid",
+          "type": "string"
+        },
+        "targetID": {
+          "pattern": "^kiki_[a-zA-Z0-9_]{8,64}$",
+          "title": "Targetid",
+          "type": "string"
+        },
+        "blocked": {
+          "title": "Blocked",
+          "type": "boolean"
+        },
+        "consentEpoch": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Consentepoch",
+          "type": "integer"
+        },
+        "lastWithdrawalEpoch": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Lastwithdrawalepoch",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "accountID",
+        "targetID",
+        "blocked",
+        "consentEpoch",
+        "lastWithdrawalEpoch"
+      ],
+      "title": "BlockUpdate",
+      "type": "object"
+    },
+    "response": {
+      "schemaVersion": 1,
+      "accountID": "request accountID",
+      "targetID": "request targetID",
+      "blocked": "request Boolean"
+    },
+    "rules": [
+      "Account server authenticates current user and target and injects consentEpoch/lastWithdrawalEpoch; clients cannot choose them.",
+      "Voice safety_blocks is the sole block authority shared with existing /v1/safety/blocks APIs.",
+      "Account-only IDs are supported with no fabricated voice user; migrated relation intentionally has no users foreign keys.",
+      "Cannot block self; at most 500 outgoing blocks per actor, retries and removing any existing block are idempotent.",
+      "Deletion tombstones and standalone/voice/diagnostic consent watermarks reject late consent writes.",
+      "Withdraw/deletion removes both directions for account-only users too; delayed old withdrawal preserves blocks already recorded after re-consent."
+    ]
+  },
+  "library": {
+    "GET /v1/library": {
+      "favorites": "all saved active or ended rooms",
+      "recents": "latest 20 visited active or ended rooms, newest visit first",
+      "created": "owned active or ended rooms",
+      "roomSchema": "Existing room_json preserved: status live or ended; ended audience 0."
+    },
+    "DELETE /v1/history/{room_id}": "Delete only authenticated actor recent record; room persists; idempotent {ok:true}.",
+    "DELETE /v1/history": "Clear only authenticated actor recent records; rooms persist; idempotent {ok:true}.",
+    "PUT /v1/favorites/{room_id}": "Still requires active room.",
+    "DELETE /v1/favorites/{room_id}": "Works for any room status; own relation only."
+  }
+}

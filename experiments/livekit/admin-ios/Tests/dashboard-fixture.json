@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "serverTime": "2026-10-19T02:00:00+00:00",
+  "service": {
+    "id": "voice-lab",
+    "name": "LiveKit 语聊实验服务",
+    "host": "furby.top",
+    "mode": "single-host-laboratory",
+    "readOnly": true
+  },
+  "accountService": {
+    "connected": false,
+    "message": "账号服务尚未接入；下列身份是语聊实验参与身份，并非账号 DAU。"
+  },
+  "operations": {
+    "day": "2026-10-19",
+    "timeZone": "Asia/Shanghai",
+    "activeRooms": 0,
+    "roomsCreatedToday": 0,
+    "roomsEndedToday": 0,
+    "totalRooms": 0,
+    "participatingIdentitiesToday": 0,
+    "totalParticipatingIdentities": 0,
+    "identityMetricNote": "按语聊入场记录去重；邀请码每次登录可生成新身份，不代表真实用户数或账号活跃。",
+    "roomEndTrackingSince": "2026-10-19T02:00:00+00:00"
+  },
+  "capacity": {
+    "activeRooms": 0,
+    "activeParticipants": null,
+    "admittedParticipants": 0,
+    "maxRooms": 4,
+    "maxParticipantsPerRoom": 32,
+    "maxParticipantsTotal": 64,
+    "sfuSampledAt": null,
+    "sfuStale": true
+  },
+  "connections": {
+    "windowSeconds": 300,
+    "attempts": 0,
+    "accepted": 0,
+    "rejected": 0,
+    "reconnects": 0,
+    "activeSignals": 0,
+    "handshakeMsP50": null,
+    "successPercent": null,
+    "sampleNote": "信令接入统计；不是端到端入房成功率；进程重启后重新计数。"
+  },
+  "quality": {
+    "windowSeconds": 300,
+    "samples": 0,
+    "excellent": 0,
+    "good": 0,
+    "poor": 0,
+    "lost": 0,
+    "unknown": 0,
+    "poorPercent": null,
+    "rttMsP50": null,
+    "jitterMsP50": null,
+    "packetLossPercentP50": null
+  },
+  "infrastructure": {
+    "sampledAt": null,
+    "stale": true,
+    "cpuPercent": null,
+    "cpuCores": null,
+    "memoryUsedBytes": null,
+    "memoryTotalBytes": null,
+    "memoryPercent": null,
+    "diskUsedBytes": null,
+    "diskTotalBytes": null,
+    "diskPercent": null,
+    "networkReceiveBytesPerSecond": null,
+    "networkTransmitBytesPerSecond": null,
+    "uptimeSeconds": null,
+    "certificateExpiresAt": null,
+    "certificateDaysRemaining": null,
+    "services": [
+      {
+        "id": "api",
+        "name": "语聊管理/API",
+        "state": "unknown"
+      },
+      {
+        "id": "livekit",
+        "name": "LiveKit SFU",
+        "state": "unknown"
+      },
+      {
+        "id": "nginx",
+        "name": "Nginx",
+        "state": "unknown"
+      },
+      {
+        "id": "haproxy",
+        "name": "TLS/TURN 入口",
+        "state": "unknown"
+      }
+    ]
+  },
+  "health": {
+    "api": "healthy",
+    "sfu": "unknown",
+    "pendingMediaCleanup": 0
+  },
+  "rooms": [
+    {
+      "id": "opaque-room-id",
+      "title": "房间标题",
+      "category": "闲聊",
+      "createdAt": 1792371600,
+      "admittedParticipants": 1,
+      "onlineParticipants": null,
+      "sfuStale": true,
+      "occupiedSeats": 1,
+      "totalSeats": 8,
+      "owners": 1,
+      "admins": 0,
+      "listeners": 0,
+      "audioMutedMembers": 0,
+      "chatMutedMembers": 0
+    }
+  ],
+  "alerts": [
+    {
+      "code": "metrics_warming_up",
+      "level": "info",
+      "message": "服务器采样尚未就绪。"
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="23094" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="Kiki-Launch-VC">
+    <device id="retina6_12" orientation="portrait" appearance="dark"/>
+    <dependencies>
+        <deployment identifier="iOS"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="23084"/>
+        <capability name="Named colors" minToolsVersion="9.0"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <scenes>
+        <!--Kiki Launch Screen-->
+        <scene sceneID="Kiki-Launch-Scene">
+            <objects>
+                <viewController id="Kiki-Launch-VC" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="Kiki-Launch-View">
+                        <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="Kiki-Brand-Group">
+                                <rect key="frame" x="46.5" y="304.5" width="300" height="212"/>
+                                <subviews>
+                                    <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="KikiLaunchMark" translatesAutoresizingMaskIntoConstraints="NO" id="Kiki-Launch-Mark">
+                                        <rect key="frame" x="86" y="0.0" width="128" height="128"/>
+                                        <constraints>
+                                            <constraint firstAttribute="width" constant="128" id="Kiki-Mark-Width"/>
+                                            <constraint firstAttribute="height" constant="128" id="Kiki-Mark-Height"/>
+                                        </constraints>
+                                    </imageView>
+                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Kiki语聊" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" translatesAutoresizingMaskIntoConstraints="NO" id="Kiki-Launch-Title">
+                                        <rect key="frame" x="0.0" y="152" width="300" height="34"/>
+                                        <constraints><constraint firstAttribute="height" constant="34" id="Kiki-Title-Height"/></constraints>
+                                        <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="28"/>
+                                        <color key="textColor" red="0.96862745098039216" green="0.96078431372549022" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                        <nil key="highlightedColor"/>
+                                    </label>
+                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="听见，同频的你" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" translatesAutoresizingMaskIntoConstraints="NO" id="Kiki-Launch-Subtitle">
+                                        <rect key="frame" x="0.0" y="196" width="300" height="16"/>
+                                        <constraints><constraint firstAttribute="height" constant="16" id="Kiki-Subtitle-Height"/></constraints>
+                                        <fontDescription key="fontDescription" type="system" pointSize="13"/>
+                                        <color key="textColor" red="0.70196078431372544" green="0.68627450980392157" blue="0.74901960784313726" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                        <nil key="highlightedColor"/>
+                                    </label>
+                                </subviews>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="300" id="Kiki-Brand-Width"/>
+                                    <constraint firstAttribute="height" constant="212" id="Kiki-Brand-Height"/>
+                                    <constraint firstItem="Kiki-Launch-Mark" firstAttribute="top" secondItem="Kiki-Brand-Group" secondAttribute="top" id="Kiki-Mark-Top"/>
+                                    <constraint firstItem="Kiki-Launch-Mark" firstAttribute="centerX" secondItem="Kiki-Brand-Group" secondAttribute="centerX" id="Kiki-Mark-CenterX"/>
+                                    <constraint firstItem="Kiki-Launch-Title" firstAttribute="top" secondItem="Kiki-Launch-Mark" secondAttribute="bottom" constant="24" id="Kiki-Title-Top"/>
+                                    <constraint firstItem="Kiki-Launch-Title" firstAttribute="leading" secondItem="Kiki-Brand-Group" secondAttribute="leading" id="Kiki-Title-Leading"/>
+                                    <constraint firstItem="Kiki-Launch-Title" firstAttribute="trailing" secondItem="Kiki-Brand-Group" secondAttribute="trailing" id="Kiki-Title-Trailing"/>
+                                    <constraint firstItem="Kiki-Launch-Subtitle" firstAttribute="top" secondItem="Kiki-Launch-Title" secondAttribute="bottom" constant="10" id="Kiki-Subtitle-Top"/>
+                                    <constraint firstItem="Kiki-Launch-Subtitle" firstAttribute="leading" secondItem="Kiki-Brand-Group" secondAttribute="leading" id="Kiki-Subtitle-Leading"/>
+                                    <constraint firstItem="Kiki-Launch-Subtitle" firstAttribute="trailing" secondItem="Kiki-Brand-Group" secondAttribute="trailing" id="Kiki-Subtitle-Trailing"/>
+                                </constraints>
+                            </view>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="让每一种声音，都有回响" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" translatesAutoresizingMaskIntoConstraints="NO" id="Kiki-Launch-Footer">
+                                <rect key="frame" x="136.5" y="787.5" width="120" height="13"/>
+                                <fontDescription key="fontDescription" type="system" pointSize="11"/>
+                                <color key="textColor" red="0.46666666666666667" green="0.45098039215686275" blue="0.50588235294117645" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea" id="Kiki-Launch-SafeArea"/>
+                        <color key="backgroundColor" name="KikiLaunchBackground"/>
+                        <constraints>
+                            <constraint firstItem="Kiki-Brand-Group" firstAttribute="centerX" secondItem="Kiki-Launch-SafeArea" secondAttribute="centerX" id="Kiki-Brand-CenterX"/>
+                            <constraint firstItem="Kiki-Brand-Group" firstAttribute="centerY" secondItem="Kiki-Launch-SafeArea" secondAttribute="centerY" constant="-28" id="Kiki-Brand-CenterY"/>
+                            <constraint firstItem="Kiki-Launch-Footer" firstAttribute="centerX" secondItem="Kiki-Launch-SafeArea" secondAttribute="centerX" id="Kiki-Footer-CenterX"/>
+                            <constraint firstItem="Kiki-Launch-Footer" firstAttribute="centerY" secondItem="Kiki-Launch-SafeArea" secondAttribute="bottom" constant="-24" id="Kiki-Footer-CenterY"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="Kiki-Launch-FirstResponder" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="0.0" y="0.0"/>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="KikiLaunchMark" width="128" height="128"/>
+        <namedColor name="KikiLaunchBackground"><color red="0.062745098039215685" green="0.062745098039215685" blue="0.078431372549019607" alpha="1" colorSpace="custom" customColorSpace="sRGB"/></namedColor>
+    </resources>
+</document>

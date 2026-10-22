@@ -1,0 +1,663 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		013A6C488D48CB2DE4B12101 /* KikiProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC68DF641005EB81ADD8F219 /* KikiProfileView.swift */; };
+		063B27B15E7419188A61A62F /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = 642530C25E1A25A356A1C0ED /* LiveKit */; };
+		136E1724DDCBE884EBD11525 /* KikiGifts.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3D6F527F4C15ECDBA18E26D /* KikiGifts.swift */; };
+		1582B5E953745C0F1F8AD482 /* KikiKeychainRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 984EB14728B62344DAE62560 /* KikiKeychainRuntimeTests.swift */; };
+		1D2C48035AD944971EF69E32 /* KikiAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0886CC7AC60E30870C7D13 /* KikiAPIClient.swift */; };
+		1D614C7276F29386BAE47307 /* KikiSDKAvatarTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = 396321A76069E33573FA9E4A /* KikiSDKAvatarTrust.swift */; };
+		2138A4B47B5B86E6B99FF7AA /* KikiLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 576B195B455829AF9EFD57DA /* KikiLoginView.swift */; };
+		24DC2273FF1263AEF74C346E /* KikiCreateRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1846501251A59AA8D66F6D28 /* KikiCreateRoomView.swift */; };
+		311D9607D717BF6DDF504A48 /* KikiRTCService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A96195E58EE1222C0C60E9F5 /* KikiRTCService.swift */; };
+		3A351EB978012DE372B6C99A /* KikiGiftTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AFAF33F816BAA724CBE64A3 /* KikiGiftTests.swift */; };
+		4E8C1778B962F1B74E37FF3E /* KikiLiveKitRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42CFD85601AB6C09A4178D9C /* KikiLiveKitRoomView.swift */; };
+		4F4EFED2260C784871987D91 /* KikiVoiceRoomFloatingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA405C589E182C48CF94F5F0 /* KikiVoiceRoomFloatingOverlay.swift */; };
+		54E7AB51673E4120B025C566 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1B065EA51DE1D2CA632F2D43 /* Foundation.framework */; };
+		5FCA6745777189852D74BBD8 /* KikiLiveKitTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19E51533477AB75610F25BCD /* KikiLiveKitTransportTests.swift */; };
+		6171EB6132A5364D9C0B0FD2 /* KikiLegal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30BB8436CA71D8B6F6DB15BD /* KikiLegal.swift */; };
+		652DC020F7753D9047B970E8 /* KikiDemoRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD2489B8A161F0E8A90A5F3 /* KikiDemoRootView.swift */; };
+		670CF73AFC81C61E2BA001BE /* KikiDemoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF1977A0BCDA5428D0E721A8 /* KikiDemoStore.swift */; };
+		703DCE1BC1CD56550070D6FA /* KikiDemoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD599C7B279D2A4EB9AA566E /* KikiDemoApp.swift */; };
+		7232CF327BB8F587A4FE9485 /* KikiLegalDocuments.json in Resources */ = {isa = PBXBuildFile; fileRef = 8D50286DCC15539E5BC8AD3A /* KikiLegalDocuments.json */; };
+		8140275824F69D277DB79F6A /* Gifts in Resources */ = {isa = PBXBuildFile; fileRef = 408474FCA250A32ABE9FE9E4 /* Gifts */; };
+		83E5A3B6E26697C260B80CF5 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 16677050E63F2E1A8D3C9BB6 /* PrivacyInfo.xcprivacy */; };
+		98730E5837C7EAC89D91CE7C /* KikiGiftRealtimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9386B040666B48ACC4FCD8CD /* KikiGiftRealtimeTests.swift */; };
+		9C4D5797EE4BD8E408ED6D49 /* KikiDemoStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFABF7E762FC10BB9DB2A99D /* KikiDemoStoreTests.swift */; };
+		A1BD8EE92CA1153C866E77E6 /* KikiLaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 4663ECEAA45FE70F44B3E510 /* KikiLaunchScreen.storyboard */; };
+		AE7C2E0876DB33F53D35D192 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1B065EA51DE1D2CA632F2D43 /* Foundation.framework */; };
+		AFA0EEB1DF4B1882B036AF26 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8077022EB80B76221CA6920B /* Assets.xcassets */; };
+		D079E7EC8AA69F0AE2547A92 /* KikiConsentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05F8B77DC3BD028E12D5776D /* KikiConsentTests.swift */; };
+		D258B41C050FACB5AFB50C98 /* KikiAPIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25791E75F3D8B00A35286587 /* KikiAPIClientTests.swift */; };
+		D6237D252FE8685E2CD28F90 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = C9F41F06739A0BDE045E2050 /* LiveKit */; };
+		DDD74B760277E92D84E4704B /* KikiLegalViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C835FD584435755B7A1B91A2 /* KikiLegalViews.swift */; };
+		E26695A89BB427ACE9266A04 /* KikiRealtimeIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55BB3F3DF7D63F913779D344 /* KikiRealtimeIntegrationTests.swift */; };
+		D4CC8F923CA9A1A9021B0101 /* KikiRoomRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4CC8F923CA9A1A9021B0102 /* KikiRoomRuntime.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		59CB2F1B3D2C8DD74EED355C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4363010DF280B1C6D68C420C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 06A079C36226B062E7D84F9D;
+			remoteInfo = KikiLiveKitLab;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		05F8B77DC3BD028E12D5776D /* KikiConsentTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiConsentTests.swift; sourceTree = "<group>"; };
+		16677050E63F2E1A8D3C9BB6 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		1846501251A59AA8D66F6D28 /* KikiCreateRoomView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiCreateRoomView.swift; sourceTree = "<group>"; };
+		19E51533477AB75610F25BCD /* KikiLiveKitTransportTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiLiveKitTransportTests.swift; sourceTree = "<group>"; };
+		1B065EA51DE1D2CA632F2D43 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		25791E75F3D8B00A35286587 /* KikiAPIClientTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiAPIClientTests.swift; sourceTree = "<group>"; };
+		30BB8436CA71D8B6F6DB15BD /* KikiLegal.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiLegal.swift; sourceTree = "<group>"; };
+		396321A76069E33573FA9E4A /* KikiSDKAvatarTrust.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiSDKAvatarTrust.swift; sourceTree = "<group>"; };
+		408474FCA250A32ABE9FE9E4 /* Gifts */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; name = Gifts; path = Resources/Gifts; sourceTree = "<group>"; };
+		42CFD85601AB6C09A4178D9C /* KikiLiveKitRoomView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiLiveKitRoomView.swift; sourceTree = "<group>"; };
+		4663ECEAA45FE70F44B3E510 /* KikiLaunchScreen.storyboard */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file.storyboard; path = KikiLaunchScreen.storyboard; sourceTree = "<group>"; };
+		55BB3F3DF7D63F913779D344 /* KikiRealtimeIntegrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiRealtimeIntegrationTests.swift; sourceTree = "<group>"; };
+		576B195B455829AF9EFD57DA /* KikiLoginView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiLoginView.swift; sourceTree = "<group>"; };
+		7BD2489B8A161F0E8A90A5F3 /* KikiDemoRootView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiDemoRootView.swift; sourceTree = "<group>"; };
+		8077022EB80B76221CA6920B /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		80A5DFA7E0D2867803010238 /* KikiTalk.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = KikiTalk.entitlements; sourceTree = "<group>"; };
+		8D50286DCC15539E5BC8AD3A /* KikiLegalDocuments.json */ = {isa = PBXFileReference; includeInIndex = 1; name = KikiLegalDocuments.json; path = Resources/KikiLegalDocuments.json; sourceTree = "<group>"; };
+		9386B040666B48ACC4FCD8CD /* KikiGiftRealtimeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiGiftRealtimeTests.swift; sourceTree = "<group>"; };
+		984EB14728B62344DAE62560 /* KikiKeychainRuntimeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiKeychainRuntimeTests.swift; sourceTree = "<group>"; };
+		9AFAF33F816BAA724CBE64A3 /* KikiGiftTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiGiftTests.swift; sourceTree = "<group>"; };
+		A96195E58EE1222C0C60E9F5 /* KikiRTCService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiRTCService.swift; sourceTree = "<group>"; };
+		AA405C589E182C48CF94F5F0 /* KikiVoiceRoomFloatingOverlay.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiVoiceRoomFloatingOverlay.swift; sourceTree = "<group>"; };
+		AC68DF641005EB81ADD8F219 /* KikiProfileView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiProfileView.swift; sourceTree = "<group>"; };
+		AFB841286D3D32BD11BFEEE3 /* KikiLiveKitLab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KikiLiveKitLab.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C835FD584435755B7A1B91A2 /* KikiLegalViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiLegalViews.swift; sourceTree = "<group>"; };
+		D8B9E7CC439833DE5246AE5B /* KikiInfo.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = KikiInfo.plist; sourceTree = "<group>"; };
+		DD599C7B279D2A4EB9AA566E /* KikiDemoApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiDemoApp.swift; sourceTree = "<group>"; };
+		DFABF7E762FC10BB9DB2A99D /* KikiDemoStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiDemoStoreTests.swift; sourceTree = "<group>"; };
+		E3D6F527F4C15ECDBA18E26D /* KikiGifts.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiGifts.swift; sourceTree = "<group>"; };
+		E67A7FC854185C2B3CA0C42A /* KikiLiveKitLabTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KikiLiveKitLabTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		EF1977A0BCDA5428D0E721A8 /* KikiDemoStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiDemoStore.swift; sourceTree = "<group>"; };
+		FC0886CC7AC60E30870C7D13 /* KikiAPIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiAPIClient.swift; sourceTree = "<group>"; };
+		D4CC8F923CA9A1A9021B0102 /* KikiRoomRuntime.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KikiRoomRuntime.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		3F8505D2E90077ABC335A18B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AE7C2E0876DB33F53D35D192 /* Foundation.framework in Frameworks */,
+				063B27B15E7419188A61A62F /* LiveKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F5501259DB4FB726514A2137 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				54E7AB51673E4120B025C566 /* Foundation.framework in Frameworks */,
+				D6237D252FE8685E2CD28F90 /* LiveKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		19D44F7B825A7A5540A86F20 /* Demo */ = {
+			isa = PBXGroup;
+			children = (
+				1846501251A59AA8D66F6D28 /* KikiCreateRoomView.swift */,
+				DD599C7B279D2A4EB9AA566E /* KikiDemoApp.swift */,
+				7BD2489B8A161F0E8A90A5F3 /* KikiDemoRootView.swift */,
+				EF1977A0BCDA5428D0E721A8 /* KikiDemoStore.swift */,
+				AC68DF641005EB81ADD8F219 /* KikiProfileView.swift */,
+				A96195E58EE1222C0C60E9F5 /* KikiRTCService.swift */,
+				D4CC8F923CA9A1A9021B0102 /* KikiRoomRuntime.swift */,
+				E3D6F527F4C15ECDBA18E26D /* KikiGifts.swift */,
+				FC0886CC7AC60E30870C7D13 /* KikiAPIClient.swift */,
+				576B195B455829AF9EFD57DA /* KikiLoginView.swift */,
+				396321A76069E33573FA9E4A /* KikiSDKAvatarTrust.swift */,
+				30BB8436CA71D8B6F6DB15BD /* KikiLegal.swift */,
+				C835FD584435755B7A1B91A2 /* KikiLegalViews.swift */,
+				AA405C589E182C48CF94F5F0 /* KikiVoiceRoomFloatingOverlay.swift */,
+				8077022EB80B76221CA6920B /* Assets.xcassets */,
+				4663ECEAA45FE70F44B3E510 /* KikiLaunchScreen.storyboard */,
+				8D50286DCC15539E5BC8AD3A /* KikiLegalDocuments.json */,
+				408474FCA250A32ABE9FE9E4 /* Gifts */,
+				16677050E63F2E1A8D3C9BB6 /* PrivacyInfo.xcprivacy */,
+				D8B9E7CC439833DE5246AE5B /* KikiInfo.plist */,
+				80A5DFA7E0D2867803010238 /* KikiTalk.entitlements */,
+				42CFD85601AB6C09A4178D9C /* KikiLiveKitRoomView.swift */,
+			);
+			name = Demo;
+			path = Demo;
+			sourceTree = "<group>";
+		};
+		4A467FD9AF2992382EFB8536 /* DemoTests */ = {
+			isa = PBXGroup;
+			children = (
+				25791E75F3D8B00A35286587 /* KikiAPIClientTests.swift */,
+				05F8B77DC3BD028E12D5776D /* KikiConsentTests.swift */,
+				DFABF7E762FC10BB9DB2A99D /* KikiDemoStoreTests.swift */,
+				9386B040666B48ACC4FCD8CD /* KikiGiftRealtimeTests.swift */,
+				9AFAF33F816BAA724CBE64A3 /* KikiGiftTests.swift */,
+				55BB3F3DF7D63F913779D344 /* KikiRealtimeIntegrationTests.swift */,
+				19E51533477AB75610F25BCD /* KikiLiveKitTransportTests.swift */,
+				984EB14728B62344DAE62560 /* KikiKeychainRuntimeTests.swift */,
+			);
+			name = DemoTests;
+			path = DemoTests;
+			sourceTree = "<group>";
+		};
+		673830640585A26C7AF60612 = {
+			isa = PBXGroup;
+			children = (
+				D9EAF0FBF59680D377094C8B /* Products */,
+				F71C6962BBA8F7FDD8AE945E /* Frameworks */,
+				19D44F7B825A7A5540A86F20 /* Demo */,
+				4A467FD9AF2992382EFB8536 /* DemoTests */,
+			);
+			sourceTree = "<group>";
+		};
+		D9EAF0FBF59680D377094C8B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AFB841286D3D32BD11BFEEE3 /* KikiLiveKitLab.app */,
+				E67A7FC854185C2B3CA0C42A /* KikiLiveKitLabTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		EF715A9DE1E470D8C0341482 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				1B065EA51DE1D2CA632F2D43 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		F71C6962BBA8F7FDD8AE945E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				EF715A9DE1E470D8C0341482 /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		06A079C36226B062E7D84F9D /* KikiLiveKitLab */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0B985E7C2DF7D79019E0A653 /* Build configuration list for PBXNativeTarget "KikiLiveKitLab" */;
+			buildPhases = (
+				FE02A40B42B823CE6DB12794 /* Sources */,
+				F5501259DB4FB726514A2137 /* Frameworks */,
+				A1761E150D223F3E858AF964 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KikiLiveKitLab;
+			packageProductDependencies = (
+				C9F41F06739A0BDE045E2050 /* LiveKit */,
+			);
+			productName = KikiLiveKitLab;
+			productReference = AFB841286D3D32BD11BFEEE3 /* KikiLiveKitLab.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A479BFA7CC4757B228BA068E /* KikiLiveKitLabTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C61BE6B6ED9238CC016C72E0 /* Build configuration list for PBXNativeTarget "KikiLiveKitLabTests" */;
+			buildPhases = (
+				11645BF44B212F3727B2AE6C /* Sources */,
+				3F8505D2E90077ABC335A18B /* Frameworks */,
+				056D78472C65FE61055D79E3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B9258EDE5F8F578A1E67B8C3 /* PBXTargetDependency */,
+			);
+			name = KikiLiveKitLabTests;
+			packageProductDependencies = (
+				642530C25E1A25A356A1C0ED /* LiveKit */,
+			);
+			productName = KikiLiveKitLabTests;
+			productReference = E67A7FC854185C2B3CA0C42A /* KikiLiveKitLabTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4363010DF280B1C6D68C420C /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					06A079C36226B062E7D84F9D = {
+						CreatedOnToolsVersion = 26.5;
+						DevelopmentTeam = A82X46N3WS;
+						ProvisioningStyle = Automatic;
+						SystemCapabilities = {
+						};
+					};
+				};
+			};
+			buildConfigurationList = E83B100BB25163F6F40D367E /* Build configuration list for PBXProject "KikiLiveKitLab" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = "zh-Hans";
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				"zh-Hans",
+				en,
+				Base,
+			);
+			mainGroup = 673830640585A26C7AF60612;
+			minimizedProjectReferenceProxies = 0;
+			packageReferences = (
+				2D23EDF36230F61930B4777D /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
+			);
+			preferredProjectObjectVersion = 100;
+			productRefGroup = D9EAF0FBF59680D377094C8B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				06A079C36226B062E7D84F9D /* KikiLiveKitLab */,
+				A479BFA7CC4757B228BA068E /* KikiLiveKitLabTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		056D78472C65FE61055D79E3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1761E150D223F3E858AF964 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AFA0EEB1DF4B1882B036AF26 /* Assets.xcassets in Resources */,
+				A1BD8EE92CA1153C866E77E6 /* KikiLaunchScreen.storyboard in Resources */,
+				7232CF327BB8F587A4FE9485 /* KikiLegalDocuments.json in Resources */,
+				8140275824F69D277DB79F6A /* Gifts in Resources */,
+				83E5A3B6E26697C260B80CF5 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		11645BF44B212F3727B2AE6C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D258B41C050FACB5AFB50C98 /* KikiAPIClientTests.swift in Sources */,
+				D079E7EC8AA69F0AE2547A92 /* KikiConsentTests.swift in Sources */,
+				9C4D5797EE4BD8E408ED6D49 /* KikiDemoStoreTests.swift in Sources */,
+				98730E5837C7EAC89D91CE7C /* KikiGiftRealtimeTests.swift in Sources */,
+				3A351EB978012DE372B6C99A /* KikiGiftTests.swift in Sources */,
+				E26695A89BB427ACE9266A04 /* KikiRealtimeIntegrationTests.swift in Sources */,
+				5FCA6745777189852D74BBD8 /* KikiLiveKitTransportTests.swift in Sources */,
+				1582B5E953745C0F1F8AD482 /* KikiKeychainRuntimeTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FE02A40B42B823CE6DB12794 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				24DC2273FF1263AEF74C346E /* KikiCreateRoomView.swift in Sources */,
+				703DCE1BC1CD56550070D6FA /* KikiDemoApp.swift in Sources */,
+				652DC020F7753D9047B970E8 /* KikiDemoRootView.swift in Sources */,
+				670CF73AFC81C61E2BA001BE /* KikiDemoStore.swift in Sources */,
+				013A6C488D48CB2DE4B12101 /* KikiProfileView.swift in Sources */,
+				311D9607D717BF6DDF504A48 /* KikiRTCService.swift in Sources */,
+				D4CC8F923CA9A1A9021B0101 /* KikiRoomRuntime.swift in Sources */,
+				136E1724DDCBE884EBD11525 /* KikiGifts.swift in Sources */,
+				1D2C48035AD944971EF69E32 /* KikiAPIClient.swift in Sources */,
+				2138A4B47B5B86E6B99FF7AA /* KikiLoginView.swift in Sources */,
+				1D614C7276F29386BAE47307 /* KikiSDKAvatarTrust.swift in Sources */,
+				6171EB6132A5364D9C0B0FD2 /* KikiLegal.swift in Sources */,
+				DDD74B760277E92D84E4704B /* KikiLegalViews.swift in Sources */,
+				4F4EFED2260C784871987D91 /* KikiVoiceRoomFloatingOverlay.swift in Sources */,
+				4E8C1778B962F1B74E37FF3E /* KikiLiveKitRoomView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B9258EDE5F8F578A1E67B8C3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = KikiLiveKitLab;
+			target = 06A079C36226B062E7D84F9D /* KikiLiveKitLab */;
+			targetProxy = 59CB2F1B3D2C8DD74EED355C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		22D9D0B4C6F4910E623B80BC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = A82X46N3WS;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.kikitalk.livekitlab.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/KikiLiveKitLab.app/KikiLiveKitLab";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		5B1BE1D74A2F2B01B8FDFA18 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = KikiAppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = Demo/KikiTalk.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_LANGUAGE = "zh-Hans";
+				DEVELOPMENT_TEAM = A82X46N3WS;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Demo/KikiInfo.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Kiki实验版";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
+				INFOPLIST_KEY_NSCameraUsageDescription = "实验版当前仅提供语聊；视频功能尚未启用。";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "在你主动开麦后，通过实验服务器的 LiveKit 语聊服务向房间成员传送声音。";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "用于从系统照片选择器读取你选中的头像照片，确认保存后上传并公开展示。";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kikitalk.livekitlab;
+				PRODUCT_NAME = KikiLiveKitLab;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) KIKI_DEMO_STANDALONE KIKI_LIVEKIT_LAB";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		8423AAE3CE75BAB767E027EA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = A82X46N3WS;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.kikitalk.livekitlab.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/KikiLiveKitLab.app/KikiLiveKitLab";
+			};
+			name = Debug;
+		};
+		9D109FAFA83FBD60741ECDE1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		B944BED86C0AE5DA262C1000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = KikiAppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = Demo/KikiTalk.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_LANGUAGE = "zh-Hans";
+				DEVELOPMENT_TEAM = A82X46N3WS;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Demo/KikiInfo.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Kiki实验版";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
+				INFOPLIST_KEY_NSCameraUsageDescription = "实验版当前仅提供语聊；视频功能尚未启用。";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "在你主动开麦后，通过实验服务器的 LiveKit 语聊服务向房间成员传送声音。";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "用于从系统照片选择器读取你选中的头像照片，确认保存后上传并公开展示。";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kikitalk.livekitlab;
+				PRODUCT_NAME = KikiLiveKitLab;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) KIKI_DEMO_STANDALONE KIKI_LIVEKIT_LAB";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		EBDD47169C6969E7838E4A94 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0B985E7C2DF7D79019E0A653 /* Build configuration list for PBXNativeTarget "KikiLiveKitLab" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5B1BE1D74A2F2B01B8FDFA18 /* Release */,
+				B944BED86C0AE5DA262C1000 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C61BE6B6ED9238CC016C72E0 /* Build configuration list for PBXNativeTarget "KikiLiveKitLabTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				22D9D0B4C6F4910E623B80BC /* Release */,
+				8423AAE3CE75BAB767E027EA /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E83B100BB25163F6F40D367E /* Build configuration list for PBXProject "KikiLiveKitLab" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EBDD47169C6969E7838E4A94 /* Debug */,
+				9D109FAFA83FBD60741ECDE1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		2D23EDF36230F61930B4777D /* XCRemoteSwiftPackageReference "client-sdk-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/livekit/client-sdk-swift.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.18.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		642530C25E1A25A356A1C0ED /* LiveKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2D23EDF36230F61930B4777D /* XCRemoteSwiftPackageReference "client-sdk-swift" */;
+			productName = LiveKit;
+		};
+		C9F41F06739A0BDE045E2050 /* LiveKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2D23EDF36230F61930B4777D /* XCRemoteSwiftPackageReference "client-sdk-swift" */;
+			productName = LiveKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 4363010DF280B1C6D68C420C /* Project object */;
+}

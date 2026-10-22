@@ -1,0 +1,586 @@
+{
+  "schemaVersion": 1,
+  "scope": "创建、入房与房内错误/警告诊断；不存Apple身份、token、IP、任意URL、房间/消息正文或原始错误文本。",
+  "public": {
+    "method": "POST",
+    "path": "/v1/telemetry/incidents",
+    "authorization": "有效语聊业务Bearer及当前同意；允许语聊封禁用户上报",
+    "status": 202,
+    "response": {
+      "accepted": true,
+      "eventID": "原UUID",
+      "duplicate": false
+    },
+    "platform": "只接受ios/ipados；server保留给可信服务观测"
+  },
+  "fallback": {
+    "publicPath": "账号服务器 /v1/voice/incidents",
+    "internalPath": "/internal/v1/account/incident",
+    "method": "POST",
+    "signature": "account-voice-v1换行连接domain,POST,exactPath,timestamp,nonce,SHA256(rawBody)后HMAC-SHA256；共享nonce池。无query/Authorization，精确application/json，重复headers拒绝。",
+    "schema": {
+      "$defs": {
+        "Incident": {
+          "additionalProperties": false,
+          "properties": {
+            "eventID": {
+              "maxLength": 36,
+              "minLength": 36,
+              "title": "Eventid",
+              "type": "string"
+            },
+            "attemptID": {
+              "maxLength": 36,
+              "minLength": 36,
+              "title": "Attemptid",
+              "type": "string"
+            },
+            "operation": {
+              "enum": [
+                "create_room",
+                "join_room",
+                "room_runtime"
+              ],
+              "title": "Operation",
+              "type": "string"
+            },
+            "stage": {
+              "enum": [
+                "account_authorization",
+                "room_api",
+                "token_api",
+                "media_connect",
+                "state_sync",
+                "media_runtime",
+                "reconnect",
+                "safety_sync",
+                "chat_sync",
+                "audio_policy",
+                "room_action",
+                "room_leave"
+              ],
+              "title": "Stage",
+              "type": "string"
+            },
+            "severity": {
+              "enum": [
+                "warning",
+                "error"
+              ],
+              "title": "Severity",
+              "type": "string"
+            },
+            "code": {
+              "enum": [
+                "request_timeout",
+                "network_unavailable",
+                "network_connection_lost",
+                "network_tls_failed",
+                "network_error",
+                "http_unauthorized",
+                "http_forbidden",
+                "http_not_found",
+                "http_conflict",
+                "http_rate_limited",
+                "http_server_error",
+                "http_invalid_response",
+                "consent_required",
+                "capacity_reached",
+                "room_ended",
+                "voice_banned",
+                "chat_muted",
+                "voice_muted",
+                "content_filtered",
+                "media_connect_timeout",
+                "media_connect_failed",
+                "media_disconnected",
+                "reconnect_failed",
+                "state_sync_failed",
+                "audio_publish_failed",
+                "audio_permission_denied",
+                "quality_poor",
+                "quality_lost",
+                "unknown_error"
+              ],
+              "maxLength": 40,
+              "title": "Code",
+              "type": "string"
+            },
+            "occurredAt": {
+              "minimum": 1,
+              "title": "Occurredat",
+              "type": "integer"
+            },
+            "elapsedMs": {
+              "anyOf": [
+                {
+                  "maximum": 3600000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Elapsedms"
+            },
+            "roomID": {
+              "anyOf": [
+                {
+                  "pattern": "^lk_[a-f0-9]{32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Roomid"
+            },
+            "requestID": {
+              "anyOf": [
+                {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Requestid"
+            },
+            "httpStatus": {
+              "anyOf": [
+                {
+                  "maximum": 599,
+                  "minimum": 400,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Httpstatus"
+            },
+            "platform": {
+              "enum": [
+                "ios",
+                "ipados",
+                "server"
+              ],
+              "title": "Platform",
+              "type": "string"
+            },
+            "appVersion": {
+              "maxLength": 32,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9 .()_-]+$",
+              "title": "Appversion",
+              "type": "string"
+            },
+            "osVersion": {
+              "maxLength": 32,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9 .()_-]+$",
+              "title": "Osversion",
+              "type": "string"
+            }
+          },
+          "required": [
+            "eventID",
+            "attemptID",
+            "operation",
+            "stage",
+            "severity",
+            "code",
+            "occurredAt",
+            "platform",
+            "appVersion",
+            "osVersion"
+          ],
+          "title": "Incident",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "accountID": {
+          "pattern": "^kiki_[a-zA-Z0-9_]{8,64}$",
+          "title": "Accountid",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 16,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "consentEpoch": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Consentepoch",
+          "type": "integer"
+        },
+        "lastWithdrawalEpoch": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Lastwithdrawalepoch",
+          "type": "integer"
+        },
+        "source": {
+          "enum": [
+            "client",
+            "account"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "event": {
+          "$ref": "#/$defs/Incident"
+        }
+      },
+      "required": [
+        "accountID",
+        "name",
+        "consentEpoch",
+        "lastWithdrawalEpoch",
+        "source",
+        "event"
+      ],
+      "title": "AccountIncident",
+      "type": "object"
+    },
+    "source": "client只允许ios/ipados；account必须platform=server,appVersion=account-api,osVersion=server"
+  },
+  "eventSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "eventID": {
+        "maxLength": 36,
+        "minLength": 36,
+        "title": "Eventid",
+        "type": "string"
+      },
+      "attemptID": {
+        "maxLength": 36,
+        "minLength": 36,
+        "title": "Attemptid",
+        "type": "string"
+      },
+      "operation": {
+        "enum": [
+          "create_room",
+          "join_room",
+          "room_runtime"
+        ],
+        "title": "Operation",
+        "type": "string"
+      },
+      "stage": {
+        "enum": [
+          "account_authorization",
+          "room_api",
+          "token_api",
+          "media_connect",
+          "state_sync",
+          "media_runtime",
+          "reconnect",
+          "safety_sync",
+          "chat_sync",
+          "audio_policy",
+          "room_action",
+          "room_leave"
+        ],
+        "title": "Stage",
+        "type": "string"
+      },
+      "severity": {
+        "enum": [
+          "warning",
+          "error"
+        ],
+        "title": "Severity",
+        "type": "string"
+      },
+      "code": {
+        "enum": [
+          "request_timeout",
+          "network_unavailable",
+          "network_connection_lost",
+          "network_tls_failed",
+          "network_error",
+          "http_unauthorized",
+          "http_forbidden",
+          "http_not_found",
+          "http_conflict",
+          "http_rate_limited",
+          "http_server_error",
+          "http_invalid_response",
+          "consent_required",
+          "capacity_reached",
+          "room_ended",
+          "voice_banned",
+          "chat_muted",
+          "voice_muted",
+          "content_filtered",
+          "media_connect_timeout",
+          "media_connect_failed",
+          "media_disconnected",
+          "reconnect_failed",
+          "state_sync_failed",
+          "audio_publish_failed",
+          "audio_permission_denied",
+          "quality_poor",
+          "quality_lost",
+          "unknown_error"
+        ],
+        "maxLength": 40,
+        "title": "Code",
+        "type": "string"
+      },
+      "occurredAt": {
+        "minimum": 1,
+        "title": "Occurredat",
+        "type": "integer"
+      },
+      "elapsedMs": {
+        "anyOf": [
+          {
+            "maximum": 3600000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Elapsedms"
+      },
+      "roomID": {
+        "anyOf": [
+          {
+            "pattern": "^lk_[a-f0-9]{32}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Roomid"
+      },
+      "requestID": {
+        "anyOf": [
+          {
+            "maxLength": 36,
+            "minLength": 36,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Requestid"
+      },
+      "httpStatus": {
+        "anyOf": [
+          {
+            "maximum": 599,
+            "minimum": 400,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Httpstatus"
+      },
+      "platform": {
+        "enum": [
+          "ios",
+          "ipados",
+          "server"
+        ],
+        "title": "Platform",
+        "type": "string"
+      },
+      "appVersion": {
+        "maxLength": 32,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9 .()_-]+$",
+        "title": "Appversion",
+        "type": "string"
+      },
+      "osVersion": {
+        "maxLength": 32,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9 .()_-]+$",
+        "title": "Osversion",
+        "type": "string"
+      }
+    },
+    "required": [
+      "eventID",
+      "attemptID",
+      "operation",
+      "stage",
+      "severity",
+      "code",
+      "occurredAt",
+      "platform",
+      "appVersion",
+      "osVersion"
+    ],
+    "title": "Incident",
+    "type": "object"
+  },
+  "serverEvidence": {
+    "requestHeader": "X-Kiki-Attempt-ID UUID可选",
+    "responseHeader": "X-Kiki-Request-ID UUID由服务器生成",
+    "source": "client|server|account，服务端注入",
+    "methods": "POST /v1/rooms、POST /v1/rooms/{id}/token、GET /v1/rooms/{id}/state返回4xx记warning、5xx记error。正常取消/离房不记。",
+    "counting": "同一userID+attemptID的create_room/join_room多侧证据合并为一次失败尝试"
+  },
+  "retention": {
+    "days": 7,
+    "globalMaxEvents": 10000,
+    "userSubmittedPerMinute": 20,
+    "userSubmittedPerDay": 100,
+    "userServerPerMinute": 30,
+    "userServerPerDay": 300,
+    "qualityDedupSeconds": 60,
+    "timestamps": "occurredAt/receivedAt/trackingSince严格Unix整数秒；最旧7天、未来最多5分钟；elapsedMs整数毫秒",
+    "erasure": "注销清全部；撤回按同意epoch清事件并记独立水位。fallback无需user存在，不创建业务用户。",
+    "idempotency": "全局eventID唯一，同user+同内容+source重复返回duplicate，改内容或其他用户复用UUID返回409；重复不占配额",
+    "trustedLane": "server/account合计30/min300/day，与client提交配额独立",
+    "withdrawalWatermarkDays": 32
+  },
+  "dashboard": {
+    "path": "顶层incidents",
+    "fields": [
+      "schemaVersion",
+      "trackingSince",
+      "retentionDays",
+      "totalEvents",
+      "errorsLast24Hours",
+      "warningsLast24Hours",
+      "failedAttemptsLast24Hours",
+      "events"
+    ],
+    "events": "最近50条Event加userID/userName/source/receivedAt/message",
+    "counts": "按occurredAt近24h，failedAttempts为(userID,attemptID)去重create/join失败尝试，不是失败率"
+  },
+  "query": {
+    "publicProxy": "账号 /admin/v2/services/voice/incidents/query，voice只读权限",
+    "internalPath": "/internal/admin/v2/incidents/query",
+    "method": "POST",
+    "signature": "account-voice-ops-v2固定method/path/bodyhash签名，共享nonce池",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "severity": {
+          "default": "all",
+          "enum": [
+            "all",
+            "warning",
+            "error"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "operation": {
+          "default": "all",
+          "enum": [
+            "all",
+            "create_room",
+            "join_room",
+            "room_runtime"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "userQuery": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Userquery"
+        },
+        "limit": {
+          "default": 50,
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        }
+      },
+      "title": "IncidentQuery",
+      "type": "object"
+    },
+    "response": {
+      "schemaVersion": 1,
+      "events": "同dashboard",
+      "nextCursor": "末条eventID或null",
+      "retentionDays": 7
+    },
+    "ordering": "receivedAt DESC,eventID DESC；过期cursor422刷新。userQuery按公开userID/name参数化包含搜索，%_按字面匹配"
+  },
+  "messages": {
+    "request_timeout": "请求超时，未及时取得响应",
+    "network_unavailable": "设备网络不可用",
+    "network_connection_lost": "网络连接中断",
+    "network_tls_failed": "安全连接建立失败",
+    "network_error": "网络请求失败",
+    "http_unauthorized": "业务登录授权不可用",
+    "http_forbidden": "操作权限被拒绝",
+    "http_not_found": "请求的房间或资源不存在",
+    "http_conflict": "房间状态或操作发生冲突",
+    "http_rate_limited": "请求受到频率限制",
+    "http_server_error": "服务端处理失败",
+    "http_invalid_response": "服务响应格式不正确",
+    "consent_required": "需要确认当前隐私协议",
+    "capacity_reached": "房间或服务准入达到上限",
+    "room_ended": "目标房间已经结束",
+    "voice_banned": "账号受到语聊限制",
+    "chat_muted": "账号受到文字禁言限制",
+    "voice_muted": "账号受到上麦限制",
+    "content_filtered": "内容未通过过滤",
+    "media_connect_timeout": "媒体连接建立超时",
+    "media_connect_failed": "媒体连接建立失败",
+    "media_disconnected": "媒体连接意外断开",
+    "reconnect_failed": "媒体重连失败",
+    "state_sync_failed": "房间状态同步失败",
+    "audio_publish_failed": "麦克风音轨发布失败",
+    "audio_permission_denied": "麦克风权限不可用",
+    "quality_poor": "音频连接质量较差",
+    "quality_lost": "音频连接质量丢失",
+    "unknown_error": "未分类的房间错误"
+  }
+}

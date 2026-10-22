@@ -1,0 +1,19 @@
+# Machine-local credentials and generated files never belong in this snapshot.
+.private/
+.local/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+*.p12
+*.mobileprovision
+*_nginx.zip
+**/Pods/
+**/build/
+**/DerivedData/
+**/xcuserdata/
+*.xcuserstate
+**/__pycache__/
+*.pyc

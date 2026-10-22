@@ -5,3 +5,4 @@ application/App-UIKit.xcworkspace/xcuserdata
 **/xcuserdata/
 *.xcuserstate
 .DS_Store
+*.p8

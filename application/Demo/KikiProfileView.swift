@@ -4,9 +4,11 @@ import ImageIO
 
 @available(iOS 16.0, *)
 struct KikiProfileView: View {
+    var isActive = true
     @EnvironmentObject private var store: KikiDemoStore
     @State private var activeSheet: KikiProfileSheet?
     @State private var pendingRoom: DemoRoom?
+    @State private var relationship: KikiRelationshipKind?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -14,7 +16,7 @@ struct KikiProfileView: View {
                 heading
                 identity
                 activity
-                voiceCard
+                KikiGiftWalletCard(gifts: store.gifts)
                 library
                 preferences
                 footer
@@ -22,40 +24,26 @@ struct KikiProfileView: View {
             .padding(.horizontal, 22)
             .padding(.top, 18)
             .padding(.bottom, 30)
+            .frame(maxWidth: 720).frame(maxWidth: .infinity)
         }
         .background(KikiPalette.background.ignoresSafeArea())
         .sheet(item: $activeSheet, onDismiss: openPendingRoom) { sheet in
             sheetContent(sheet)
                 .environmentObject(store)
-                .preferredColorScheme(.dark)
                 .presentationDragIndicator(.visible)
         }
-        .task { await store.refreshLibrary() }
-        .refreshable { await store.refreshLibrary() }
+        .sheet(item: $relationship) { KikiRelationshipsView(store: store, initialKind: $0) }
+        .task(id: isActive) { if isActive { await store.refreshLibrary(); await store.refreshSocialSummary(); await store.refreshExperience() } }
+        .refreshable { await store.refreshLibrary(); await store.refreshSocialSummary(); await store.refreshExperience() }
     }
 
     private var heading: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("我的空间")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .tracking(3)
-                    .foregroundStyle(KikiPalette.secondary)
-                Text("我")
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .foregroundStyle(KikiPalette.text)
-            }
+            Text("我").font(.largeTitle.weight(.bold))
             Spacer()
-            Button {
-                activeSheet = .settings
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 19, weight: .medium))
-                    .foregroundStyle(KikiPalette.text)
-                    .frame(width: 46, height: 46)
-                    .background(KikiPalette.surface, in: Circle())
-            }
-            .accessibilityLabel("打开设置")
+            Button { activeSheet = .settings } label: {
+                Image(systemName: "gearshape").font(.title3).foregroundStyle(KikiPalette.text).frame(width: 44, height: 44)
+            }.accessibilityLabel("打开设置")
         }
     }
 
@@ -65,13 +53,13 @@ struct KikiProfileView: View {
                 Button {
                     activeSheet = .edit
                 } label: {
-                    KikiAvatar(index: store.avatarIndex, size: 82, customURL: store.customAvatarURL)
+                    KikiDecoratedAvatar(gifts: store.gifts, userID: store.userID, index: store.avatarIndex, size: 82, customURL: store.customAvatarURL)
                         .overlay(alignment: .bottomTrailing) {
                             Image(systemName: "pencil")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundStyle(.white)
                                 .frame(width: 25, height: 25)
-                                .background(KikiPalette.purple, in: Circle())
+                                .background(KikiPalette.action, in: Circle())
                                 .overlay(Circle().stroke(KikiPalette.background, lineWidth: 3))
                         }
                 }
@@ -84,8 +72,7 @@ struct KikiProfileView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                     HStack(spacing: 6) {
-                        Circle().fill(KikiPalette.mint).frame(width: 6, height: 6)
-                        Text("今天也想认识新朋友")
+                        Text("中文语聊社区")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(KikiPalette.secondary)
                     }
@@ -121,33 +108,22 @@ struct KikiProfileView: View {
 
     private var activity: some View {
         HStack(spacing: 0) {
-            activityItem(value: store.favoriteRooms.count, title: "收藏房间", sheet: .favorites)
-            Rectangle().fill(KikiPalette.elevated).frame(width: 1, height: 30)
-            activityItem(value: store.recentRooms.count, title: "最近足迹", sheet: .history)
-            Rectangle().fill(KikiPalette.elevated).frame(width: 1, height: 30)
-            activityItem(value: store.createdRooms.count, title: "我的房间", sheet: .created)
-        }
-        .padding(.vertical, 18)
-        .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 22))
+            relationshipButton(value: store.socialProfile?.followingCount, title: "关注", kind: .following)
+            Divider().frame(height: 30)
+            relationshipButton(value: store.socialProfile?.followerCount, title: "粉丝", kind: .followers)
+            Divider().frame(height: 30)
+            relationshipButton(value: nil, title: "互关", kind: .mutual)
+        }.padding(.vertical, 18).background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 18))
     }
 
-    private func activityItem(value: Int, title: String, sheet: KikiProfileSheet) -> some View {
-        Button {
-            activeSheet = sheet
-        } label: {
+    private func relationshipButton(value: Int?, title: String, kind: KikiRelationshipKind) -> some View {
+        Button { relationship = kind } label: {
             VStack(spacing: 7) {
-                Text("\(value)")
-                    .font(.system(size: 25, weight: .semibold, design: .rounded))
-                    .foregroundStyle(KikiPalette.text)
-                Text(title)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(KikiPalette.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(title)，\(value) 个")
+                if let value { Text("\(value)").font(.title3.weight(.semibold)).foregroundStyle(KikiPalette.text) }
+                else { Image(systemName: "person.2").font(.title3).foregroundStyle(KikiPalette.lavender) }
+                Text(title).font(.subheadline).foregroundStyle(KikiPalette.secondary)
+            }.frame(maxWidth: .infinity).contentShape(Rectangle())
+        }.buttonStyle(.plain)
     }
 
     private var voiceCard: some View {
@@ -236,8 +212,12 @@ struct KikiProfileView: View {
 
     private var preferences: some View {
         VStack(spacing: 0) {
-            profileRow(symbol: "slider.horizontal.3", title: "账号设置", color: KikiPalette.secondary) {
+            profileRow(symbol: "slider.horizontal.3", title: "设置", color: KikiPalette.secondary) {
                 activeSheet = .settings
+            }
+            rowDivider
+            profileRow(symbol: "hand.raised.fill", title: "隐私中心", color: KikiPalette.secondary) {
+                activeSheet = .privacy
             }
             rowDivider
             profileRow(symbol: "sparkles", title: "关于 KikiTalk", color: KikiPalette.secondary) {
@@ -323,11 +303,13 @@ struct KikiProfileView: View {
         case .history:
             KikiProfileRoomCollection(title: "最近加入", subtitle: "每一次相遇，都留下足迹。", collection: .history, emptySymbol: "clock", emptyTitle: "新的故事，等你开启", emptyMessage: "加入感兴趣的房间，你的足迹会出现在这里。", onSelect: chooseRoom)
         case .created:
-            KikiProfileRoomCollection(title: "我的房间", subtitle: "你创造的小小世界。", collection: .created, emptySymbol: "mic.badge.plus", emptyTitle: "你的第一个房间，正在等你", emptyMessage: "在「语聊 / 直播」页面轻点右上角创建，邀请朋友来聊聊。", onSelect: chooseRoom)
+            KikiProfileRoomCollection(title: "我的房间", subtitle: "你创造的小小世界。", collection: .created, emptySymbol: "mic.badge.plus", emptyTitle: "你的第一个房间，正在等你", emptyMessage: "在「语聊」页面轻点右上角创建，邀请朋友来聊聊。", onSelect: chooseRoom)
         case .settings:
             KikiProfileSettings()
         case .about:
             KikiProfileAbout()
+        case .privacy:
+            KikiPrivacyCenter()
         }
     }
 
@@ -350,7 +332,7 @@ struct KikiProfileView: View {
 }
 
 private enum KikiProfileSheet: String, Identifiable {
-    case edit, favorites, history, created, settings, about
+    case edit, favorites, history, created, settings, about, privacy
     var id: String { rawValue }
 }
 
@@ -405,7 +387,7 @@ private struct KikiProfileEditor: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 16)
 
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 66), spacing: 12)], spacing: 16) {
                         ForEach(0..<8) { index in
                             Button {
                                 avatarIndex = index
@@ -468,6 +450,8 @@ private struct KikiProfileEditor: View {
                     Label("资料保存后会同步到你的账号。", systemImage: "person.crop.circle.badge.checkmark")
                         .font(.system(size: 11))
                         .foregroundStyle(KikiPalette.muted)
+                    Text("保存后的昵称、头像和简介会在大厅、房间、麦位、成员列表及聊天名片等场景向其他用户展示。头像只上传你选择并确认保存的照片。")
+                        .font(.system(size: 11)).lineSpacing(5).foregroundStyle(KikiPalette.secondary)
                     if let errorMessage {
                         Label(errorMessage, systemImage: "exclamationmark.circle")
                             .font(.system(size: 12))
@@ -475,6 +459,8 @@ private struct KikiProfileEditor: View {
                     }
                 }
                 .padding(24)
+                .frame(maxWidth: 720)
+                .frame(maxWidth: .infinity)
                 .disabled(isSaving)
             }
             .scrollDismissesKeyboard(.interactively)
@@ -608,6 +594,10 @@ private struct KikiProfileRoomCollection: View {
     let emptyTitle: String
     let emptyMessage: String
     let onSelect: (DemoRoom) -> Void
+    @State private var selectedRecord: DemoRoom?
+    @State private var confirmsClear = false
+    @State private var isChanging = false
+    @State private var error: String?
 
     private var rooms: [DemoRoom] {
         switch collection {
@@ -632,7 +622,10 @@ private struct KikiProfileRoomCollection: View {
                     }
                     .padding(.vertical, 8)
 
-                    if rooms.isEmpty {
+                    if let error = error ?? store.libraryError {
+                        KikiInlineError(message: error) { Task { await store.refreshLibrary() } }
+                    }
+                    if rooms.isEmpty && store.libraryError == nil {
                         VStack(spacing: 18) {
                             Image(systemName: emptySymbol)
                                 .font(.system(size: 35, weight: .light))
@@ -662,7 +655,8 @@ private struct KikiProfileRoomCollection: View {
                         LazyVStack(spacing: 14) {
                             ForEach(rooms) { room in
                                 Button {
-                                    onSelect(room)
+                                    if room.status == "live" { onSelect(room) }
+                                    else { selectedRecord = room }
                                 } label: {
                                     KikiRoomCard(room: room)
                                         .overlay(alignment: .topTrailing) {
@@ -679,10 +673,13 @@ private struct KikiProfileRoomCollection: View {
                                 }
                                 .buttonStyle(.plain)
                                 .contextMenu {
-                                    Button {
-                                        store.toggleFavorite(room)
-                                    } label: {
-                                        Label(store.favoriteIDs.contains(room.id) ? "取消收藏" : "收藏房间", systemImage: store.favoriteIDs.contains(room.id) ? "bookmark.slash" : "bookmark")
+                                    if store.favoriteIDs.contains(room.id) || room.status == "live" {
+                                        Button { store.toggleFavorite(room) } label: {
+                                            Label(store.favoriteIDs.contains(room.id) ? "取消收藏" : "收藏房间", systemImage: store.favoriteIDs.contains(room.id) ? "bookmark.slash" : "bookmark")
+                                        }
+                                    }
+                                    if collection == .history {
+                                        Button("移除这条足迹", role: .destructive) { Task { await removeHistory(room.id) } }
                                     }
                                 }
                             }
@@ -692,12 +689,22 @@ private struct KikiProfileRoomCollection: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
                 .padding(.bottom, 25)
+                .frame(maxWidth: 720)
+                .frame(maxWidth: .infinity)
             }
             .background(KikiPalette.background.ignoresSafeArea())
             .refreshable { await store.refreshLibrary() }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $selectedRecord) { KikiRoomRecordView(room: $0, store: store) }
+            .confirmationDialog("清空最近加入记录？", isPresented: $confirmsClear, titleVisibility: .visible) {
+                Button("清空记录", role: .destructive) { Task { await removeHistory(nil) } }
+                Button("取消", role: .cancel) { }
+            }
             .toolbar {
+                if collection == .history, !rooms.isEmpty {
+                    ToolbarItem(placement: .cancellationAction) { Button("清空") { confirmsClear = true }.disabled(isChanging) }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }
                         .foregroundStyle(KikiPalette.lavender)
@@ -705,83 +712,45 @@ private struct KikiProfileRoomCollection: View {
             }
         }
     }
+
+    private func removeHistory(_ roomID: String?) async {
+        guard !isChanging else { return }; isChanging = true; defer { isChanging = false }
+        do { try await store.removeHistory(roomID: roomID); error = nil }
+        catch is CancellationError { } catch { self.error = error.localizedDescription }
+    }
 }
 
 @available(iOS 16.0, *)
-private struct KikiProfileSettings: View {
+struct KikiProfileSettings: View {
     @EnvironmentObject private var store: KikiDemoStore
     @Environment(\.dismiss) private var dismiss
-    @State private var showLogoutConfirmation = false
-    @State private var showDeletion = false
+    @State private var path: [KikiSettingsDestination] = []
+    @State private var presented: KikiSettingsDestination?
     @State private var isLoggingOut = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 26) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("让相遇，安心继续")
-                            .font(.system(size: 25, weight: .semibold))
-                            .foregroundStyle(KikiPalette.text)
-                        Text("管理你的账号与个人资料。")
-                            .font(.system(size: 13))
-                            .foregroundStyle(KikiPalette.secondary)
-                    }
-                    .padding(.top, 20)
-
-                    VStack(alignment: .leading, spacing: 15) {
-                        Label("当前账号", systemImage: "person.crop.circle")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(KikiPalette.lavender)
-                        Text(store.userID)
-                            .font(.system(size: 22, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(KikiPalette.text)
-                            .textSelection(.enabled)
-                        Text("资料、收藏与房间记录会同步到当前账号。")
-                            .font(.system(size: 12))
-                            .lineSpacing(5)
-                            .foregroundStyle(KikiPalette.secondary)
-                    }
-                    .padding(20)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 21))
-
-                    Button {
-                        showLogoutConfirmation = true
-                    } label: {
-                        HStack(spacing: 12) {
-                            if isLoggingOut { ProgressView().tint(KikiPalette.lavender) }
-                            else { Image(systemName: "rectangle.portrait.and.arrow.right") }
-                            Text("退出登录")
-                                .font(.system(size: 14, weight: .medium))
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 10, weight: .semibold))
-                        }
-                        .foregroundStyle(KikiPalette.text)
-                        .padding(20)
-                        .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 19))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isLoggingOut)
-                    .accessibilityIdentifier("logoutButton")
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Button("注销账号") { showDeletion = true }
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color.red.opacity(0.85))
-                            .accessibilityIdentifier("deleteAccountButton")
-                        Text("注销会永久删除账号数据，请谨慎操作。")
-                            .font(.system(size: 11))
-                            .foregroundStyle(KikiPalette.muted)
-                    }
-                    .padding(.horizontal, 3)
+        NavigationStack(path: $path) {
+            KikiSettingsMenuContent { destination in
+                switch destination {
+                case .account, .privacy, .help: path.append(destination)
+                case .notifications, .about: presented = destination
+                case .rating: break
                 }
-                .padding(24)
             }
-            .background(KikiPalette.background.ignoresSafeArea())
-            .navigationTitle("账号设置")
+            .navigationTitle("设置")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: KikiSettingsDestination.self) { destination in
+                switch destination {
+                case .account:
+                    KikiAccountSettings(isLoggingOut: $isLoggingOut) { dismiss() }
+                case .privacy:
+                    KikiSettingsPrivacy()
+                case .help:
+                    KikiPrivacyHelp()
+                case .notifications, .rating, .about:
+                    EmptyView()
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }
@@ -789,13 +758,46 @@ private struct KikiProfileSettings: View {
                         .disabled(isLoggingOut)
                 }
             }
+            .sheet(item: $presented) { destination in
+                switch destination {
+                case .notifications:
+                    KikiPushPreferencesView(store: store, push: store.pushController ?? .shared)
+                case .about:
+                    KikiProfileAbout()
+                default:
+                    EmptyView()
+                }
+            }
+        }
+        .tint(KikiPalette.purple)
+        .interactiveDismissDisabled(isLoggingOut)
+    }
+}
+
+@available(iOS 16.0, *)
+private struct KikiAccountSettings: View {
+    @EnvironmentObject private var store: KikiDemoStore
+    @Binding var isLoggingOut: Bool
+    let onSessionEnded: () -> Void
+    @State private var showLogoutConfirmation = false
+    @State private var showDeletion = false
+
+    var body: some View {
+        KikiAccountSettingsContent(userID: store.userID, appleIDBound: store.isAppleIDBound,
+                                   isLoggingOut: isLoggingOut,
+                                   onLogout: { showLogoutConfirmation = true },
+                                   onDelete: { showDeletion = true })
+            .navigationTitle("账户")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(isLoggingOut)
             .confirmationDialog("退出当前账号？", isPresented: $showLogoutConfirmation, titleVisibility: .visible) {
                 Button("退出登录", role: .destructive) {
+                    guard !isLoggingOut else { return }
                     isLoggingOut = true
                     Task {
                         await store.logout()
                         isLoggingOut = false
-                        dismiss()
+                        onSessionEnded()
                     }
                 }
                 Button("取消", role: .cancel) {}
@@ -805,13 +807,35 @@ private struct KikiProfileSettings: View {
             .sheet(isPresented: $showDeletion) {
                 KikiAccountDeletion {
                     showDeletion = false
-                    dismiss()
+                    onSessionEnded()
                 }
                 .environmentObject(store)
-                .preferredColorScheme(.dark)
+            }
+    }
+}
+
+@available(iOS 16.0, *)
+private struct KikiSettingsPrivacy: View {
+    @State private var showsLegal = false
+    @State private var showsSafety = false
+
+    var body: some View {
+        List {
+            Section {
+                Button { showsLegal = true } label: {
+                    Label("隐私政策与权限", systemImage: "hand.raised.fill")
+                }
+                .accessibilityIdentifier("settings.privacyCenter")
+                Button { showsSafety = true } label: {
+                    Label("社区安全、黑名单与我的举报", systemImage: "checkmark.shield.fill")
+                }
+                .accessibilityIdentifier("settings.communitySafety")
             }
         }
-        .interactiveDismissDisabled(isLoggingOut)
+        .navigationTitle("隐私")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showsLegal) { KikiPrivacyCenter() }
+        .sheet(isPresented: $showsSafety) { KikiSafetyCenter(rtc: .shared) }
     }
 }
 
@@ -874,6 +898,8 @@ private struct KikiAccountDeletion: View {
                     .accessibilityIdentifier("confirmDeleteAccount")
                 }
                 .padding(24)
+                .frame(maxWidth: 640)
+                .frame(maxWidth: .infinity)
             }
             .background(KikiPalette.background.ignoresSafeArea())
             .navigationTitle("注销账号")
@@ -941,11 +967,11 @@ private struct KikiProfileAbout: View {
                     .padding(.bottom, 10)
 
                     VStack(alignment: .leading, spacing: 18) {
-                        aboutItem("bubble.left.and.bubble.right", title: "从一句你好开始", message: "发现语聊与直播房间，用声音结识有趣的人，找到属于你的同频社区。")
+                        aboutItem("bubble.left.and.bubble.right", title: "从一句你好开始", message: "发现语聊房间，用声音结识有趣的人，找到属于你的同频社区。")
                         Rectangle().fill(KikiPalette.elevated).frame(height: 1)
-                        aboutItem("waveform", title: "让声音跨越距离", message: "开启语聊房或直播间，邀请朋友加入，一起分享声音和此刻。")
+                        aboutItem("waveform", title: "让声音跨越距离", message: "开启语聊房，邀请朋友加入，一起分享声音和此刻。")
                         Rectangle().fill(KikiPalette.elevated).frame(height: 1)
-                        aboutItem("person.crop.circle.badge.checkmark", title: "你的社区，随时相见", message: "个人资料、收藏与加入记录跟随账号保存。账号绑定当前设备，重新登录后可继续访问。")
+                        aboutItem("person.crop.circle.badge.checkmark", title: "你的社区，随时相见", message: "个人资料、收藏与加入记录跟随账号保存。使用同一个 Apple 账户重新登录后可继续访问。")
                     }
                     .padding(22)
                     .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 25))
@@ -956,6 +982,8 @@ private struct KikiProfileAbout: View {
                         .padding(.bottom, 25)
                 }
                 .padding(.horizontal, 24)
+                .frame(maxWidth: 640)
+                .frame(maxWidth: .infinity)
             }
             .background(KikiPalette.background.ignoresSafeArea())
             .navigationTitle("关于 KikiTalk")
@@ -986,5 +1014,202 @@ private struct KikiProfileAbout: View {
                     .foregroundStyle(KikiPalette.secondary)
             }
         }
+    }
+}
+
+/// The same authenticated voice identity owns reports and blocks on every device.
+struct KikiSafetyCenter: View {
+    @ObservedObject var rtc: KikiRTCService
+    @Environment(\.dismiss) private var dismiss
+    @State private var error: String?
+    @State private var unblockTarget: KikiBlockedUser?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if rtc.isLoadingSafety { ProgressView("正在同步社区安全信息") }
+                if let message = error ?? rtc.safetyError {
+                    Section {
+                        Text(message).foregroundStyle(.orange)
+                        Button("重试同步") { Task { await reload() } }
+                    }
+                }
+                Section("账号当前状态") {
+                    restriction("语聊服务封禁", until: rtc.safetyState.restrictions.bannedUntil)
+                    restriction("文字禁言", until: rtc.safetyState.restrictions.chatMutedUntil)
+                    restriction("语音禁麦", until: rtc.safetyState.restrictions.voiceMutedUntil)
+                    if !rtc.safetyState.restrictions.isActive(rtc.safetyState.restrictions.bannedUntil),
+                       !rtc.safetyState.restrictions.isActive(rtc.safetyState.restrictions.chatMutedUntil),
+                       !rtc.safetyState.restrictions.isActive(rtc.safetyState.restrictions.voiceMutedUntil) {
+                        Text("当前未查询到社区限制").foregroundStyle(.secondary)
+                    }
+                    Text("房间管理者设置的本房禁言、禁麦和禁入，另在房间内显示。").font(.caption).foregroundStyle(.secondary)
+                }
+                Section("运营通知") {
+                    if rtc.safetyState.notices.isEmpty { Text("暂无运营通知").foregroundStyle(.secondary) }
+                    ForEach(rtc.safetyState.notices) { notice in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(notice.message)
+                            Text(Date(timeIntervalSince1970: notice.createdAt), style: .date).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Section {
+                    if rtc.safetyState.blockedUsers.isEmpty { Text("暂无拉黑用户").foregroundStyle(.secondary) }
+                    ForEach(rtc.safetyState.blockedUsers) { user in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(user.name)
+                                Text(user.userID).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
+                            }
+                            Spacer()
+                            Button("解除") { unblockTarget = user }.buttonStyle(.borderless).disabled(rtc.isUpdatingBlock)
+                                .accessibilityLabel("解除对\(user.name)的拉黑")
+                                .accessibilityIdentifier("settings.unblock.\(user.userID)")
+                        }
+                    }
+                } header: { Text("黑名单 · \(rtc.safetyState.blockedUsers.count)") }
+                footer: { Text("拉黑后隐藏对方私信、动态和房间文字，并屏蔽对方音频。解除后可再次接收对方内容，关注关系不会自动恢复；公开房间内，对方仍可能听到你。") }
+                Section {
+                    if rtc.myReports.isEmpty { Text("暂无举报记录").foregroundStyle(.secondary) }
+                    ForEach(rtc.myReports) { report in
+                        VStack(alignment: .leading, spacing: 7) {
+                            HStack { Text(report.reason.label); Spacer(); Text(report.statusLabel).foregroundStyle(.secondary) }
+                            Text("举报编号 \(report.id)").font(.caption2).textSelection(.enabled)
+                            Text("房间 \(report.roomID)").font(.caption2).foregroundStyle(.secondary)
+                            if !report.details.isEmpty { Text(report.details).font(.caption) }
+                            Text(Date(timeIntervalSince1970: report.createdAt), style: .date).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: { Text("我的举报") }
+                footer: { Text("显示最近 \(rtc.reportRetentionDays) 天的可用记录。举报提交成功不表示已认定违规；运营核查后更新状态。") }
+                Section("帮助与申诉") {
+                    Link("联系运营：2114581274@qq.com", destination: URL(string: "mailto:2114581274@qq.com?subject=KikiTalk%E7%A4%BE%E5%8C%BA%E5%8F%8D%E9%A6%88")!)
+                    Text("申诉时请提供账号编号、举报编号或房间编号和发生时间。请勿发送 Apple 密码、登录凭证或完整身份证照片。当前不承诺全天人工值守。").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("社区安全与通知").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .task { await reload() }
+            .refreshable { await reload() }
+            .confirmationDialog("解除对 \(unblockTarget?.name ?? "此用户") 的拉黑？", isPresented: Binding(get: { unblockTarget != nil }, set: { if !$0 { unblockTarget = nil } }), titleVisibility: .visible) {
+                Button("解除拉黑") {
+                    guard let userID = unblockTarget?.userID else { return }
+                    unblockTarget = nil
+                    Task { do { try await rtc.setBlocked(userID, enabled: false) } catch { self.error = error.localizedDescription } }
+                }
+                Button("取消", role: .cancel) { unblockTarget = nil }
+            }
+        }
+    }
+
+    @ViewBuilder private func restriction(_ title: String, until: Double?) -> some View {
+        if rtc.safetyState.restrictions.isActive(until), let until {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).foregroundStyle(.orange)
+                Text("截止 \(Date(timeIntervalSince1970: until).formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func reload() async {
+        error = nil
+        do { try await rtc.refreshSafety(includeReports: true) }
+        catch { self.error = error.localizedDescription }
+    }
+}
+
+struct KikiSafetyReportForm: View {
+    @ObservedObject var rtc: KikiRTCService
+    let target: KikiReportTarget
+    @Environment(\.dismiss) private var dismiss
+    @State private var reason = KikiReportReason.harassment
+    @State private var details = ""
+    @State private var request: KikiSafetyReportRequest?
+    @State private var isSubmitting = false
+    @State private var submitted: KikiSafetyReport?
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let submitted {
+                    Section("举报已提交") {
+                        Label("等待运营核查", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text("举报编号 \(submitted.id)").textSelection(.enabled)
+                        Text("可在“设置 > 隐私 > 社区安全、黑名单与我的举报”查看处理状态。").font(.footnote)
+                    }
+                } else {
+                    Section("举报对象") {
+                        Text(target.name)
+                        Text("房间 \(target.roomID)").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Section("违规原因") {
+                        Picker("原因", selection: $reason) { ForEach(KikiReportReason.allCases) { Text($0.label).tag($0) } }.pickerStyle(.inline).labelsHidden()
+                    }.disabled(request != nil)
+                    Section {
+                        TextEditor(text: $details).frame(minHeight: 120).disabled(request != nil)
+                        Text("\(details.unicodeScalars.count)/500 字").font(.caption).foregroundStyle(details.unicodeScalars.count > 500 ? .red : .secondary)
+                    } header: { Text("补充说明（可选）") }
+                    footer: { Text("请说明发生时间和具体情况，不要填写密码或不必要的敏感信息。举报只向获授权的运营人员提供，不会公开到房间。") }
+                    if let error {
+                        Section {
+                            Text(error).foregroundStyle(.orange)
+                            Text("重试会继续提交相同内容，避免重复举报。如需修改，请关闭后重新填写。").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Button { Task { await submit() } } label: {
+                        HStack { Spacer(); if isSubmitting { ProgressView() }; Text(request == nil ? "提交举报" : "重试提交"); Spacer() }
+                    }.disabled(isSubmitting || details.unicodeScalars.count > 500)
+                }
+            }
+            .navigationTitle("举报").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(submitted == nil ? "取消" : "完成") { dismiss() }.disabled(isSubmitting) }
+                ToolbarItem(placement: .confirmationAction) {
+                    if submitted == nil {
+                        Button(isSubmitting ? "提交中…" : (request == nil ? "提交" : "重试")) { Task { await submit() } }
+                            .disabled(isSubmitting || details.unicodeScalars.count > 500)
+                    }
+                }
+            }
+            .interactiveDismissDisabled(isSubmitting)
+        }
+    }
+
+    private func submit() async {
+        guard !isSubmitting else { return }
+        isSubmitting = true
+        error = nil
+        defer { isSubmitting = false }
+        let value = request ?? KikiSafetyReportRequest(clientRequestID: UUID().uuidString.lowercased(), targetType: target.targetType,
+                                                       roomID: target.roomID, targetUserID: target.targetUserID, messageID: target.messageID,
+                                                       reason: reason, details: details.trimmingCharacters(in: .whitespacesAndNewlines))
+        request = value
+        do { submitted = try await rtc.submitReport(value) }
+        catch { self.error = error.localizedDescription }
+    }
+}
+
+private struct KikiPrivacyHelp: View {
+    var body: some View {
+        List {
+            Section("设备权限") {
+                Text("麦克风仅在你主动开麦时申请；拒绝后仍可聆听和发送文字。头像使用系统照片选择器，只访问你选中的照片。当前不申请定位、通讯录、相机或广告跟踪权限。")
+                Link("打开 KikiTalk 系统设置", destination: URL(string: UIApplication.openSettingsURLString)!)
+            }
+            Section("通知与后台语聊") {
+                Text("系统通知需你主动允许，可在“设置 > 通知”开启或关闭。提醒预览不显示对方姓名和消息正文。最小化房间仍可能保持收听和发言；需要停止时，请关闭麦克风或离开房间。")
+            }
+            Section("隐私与使用统计") {
+                Text("用于统计日活与回访的账号活跃记录按天保存，最长保留 35 天，注销或撤回同意时删除。社区举报的必要证据和处理记录按隐私政策保存；拉黑记录随账号同步。")
+                Text("账号、隐私政策、撤回同意和注销入口仍可使用。公开房间内请谨慎分享个人信息。")
+            }
+            Section("帮助与反馈") {
+                Link("发送反馈邮件", destination: URL(string: "mailto:2114581274@qq.com?subject=KikiTalk%E5%8F%8D%E9%A6%88")!)
+                Text("联系邮箱：2114581274@qq.com").textSelection(.enabled)
+                Text("请附账号或房间编号、问题时间、设备与系统版本；不要提供密码或登录凭证。如设备未配置邮件应用，可复制邮箱到自己的邮件工具发送。")
+            }
+        }.navigationTitle("帮助与反馈").navigationBarTitleDisplayMode(.inline)
     }
 }

@@ -196,10 +196,10 @@ class VRBottomMenuView: UIView {
             button.tintColor = .white
             button.setTitleColor(.white, for: .normal)
             button.titleLabel?.font = .systemFont(ofSize: 9, weight: .medium)
-            let title = ["live_anchor_setting_icon": "音效", "live_link_voice_room": "管理", "live_voice_room_link_icon": "上麦"][item.normalIcon] ?? item.normalTitle
+            let title = ["live_anchor_setting_icon": "音效", "live_link_voice_room": "管理", "live_voice_room_link_icon": "上麦", "live_gift_icon": "礼物"][item.normalIcon] ?? item.normalTitle
             button.setTitle(title, for: .normal)
             button.setTitle(title, for: .selected)
-            let symbol = ["live_anchor_setting_icon": "slider.horizontal.3", "live_link_voice_room": "person.2.fill", "live_voice_room_link_icon": "person.wave.2.fill"][item.normalIcon]
+            let symbol = ["live_anchor_setting_icon": "slider.horizontal.3", "live_link_voice_room": "person.2.fill", "live_voice_room_link_icon": "person.wave.2.fill", "live_gift_icon": "gift.fill"][item.normalIcon]
             if let symbol { button.setImage(UIImage(systemName: symbol), for: .normal) }
         }
         item.bindStateClosure?(button, &cancellableSet)
@@ -321,6 +321,7 @@ extension VRBottomMenuView {
     
     private func ownerBottomMenu() -> [VRButtonMenuInfo] {
         var menus: [VRButtonMenuInfo] = []
+        if usesKikiAppearance { menus.append(kikiGiftMenu()) }
 
         var connectionControl = VRButtonMenuInfo(normalIcon: "seat_battle")
         connectionControl.tapAction = { [weak self] sender in
@@ -421,6 +422,16 @@ extension VRBottomMenuView {
         return model
     }
     
+    private func kikiGiftMenu() -> VRButtonMenuInfo {
+        var gift = VRButtonMenuInfo(normalIcon: "live_gift_icon", normalTitle: "礼物")
+        gift.tapAction = { [weak self] _ in
+            guard let self else { return }
+            NotificationCenter.default.post(name: Notification.Name("KikiGiftPanelRequested"), object: nil,
+                                            userInfo: ["roomID": self.liveID])
+        }
+        return gift
+    }
+
     private func memberBottomMenu() -> [VRButtonMenuInfo] {
         var menus: [VRButtonMenuInfo] = []
         var gift = VRButtonMenuInfo(normalIcon: "live_gift_icon", normalTitle: "")
@@ -430,7 +441,8 @@ extension VRBottomMenuView {
             let routeItem = RouteItem(view: giftPanel, config: .bottomDefault())
             self.routerManager.router(action: .present(routeItem))
         }
-        if enableGifts { menus.append(gift) }
+        if usesKikiAppearance { menus.append(kikiGiftMenu()) }
+        else if enableGifts { menus.append(gift) }
         
         var linkMic = VRButtonMenuInfo(normalIcon: "live_voice_room_link_icon", selectIcon: "live_voice_room_linking_icon")
         linkMic.tapAction = { [weak self] sender in

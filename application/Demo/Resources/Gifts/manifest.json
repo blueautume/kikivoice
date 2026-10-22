@@ -1,0 +1,52 @@
+[
+  {
+    "id": "heart",
+    "name": "初见心动",
+    "price": 1,
+    "width": 192,
+    "height": 192,
+    "duration": 1.5,
+    "frameCount": 24,
+    "style": "simple"
+  },
+  {
+    "id": "flower_rain",
+    "name": "星光花雨",
+    "price": 99,
+    "width": 256,
+    "height": 320,
+    "duration": 2.2,
+    "frameCount": 35,
+    "style": "particles"
+  },
+  {
+    "id": "aurora_car",
+    "name": "极光跑车",
+    "price": 999,
+    "width": 320,
+    "height": 240,
+    "duration": 2.8,
+    "frameCount": 45,
+    "style": "object"
+  },
+  {
+    "id": "galaxy_rocket",
+    "name": "星河火箭",
+    "price": 4999,
+    "width": 320,
+    "height": 480,
+    "duration": 3.2,
+    "frameCount": 51,
+    "style": "luxury"
+  },
+  {
+    "id": "cosmic_heart",
+    "name": "宇宙之心",
+    "price": 10000,
+    "width": 360,
+    "height": 540,
+    "duration": 4.0,
+    "frameCount": 64,
+    "style": "fullscreen"
+  }
+]

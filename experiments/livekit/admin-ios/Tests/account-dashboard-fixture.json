@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "serverTime": "2026-10-19T02:00:00+00:00",
+  "service": {
+    "id": "account",
+    "name": "Kiki 账号服务",
+    "host": "kiki.group",
+    "mode": "account",
+    "readOnly": true
+  },
+  "voiceService": {
+    "included": false,
+    "message": "语聊数据请切换服务查看。"
+  },
+  "operations": {
+    "day": "2026-10-19",
+    "timeZone": "Asia/Shanghai",
+    "totalAccounts": 12,
+    "accountsCreatedToday": 3,
+    "validBusinessSessions": 5,
+    "accountsWithValidSessions": 4,
+    "accountsWithSessionsCreatedToday": 2,
+    "sessionMetricNote": "有效会话可能包含离线设备，不代表在线人数或 DAU。",
+    "appleAuthorizedAccounts": 12,
+    "pendingAppleRevocations": 1,
+    "dueAppleRevocations": 1,
+    "appleMetricNote": "仅汇总数量，无账号明细。",
+    "accountsWithCustomAvatar": 3
+  },
+  "storage": {
+    "databaseBytes": 4096,
+    "avatarFiles": 3,
+    "avatarBytes": 1024,
+    "avatarScanLimited": false,
+    "sampleNote": "仅账号服务器本地数据。"
+  },
+  "infrastructure": {
+    "sampledAt": null,
+    "stale": true,
+    "cpuPercent": null,
+    "cpuCores": null,
+    "memoryUsedBytes": null,
+    "memoryTotalBytes": null,
+    "memoryPercent": null,
+    "diskUsedBytes": null,
+    "diskTotalBytes": null,
+    "diskPercent": null,
+    "networkReceiveBytesPerSecond": null,
+    "networkTransmitBytesPerSecond": null,
+    "uptimeSeconds": null,
+    "certificateExpiresAt": null,
+    "certificateDaysRemaining": null,
+    "services": [
+      {
+        "id": "api",
+        "name": "账号 API",
+        "state": "active"
+      },
+      {
+        "id": "nginx",
+        "name": "Nginx",
+        "state": "active"
+      }
+    ]
+  },
+  "health": {
+    "api": "healthy"
+  },
+  "alerts": []
+}

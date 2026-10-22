@@ -1,16 +1,55 @@
 import SwiftUI
 import UIKit
+import Combine
+
+/// Prevents an older inbox fetch from restoring a badge after a read operation.
+struct KikiUnreadRequestGate {
+    struct Fetch {
+        fileprivate let revision: UInt
+        fileprivate let id: UUID
+    }
+    private var revision: UInt = 0
+    private var latestFetch = UUID()
+    private var mutations: Set<UUID> = []
+    var hasPendingMutation: Bool { !mutations.isEmpty }
+
+    mutating func beginFetch() -> Fetch {
+        latestFetch = UUID()
+        return Fetch(revision: revision, id: latestFetch)
+    }
+    func accepts(_ fetch: Fetch) -> Bool {
+        !hasPendingMutation && fetch.revision == revision && fetch.id == latestFetch
+    }
+    mutating func beginMutation() -> UUID {
+        revision &+= 1
+        let id = UUID(); mutations.insert(id)
+        return id
+    }
+    mutating func finishMutation(_ id: UUID) {
+        guard mutations.remove(id) != nil else { return }
+        revision &+= 1
+    }
+}
 
 enum KikiPalette {
-    static let background = Color(hex: 0x101014)
-    static let surface = Color(hex: 0x1B1B23)
-    static let elevated = Color(hex: 0x272632)
-    static let purple = Color(hex: 0x8B66FF)
-    static let lavender = Color(hex: 0xC6B5FF)
-    static let text = Color(hex: 0xF7F5FF)
-    static let secondary = Color(hex: 0xB3AFBF)
-    static let muted = Color(hex: 0x777381)
-    static let mint = Color(hex: 0xB9F2D1)
+    private static func adaptive(_ light: UInt, _ dark: UInt) -> Color {
+        Color(uiColor: UIColor { traits in
+            let value = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: CGFloat((value >> 16) & 255) / 255,
+                           green: CGFloat((value >> 8) & 255) / 255,
+                           blue: CGFloat(value & 255) / 255, alpha: 1)
+        })
+    }
+    static let background = adaptive(0xF7F7FA, 0x131318)
+    static let surface = adaptive(0xFFFFFF, 0x1E1E26)
+    static let elevated = adaptive(0xEBEAF0, 0x2B2A35)
+    static let purple = adaptive(0x7456CC, 0xA78AEF)
+    static let lavender = adaptive(0x7355BA, 0xC6B5EF)
+    static let action = adaptive(0x7456CC, 0x7456CC)
+    static let text = adaptive(0x25232B, 0xF4F2F8)
+    static let secondary = adaptive(0x6D6878, 0xBAB5C5)
+    static let muted = adaptive(0x88838F, 0x928D9D)
+    static let mint = adaptive(0x397C68, 0xA8D6C1)
 }
 
 extension Color {
@@ -18,6 +57,14 @@ extension Color {
         self.init(.sRGB, red: Double((hex >> 16) & 255) / 255,
                   green: Double((hex >> 8) & 255) / 255, blue: Double(hex & 255) / 255, opacity: 1)
     }
+}
+
+struct KikiRoomMemberPreview: Codable, Equatable, Identifiable, Sendable {
+    let userID: String
+    let name: String
+    let avatarIndex: Int
+    let avatarURL: String?
+    var id: String { userID }
 }
 
 struct DemoRoom: Identifiable, Codable, Equatable {
@@ -34,19 +81,22 @@ struct DemoRoom: Identifiable, Codable, Equatable {
     var createdAt: Int
     var hostAvatarIndex: Int
     var hostAvatarURL: String?
+    var memberPreview: [KikiRoomMemberPreview]
     var language: String { "中文" }
 
     init(id: String, title: String, host: String, hostID: String, category: String, audience: Int,
-         isLive: Bool, theme: Int, isCreatedByMe: Bool, status: String, createdAt: Int = 0, hostAvatarIndex: Int = 0, hostAvatarURL: String? = nil) {
+         isLive: Bool, theme: Int, isCreatedByMe: Bool, status: String, createdAt: Int = 0, hostAvatarIndex: Int = 0, hostAvatarURL: String? = nil,
+         memberPreview: [KikiRoomMemberPreview] = []) {
         self.id = id; self.title = title; self.host = host; self.hostID = hostID
         self.category = category; self.audience = audience; self.isLive = isLive; self.theme = theme
         self.isCreatedByMe = isCreatedByMe; self.status = status; self.createdAt = createdAt
         self.hostAvatarIndex = hostAvatarIndex
         self.hostAvatarURL = hostAvatarURL
+        self.memberPreview = memberPreview
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, host, hostID, category, audience, isLive, theme, isCreatedByMe, status, createdAt, hostAvatarIndex, hostAvatarURL
+        case id, title, host, hostID, category, audience, isLive, theme, isCreatedByMe, status, createdAt, hostAvatarIndex, hostAvatarURL, memberPreview
     }
 
     init(from decoder: Decoder) throws {
@@ -64,11 +114,12 @@ struct DemoRoom: Identifiable, Codable, Equatable {
         createdAt = try values.decodeIfPresent(Int.self, forKey: .createdAt) ?? 0
         hostAvatarIndex = try values.decodeIfPresent(Int.self, forKey: .hostAvatarIndex) ?? 0
         hostAvatarURL = try values.decodeIfPresent(String.self, forKey: .hostAvatarURL)
+        memberPreview = try values.decodeIfPresent([KikiRoomMemberPreview].self, forKey: .memberPreview) ?? []
     }
 }
 
 /// Account state is loaded from the authenticated HTTPS API. Active rooms and
-/// participant counts always come from Tencent's live SDK, with no seed data.
+/// participant counts come from the independent voice server, with no seed data.
 @MainActor final class KikiDemoStore: ObservableObject {
     @Published private(set) var profileName = ""
     @Published private(set) var bio = ""
@@ -79,7 +130,9 @@ struct DemoRoom: Identifiable, Codable, Equatable {
     @Published private(set) var favoriteIDs: Set<String> = []
     @Published private(set) var recentRoomIDs: [String] = []
     @Published private(set) var notificationsEnabled = false
+    weak var pushController: KikiPushController?
     @Published private(set) var rooms: [DemoRoom] = []
+    @Published private(set) var lastSuccessfulRoomTitle: String?
     @Published private(set) var isAuthenticated = false
     @Published private(set) var startupFinished = false
     @Published private(set) var isSigningIn = false
@@ -87,46 +140,167 @@ struct DemoRoom: Identifiable, Codable, Equatable {
     @Published private(set) var isRefreshing = false
     @Published private(set) var isJoiningRoom = false
     @Published private(set) var loadingError: String?
+    @Published private(set) var libraryError: String?
     @Published var toast: String?
+    @Published private(set) var socialProfile: KikiPerson?
+    @Published private(set) var followingUserIDs: Set<String> = []
+    @Published private var followingOverrides: [String: Bool] = [:]
+    @Published private var hasLoadedFollowingIDs = false
+    @Published private(set) var unreadNotificationCount = 0
+    @Published private(set) var unreadDirectMessageCount = 0
+    @Published private(set) var directDrafts: [String: String] = [:]
+    @Published private(set) var pendingDirectMessages: [String: KikiPendingDirectMessage] = [:]
+    @Published private(set) var directMessageAccess: [String: KikiDirectMessageAccess] = [:]
+    @Published private(set) var directContentRevision = 0
+    private var directAccessRevision: [String: Int] = [:]
+    private var directAccessFetchRevision: [String: Int] = [:]
+    private let socialImageCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>(); cache.countLimit = 40; cache.totalCostLimit = 24 * 1024 * 1024; return cache
+    }()
+    var unreadMessageCount: Int { unreadNotificationCount + unreadDirectMessageCount }
+    @Published private(set) var directHistoryRevision: [String: Int] = [:]
+    @Published private(set) var notificationHistoryRevision = 0
+    @Published private(set) var socialRevision = 0
+    @Published private(set) var socialPrivacyRevision = 0
+    private var socialRefreshID = UUID()
+    private var socialMutationRefreshTask: Task<Void, Never>?
+    private var notificationUnreadGate = KikiUnreadRequestGate()
+    private var directUnreadGate = KikiUnreadRequestGate()
 
-    private let api: KikiAPIClient
-    private let rtc: KikiRTCService
-    private var token: String?
+    let consent: KikiConsentStore
+    let gifts = KikiGiftStore()
+    private let identity: any KikiIdentityStoring
+    private let apiProvider: () -> KikiAccountAPIClient
+    private let voiceAPIProvider: () -> KikiAPIClient
+    private let rtcProvider: @MainActor () -> any KikiRTCServicing
+    private let appleProvider: @MainActor () -> any KikiAppleAuthorizing
+    private var appleStorage: (any KikiAppleAuthorizing)?
+    private var apple: any KikiAppleAuthorizing {
+        if let appleStorage { return appleStorage }
+        let value = appleProvider(); appleStorage = value; return value
+    }
+    private var apiStorage: KikiAccountAPIClient?
+    private var voiceAPIStorage: KikiAPIClient?
+    private var rtcStorage: (any KikiRTCServicing)?
+    private var sessionGeneration = 0
+    private var privacyStopped = false
+    private var api: KikiAccountAPIClient {
+        if let apiStorage { return apiStorage }
+        let value = apiProvider(); apiStorage = value; return value
+    }
+    private var voiceAPI: KikiAPIClient {
+        if let voiceAPIStorage { return voiceAPIStorage }
+        let value = voiceAPIProvider(); voiceAPIStorage = value; return value
+    }
+    private var rtc: any KikiRTCServicing {
+        if let rtcStorage { return rtcStorage }
+        let value = rtcProvider(); rtcStorage = value
+        if let service = value as? KikiRTCService {
+            service.configure(api: voiceAPI)
+            service.renewAuthorization = { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.renewSDKSession()
+            }
+        }
+        configureRTC(value); return value
+    }
+    private var token: String? // Account token: kiki.group only.
+    private var voiceToken: String? // Voice business token: furby.top only; never persisted.
+    private var voiceUserID: String?
     private var user: KikiUser?
     private var credentialsExpiry = 0
     private var library = KikiLibrary(favorites: [], recents: [], created: [])
     private var roomMetadata: [DemoRoom] = []
+    private var roomMetadataRevision: UInt = 0
+    private enum RoomCatalogReadFailure: Error { case superseded }
+    private var roomRefreshTask: Task<Void, Error>?
+    private var roomRefreshID: UUID?
+    private var roomRefreshWaiters: Set<UUID> = []
+    private var roomCatalogWatchTask: Task<Void, Never>?
+    private var roomCatalogWatchID: UUID?
+    private var roomCatalogWatchSupported = true
+    private var hasLoadedRoomCatalog = false
+    private var roomPresentationObservation: AnyCancellable?
     private var toastTask: Task<Void, Never>?
     private var favoriteTasks: Set<String> = []
     private var didStart = false
     private var renewalTask: Task<Void, Error>?
+    private var renewalAttempt: KikiRoomAttempt?
+    private var leaseTask: Task<Void, Never>?
+    private let leaseRenewalNanoseconds: UInt64
     private var profileNeedsRTCSync = false
+    private let incidents: KikiIncidentReporter
+    private var reservedRoomAttempts: [String: KikiRoomAttempt] = [:]
 
-    var avatarURL: String { customAvatarURL ?? KikiAvatarSource.url(for: avatarIndex).absoluteString }
-    var rememberedID: String { KikiKeychain.read("lastUserID") ?? "" }
+    var avatarURL: String { customAvatarURL ?? "" }
+    var defaultRoomTitle: String { KikiRoomTitlePolicy.defaultTitle(nickname: profileName) }
+    var suggestedRoomTitle: String { lastSuccessfulRoomTitle ?? defaultRoomTitle }
+    // Current account sessions are issued only after server-verified Apple sign-in.
+    // A saved Apple subject alone must never make a signed-out account look bound.
+    var isAppleIDBound: Bool {
+        isAuthenticated && !(token ?? "").isEmpty && !userID.isEmpty &&
+            identity.read("appleSessionVersion") == "2" && !(identity.read("appleSubject") ?? "").isEmpty
+    }
+    var canReconnect: Bool { token != nil && permitsBusiness && !isAuthenticated }
+    var isPresentingRoom: Bool { rtcStorage?.isPresentingRoom ?? false }
+    private var permitsBusiness: Bool { consent.hasCurrentConsent && !privacyStopped && !isEndingSession }
+    var pushSessionKey: String? {
+        guard permitsBusiness, isAuthenticated, !needsNickname, !userID.isEmpty, token != nil else { return nil }
+        return "\(sessionGeneration):\(userID)"
+    }
     var favoriteRooms: [DemoRoom] { library.favorites.map(reconciled) }
     var recentRooms: [DemoRoom] { library.recents.map(reconciled) }
     var createdRooms: [DemoRoom] { library.created.map(reconciled) }
 
-    init(api: KikiAPIClient = .shared, rtc: KikiRTCService = .shared) {
-        self.api = api
-        self.rtc = rtc
+    init(consent: KikiConsentStore? = nil, identity: any KikiIdentityStoring = KikiKeychainStorage(),
+         apiProvider: @escaping () -> KikiAccountAPIClient = { .shared },
+         voiceAPIProvider: @escaping () -> KikiAPIClient = { .shared },
+         rtcProvider: @escaping @MainActor () -> any KikiRTCServicing = { KikiRTCService.shared },
+         appleProvider: @escaping @MainActor () -> any KikiAppleAuthorizing = { KikiAppleAuthorizationService() },
+         leaseRenewalNanoseconds: UInt64 = 300_000_000_000, incidents: KikiIncidentReporter? = nil) {
+        self.consent = consent ?? .shared
+        self.identity = identity
+        self.apiProvider = apiProvider
+        self.voiceAPIProvider = voiceAPIProvider
+        self.rtcProvider = rtcProvider
+        self.appleProvider = appleProvider
+        self.leaseRenewalNanoseconds = leaseRenewalNanoseconds
+        self.incidents = incidents ?? .shared
+    }
+
+    private func configureRTC(_ rtc: any KikiRTCServicing) {
+        (rtc as? KikiRTCService)?.socialStore = self
+        // A computed presentation flag does not notify this store by itself.
+        // Forward only real presentation transitions, never the SDK's speaking,
+        // metrics, polling, or other high-frequency publications.
+        roomPresentationObservation = rtc.roomPresentationChanges?
+            .removeDuplicates().dropFirst()
+            .sink { [weak self] _ in self?.objectWillChange.send() }
         rtc.onRoomClosed = { [weak self] roomID in
             Task { @MainActor in
-                guard let self, self.isAuthenticated else { return }
-                if !self.rtc.isCurrentRoom(roomID),
-                   (self.roomMetadata + self.library.created).contains(where: { $0.id == roomID && $0.isCreatedByMe }), let token = self.token {
-                    _ = try? await self.api.setRoomStatus(roomID, status: "ended", token: token)
-                }
+                guard let self, self.permitsBusiness, self.isAuthenticated else { return }
                 await self.refreshRooms()
                 await self.refreshLibrary()
             }
         }
         rtc.onSessionExpired = { [weak self] in
-            guard let self else { return }
+            guard let self, self.permitsBusiness else { return }
+                self.pushController?.endSession()
+            self.sessionGeneration += 1
             self.isAuthenticated = false
+            self.suspendExperience()
             self.credentialsExpiry = 0
-            self.loadingError = "音视频登录已失效，请重新连接；同一账号不能同时在多个设备使用。"
+            self.voiceToken = nil; self.voiceUserID = nil
+            self.leaseTask?.cancel(); self.leaseTask = nil
+            self.renewalTask?.cancel()
+            self.isEndingSession = true
+            self.loadingError = "语音连接已失效，请重新连接或登录。"
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                _ = await self.renewalTask?.result
+                await self.rtcStorage?.logout()
+                self.isEndingSession = false
+            }
         }
     }
 
@@ -134,136 +308,576 @@ struct DemoRoom: Identifiable, Codable, Equatable {
         guard !didStart else { return }
         didStart = true
         defer { startupFinished = true }
-        guard let saved = KikiKeychain.read("sessionToken") else { return }
+        guard permitsBusiness else { return }
+        // Old ID/device-bound accounts are intentionally unsupported.
+        identity.remove("deviceSecret")
+        identity.remove("lastUserID")
+        await retryPendingLogouts()
+        guard permitsBusiness else { return }
+        guard identity.read("appleSessionVersion") == "2", let subject = identity.read("appleSubject"), !subject.isEmpty else {
+            clearSession()
+            return
+        }
+        guard let saved = identity.read("sessionToken") else { return }
+        let generation = sessionGeneration
         token = saved
         isSigningIn = true
         defer { isSigningIn = false }
         do {
+            let state = try await apple.credentialState(subject: subject)
+            try requireAccess(generation: generation, token: saved)
+            guard state == .authorized else {
+                await appleCredentialRevoked()
+                return
+            }
+            let acceptance = try consent.acceptance()
+            let status = try await performAPI { try await api.registerLegalConsent(acceptance, token: saved) }
+            try requireAccess(generation: generation, token: saved)
+            try consent.verify(status)
             try await renewSDKSession()
+            try requireAccess(generation: generation, token: saved)
             isAuthenticated = true
             await refreshRooms()
             await refreshLibrary()
         } catch {
-            handle(error, expectedToken: saved)
+            if sessionGeneration == generation { handle(error, expectedToken: saved) }
         }
     }
 
-    func login(id: String) async throws {
+    func loginWithApple(agreed: Bool, adultConfirmed: Bool) async throws {
+        _ = try consent.acceptance(agreed: agreed, adultConfirmed: adultConfirmed)
+        try await loginWithApple()
+    }
+
+    func loginWithApple() async throws {
+        let acceptance = try consent.acceptance()
+        try requireAccess()
         guard !isSigningIn, !isEndingSession else { return }
-        let id = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard id.range(of: "^[A-Za-z0-9_-]{3,32}$", options: .regularExpression) != nil else {
-            throw KikiAPIError.server(422, "ID 需为 3–32 位字母、数字、下划线或短横线。")
-        }
+        let generation = sessionGeneration
+        let previousToken = token
         isSigningIn = true
         loadingError = nil
         defer { isSigningIn = false }
+        var issuedToken: String?
         do {
-            let response = try await api.login(userID: id, deviceSecret: KikiKeychain.deviceSecret())
-            try KikiKeychain.write(response.token, key: "sessionToken")
-            try KikiKeychain.write(id, key: "lastUserID")
+            await retryPendingLogouts()
+            try requireAccess(generation: generation)
+            let challenge = try await performAPI { try await api.appleChallenge() }
+            try requireAccess(generation: generation)
+            let credential = try await apple.authorize(nonce: challenge.nonce, state: challenge.challengeID)
+            try requireAccess(generation: generation)
+            let response = try await performAPI {
+                try await api.loginWithApple(challengeID: challenge.challengeID, identityToken: credential.identityToken,
+                                             authorizationCode: credential.authorizationCode, legalConsent: acceptance)
+            }
+            issuedToken = response.token
+            try requireAccess(generation: generation)
+            if let previousToken, previousToken != response.token { queueLogout(previousToken) }
+            try identity.write(credential.subject, key: "appleSubject")
+            try identity.write("2", key: "appleSessionVersion")
+            try identity.write(response.token, key: "sessionToken")
             token = response.token
             apply(response.user)
-            try await connectSDK(response.sdk)
+            try await renewSDKSession()
+            try requireAccess(generation: generation, token: response.token)
             isAuthenticated = true
             await refreshRooms()
             await refreshLibrary()
         } catch {
-            handle(error)
+            if let issuedToken, token != issuedToken {
+                queueLogout(issuedToken)
+                await retryPendingLogouts(allowRightsOnly: true)
+            }
+            if sessionGeneration == generation { handle(error) }
             throw error
         }
     }
 
+    /// A revoked system credential stops media and invalidates the backend session.
+    /// Offline logout is retained only as a retry receipt, never as a usable login.
+    func appleCredentialRevoked() async {
+        guard permitsBusiness else { return }
+        await logout(appleRevoked: true)
+        loadingError = "Apple 授权已失效，请使用 Apple 重新登录。"
+    }
+
+    func checkAppleCredentialState() async {
+        guard permitsBusiness, !isSigningIn, let token, let subject = identity.read("appleSubject") else { return }
+        let generation = sessionGeneration
+        do {
+            let state = try await apple.credentialState(subject: subject)
+            try requireAccess(generation: generation, token: token)
+            if state != .authorized { await appleCredentialRevoked() }
+        } catch {
+            // Apple lookup/network errors do not delete a valid account or credential.
+            if sessionGeneration == generation, !(error is CancellationError) {
+                loadingError = "暂时无法检查 Apple 授权，请检查网络后重试。"
+            }
+        }
+    }
+
+    private func queueLogout(_ token: String, revoked: Bool = false) {
+        var tokens = pendingLogoutTokens(revoked: revoked)
+        if !tokens.contains(token) { tokens.append(token) }
+        if let data = try? JSONEncoder().encode(tokens), let value = String(data: data, encoding: .utf8) {
+            try? identity.write(value, key: revoked ? "applePendingRevocations" : "applePendingLogouts")
+        }
+    }
+
+    private func pendingLogoutTokens(revoked: Bool = false) -> [String] {
+        guard let value = identity.read(revoked ? "applePendingRevocations" : "applePendingLogouts"),
+              let data = value.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+    }
+
+    private func retryPendingLogouts(allowRightsOnly: Bool = false) async {
+        guard consent.hasCurrentConsent || allowRightsOnly else { return }
+        // These endpoints only end authorization. They never resume business services.
+        for revoked in [true, false] {
+            for pending in pendingLogoutTokens(revoked: revoked) {
+                do {
+                    if revoked { try await api.invalidateRevokedAppleSession(token: pending) }
+                    else { try await api.logout(token: pending) }
+                    removePendingLogout(pending, revoked: revoked)
+                } catch let error as KikiAPIError where error.isUnauthorized {
+                    removePendingLogout(pending, revoked: revoked)
+                } catch { /* Retry when the user next opens or signs in to the app. */ }
+            }
+        }
+    }
+
+    private func removePendingLogout(_ token: String, revoked: Bool) {
+        let key = revoked ? "applePendingRevocations" : "applePendingLogouts"
+        let remaining = pendingLogoutTokens(revoked: revoked).filter { $0 != token }
+        if remaining.isEmpty { identity.remove(key) }
+        else if let data = try? JSONEncoder().encode(remaining), let value = String(data: data, encoding: .utf8) {
+            try? identity.write(value, key: key)
+        }
+    }
+
     func reconnect() async throws {
-        guard token != nil else { throw KikiAPIError.server(401, "请先输入 ID 登录。") }
+        try requireAccess()
+        let generation = sessionGeneration
+        guard let token, let subject = identity.read("appleSubject") else { throw KikiAPIError.server(401, "请先使用 Apple 登录。") }
         isSigningIn = true
         defer { isSigningIn = false }
+        let state = try await apple.credentialState(subject: subject)
+        try requireAccess(generation: generation, token: token)
+        guard state == .authorized else {
+            await appleCredentialRevoked()
+            throw KikiAPIError.security("Apple 授权已失效，请重新登录。")
+        }
         try await renewSDKSession()
+        try requireAccess(generation: generation)
         isAuthenticated = true
         loadingError = nil
         await refreshRooms()
         await refreshLibrary()
     }
 
-    func refreshRooms() async {
-        guard isAuthenticated, !needsNickname, !isRefreshing, let token else { return }
-        isRefreshing = true
-        defer { isRefreshing = false }
+    func recordForegroundActivity() async {
+        guard UIApplication.shared.applicationState == .active, permitsBusiness, isAuthenticated, let token else { return }
+        incidents.retry()
+        // Best-effort, explicit foreground activity. Lease renewals and media polls
+        // never call this endpoint and therefore do not count as daily activity.
+        try? await api.recordForegroundActivity(token: token)
+    }
+
+    func refreshSafety() async {
+        guard permitsBusiness, isAuthenticated, let service = rtcStorage as? KikiRTCService else { return }
+        try? await service.refreshSafety(showsLoading: false)
+    }
+
+    func refreshRooms(showsLoading: Bool = false) async {
+        guard permitsBusiness, isAuthenticated, !needsNickname, let token, !Task.isCancelled else { return }
+        do {
+            try await refreshRoomRecords(showsLoading: showsLoading)
+        } catch {
+            if !(error is RoomCatalogReadFailure) { handle(error, expectedToken: token) }
+        }
+    }
+
+    /// A visible directory owns one cancellable long-poll. The response only
+    /// invalidates the authenticated list; it is never a source of room cards.
+    func watchRoomCatalog() async {
+        guard permitsBusiness, isAuthenticated, !needsNickname, let token, !Task.isCancelled else { return }
+        roomCatalogWatchTask?.cancel()
+        let id = UUID()
+        let generation = sessionGeneration
+        roomCatalogWatchID = id
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.runRoomCatalogWatch(id: id, generation: generation, accountToken: token)
+        }
+        roomCatalogWatchTask = task
+        await withTaskCancellationHandler(operation: { await task.value }, onCancel: { task.cancel() })
+        if roomCatalogWatchID == id { roomCatalogWatchTask = nil; roomCatalogWatchID = nil }
+    }
+
+    private func runRoomCatalogWatch(id: UUID, generation: Int, accountToken: String) async {
+        var revision: Int?
+        var failures = 0
+        var needsInitialList = true
+        var lastListReadAt = Date.distantPast
+        while !Task.isCancelled {
+            var attemptedInitialList = false
+            do {
+                try requireAccess(generation: generation, token: accountToken)
+                guard isAuthenticated, !needsNickname, roomCatalogWatchID == id else { return }
+                if !roomCatalogWatchSupported {
+                    attemptedInitialList = true
+                    try await refreshRoomRecords(showsLoading: false)
+                    lastListReadAt = Date()
+                    needsInitialList = false
+                    failures = 0
+                    try await Task.sleep(nanoseconds: 15_000_000_000)
+                    continue
+                }
+                try await ensureSDKSession()
+                try requireAccess(generation: generation, token: accountToken)
+                let session = try currentVoiceToken()
+                let startedAt = Date()
+                let change: KikiRoomCatalogChange
+                do {
+                    change = try await performAPI {
+                        try await voiceAPI.rtcRoomCatalogChanges(after: revision, waitSeconds: revision == nil ? 0 : 15, token: session)
+                    }
+                } catch let error as KikiAPIError where error.isUnauthorized && session != voiceToken {
+                    // A lease may rotate during the wait. Retry with its
+                    // replacement before expiring the account session.
+                    continue
+                } catch let error as KikiAPIError {
+                    if case .server(let status, _) = error, status == 404 || status == 405 {
+                        roomCatalogWatchSupported = false
+                        continue
+                    }
+                    throw error
+                }
+                try requireAccess(generation: generation, token: accountToken)
+                guard isAuthenticated, roomCatalogWatchID == id else { return }
+                if needsInitialList || change.revision != revision || Date().timeIntervalSince(lastListReadAt) >= 60 {
+                    // Acquire a revision before the list: a room created in
+                    // between must either be in this GET or wake the next wait.
+                    attemptedInitialList = true
+                    if let earlierRead = roomRefreshTask {
+                        // This GET may have taken its snapshot before the
+                        // observed revision existed. Coalescing onto it would
+                        // acknowledge the new cursor with an old list forever.
+                        // Finish it, then start one trailing authoritative GET.
+                        _ = await earlierRead.result
+                    }
+                    try requireAccess(generation: generation, token: accountToken)
+                    guard isAuthenticated, roomCatalogWatchID == id else { return }
+                    try await refreshRoomRecords(showsLoading: false)
+                    lastListReadAt = Date()
+                    needsInitialList = false
+                } else {
+                    // Defensive pacing also keeps an older/proxied endpoint
+                    // that returns early from becoming an accidental hot loop.
+                    let remaining = max(0, 15 - Date().timeIntervalSince(startedAt))
+                    if remaining > 0 { try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)) }
+                }
+                revision = change.revision
+                failures = 0
+            } catch {
+                guard !(error is CancellationError), !Task.isCancelled,
+                      generation == sessionGeneration, token == accountToken,
+                      permitsBusiness, isAuthenticated, roomCatalogWatchID == id else { return }
+                if (error as? KikiAPIError)?.isUnauthorized == true { handle(error, expectedToken: accountToken); return }
+                // Keep a usable cached list if only the lightweight watch is
+                // unavailable. The cursor is not advanced after a failed read.
+                let rateLimited: Bool
+                if case .rateLimited = error as? KikiAPIError { rateLimited = true } else { rateLimited = false }
+                let superseded = error is RoomCatalogReadFailure
+                if needsInitialList, !attemptedInitialList, !rateLimited, !superseded {
+                    do { try await refreshRoomRecords(showsLoading: false); needsInitialList = false }
+                    catch { handle(error, expectedToken: accountToken) }
+                }
+                if !superseded { handle(error, expectedToken: accountToken) }
+                guard permitsBusiness, isAuthenticated else { return }
+                failures += 1
+                let delay: TimeInterval
+                if case .rateLimited(let seconds, _) = error as? KikiAPIError { delay = Double(seconds) }
+                else { delay = min(30, pow(2, Double(min(failures, 5)))) }
+                do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) } catch { return }
+            }
+        }
+    }
+
+    private func refreshRoomRecords(showsLoading: Bool) async throws {
+        try requireAccess()
+        guard isAuthenticated, !needsNickname, let accountToken = token else { throw CancellationError() }
+        let generation = sessionGeneration
+        let waiter = UUID()
+        roomRefreshWaiters.insert(waiter)
+        let id: UUID
+        let task: Task<Void, Error>
+        if let existing = roomRefreshTask, !existing.isCancelled, let existingID = roomRefreshID {
+            task = existing
+            id = existingID
+            if showsLoading, !isRefreshing { isRefreshing = true }
+        } else {
+            roomRefreshWaiters = [waiter]
+            id = UUID()
+            roomRefreshID = id
+            if showsLoading || !hasLoadedRoomCatalog { isRefreshing = true }
+            task = Task { @MainActor [weak self] in
+                guard let self else { throw CancellationError() }
+                defer {
+                    if self.roomRefreshID == id {
+                        self.roomRefreshTask = nil
+                        self.roomRefreshID = nil
+                        self.roomRefreshWaiters = []
+                        if self.isRefreshing { self.isRefreshing = false }
+                    }
+                }
+                try await self.ensureSDKSession()
+                try self.requireAccess(generation: generation, token: accountToken)
+                for attempt in 0..<2 {
+                    let session = try self.currentVoiceToken()
+                    let metadataRevision = self.roomMetadataRevision
+                    let records: [DemoRoom]
+                    do { records = try await self.performAPI { try await self.voiceAPI.rtcRooms(token: session) } }
+                    catch let error as KikiAPIError where error.isUnauthorized && session != self.voiceToken && attempt == 0 { continue }
+                    try self.requireAccess(generation: generation, token: accountToken)
+                    guard self.isAuthenticated, self.roomRefreshID == id, !self.roomRefreshWaiters.isEmpty else { throw CancellationError() }
+                    if self.roomMetadataRevision != metadataRevision {
+                        // A delayed write acknowledgement may invalidate a GET
+                        // whose catalog revision already includes that write.
+                        // Do one bounded trailing GET; never report an unapplied
+                        // snapshot as success and let the watch advance its cursor.
+                        if attempt == 0 { continue }
+                        throw RoomCatalogReadFailure.superseded
+                    }
+                    self.roomMetadata = records
+                    self.hasLoadedRoomCatalog = true
+                    let visible = records.filter { !$0.isLive && $0.status == "live" }
+                    if self.rooms != visible { self.rooms = visible }
+                    if self.loadingError != nil { self.loadingError = nil }
+                    return
+                }
+                throw KikiAPIError.invalidResponse
+            }
+            roomRefreshTask = task
+        }
+        defer { releaseRoomRefreshWaiter(waiter, fetchID: id) }
+        try await withTaskCancellationHandler(operation: {
+            try await task.value
+            try Task.checkCancellation()
+        }, onCancel: { [weak self] in
+            Task { @MainActor in self?.releaseRoomRefreshWaiter(waiter, fetchID: id) }
+        })
+    }
+
+    private func releaseRoomRefreshWaiter(_ waiter: UUID, fetchID: UUID) {
+        guard roomRefreshID == fetchID else { return }
+        roomRefreshWaiters.remove(waiter)
+        if roomRefreshWaiters.isEmpty { roomRefreshTask?.cancel() }
+    }
+
+    private func cancelRoomCatalogRefreshes() {
+        roomCatalogWatchTask?.cancel(); roomCatalogWatchTask = nil; roomCatalogWatchID = nil
+        roomRefreshTask?.cancel(); roomRefreshTask = nil; roomRefreshID = nil; roomRefreshWaiters = []
+        roomCatalogWatchSupported = true
+        hasLoadedRoomCatalog = false
+        if isRefreshing { isRefreshing = false }
+    }
+
+    func refreshLibrary() async {
+        guard permitsBusiness, isAuthenticated, !needsNickname, let token else { return }
+        let generation = sessionGeneration
         do {
             try await ensureSDKSession()
-            let listings = try await rtc.fetchRooms()
-            let records = try await api.roomMetadata(ids: listings.map(\.id), token: token)
-            guard self.token == token, isAuthenticated else { return }
-            roomMetadata = records
-            let byID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            rooms = listings.compactMap { live in
-                guard var room = byID[live.id] else { return nil }
-                room.title = live.title.isEmpty ? room.title : live.title
-                room.host = live.host.isEmpty ? room.host : live.host
-                room.audience = live.audience
-                room.status = "live"
-                return room
+            let session = try currentVoiceToken()
+            let metadataRevision = roomMetadataRevision
+            let loaded = try await performAPI { try await voiceAPI.library(token: session) }
+            try requireAccess(generation: generation, token: token)
+            guard isAuthenticated, roomMetadataRevision == metadataRevision else { return }
+            library = loaded
+            if lastSuccessfulRoomTitle == nil,
+               let previous = loaded.created.first(where: { $0.isCreatedByMe && (try? KikiRoomTitlePolicy.validated($0.title)) != nil }) {
+                rememberRoomTitle(previous.title)
             }
-            loadingError = nil
+            libraryError = nil
+            favoriteIDs = Set(library.favorites.map(\.id))
+            recentRoomIDs = library.recents.map(\.id)
         } catch {
+            if !(error is CancellationError), self.token == token { libraryError = error.localizedDescription }
             handle(error, expectedToken: token)
         }
     }
 
-    func refreshLibrary() async {
-        guard isAuthenticated, !needsNickname, let token else { return }
-        do {
-            let loaded = try await api.library(token: token)
-            guard self.token == token, isAuthenticated else { return }
-            library = loaded
-            favoriteIDs = Set(library.favorites.map(\.id))
-            recentRoomIDs = library.recents.map(\.id)
-        } catch { handle(error, expectedToken: token) }
+    func removeHistory(roomID: String?) async throws {
+        try requireAccess()
+        guard let token else { throw KikiAPIError.server(401, "请先登录。") }
+        try await ensureSDKSession()
+        let session = try currentVoiceToken()
+        try await performAPI { try await voiceAPI.removeHistory(roomID: roomID, token: session) }
+        try requireAccess(token: token)
+        await refreshLibrary()
     }
 
     func reserveRoom(title: String, category: String, isLive: Bool, theme: Int) async throws -> DemoRoom {
-        guard let token, isAuthenticated, !needsNickname else { throw KikiAPIError.server(401, "请先登录并设置昵称。") }
-        try rtc.requireNoActiveRoom()
-        let room = try await api.reserveRoom(title: title, category: category, isLive: isLive, theme: theme, token: token)
-        guard self.token == token else { throw CancellationError() }
-        roomMetadata.insert(room, at: 0)
-        return room
+        let attempt = KikiRoomAttempt(operation: .createRoom, identityEpoch: incidents.identityEpoch)
+        return try await KikiIncidentContext.$attempt.withValue(attempt) {
+            do {
+                try requireAccess()
+                guard let token, isAuthenticated, !needsNickname else { throw KikiAPIError.server(401, "请先登录并设置昵称。") }
+                guard !isLive else { throw KikiAPIError.server(422, "暂未开放视频直播，请创建语聊房。") }
+                let title = try KikiRoomTitlePolicy.resolved(title, nickname: profileName)
+                try rtc.requireNoActiveRoom()
+                attempt.enter(.accountAuthorization)
+                try await ensureSDKSession()
+                let session = try currentVoiceToken()
+                attempt.enter(.roomAPI)
+                let room = try await performAPI { try await voiceAPI.reserveRoom(title: title, category: category, isLive: false, theme: theme, token: session) }
+                try requireAccess(token: token)
+                attempt.setRoom(room.id)
+                reservedRoomAttempts = reservedRoomAttempts.filter { Date().timeIntervalSince($0.value.startedAt) < 300 }
+                reservedRoomAttempts[room.id] = attempt
+                roomMetadataRevision &+= 1
+                roomMetadata.insert(room, at: 0)
+                rememberRoomTitle(room.title)
+                return room
+            } catch {
+                throw roomOperationFailure(error, attempt: attempt)
+            }
+        }
+    }
+
+    func updateRoomTitle(roomID: String, title: String) async throws -> KikiRoomState {
+        try requireAccess()
+        guard isAuthenticated, !needsNickname, let token else { throw KikiAPIError.server(401, "请先登录。") }
+        let generation = sessionGeneration
+        let title = try KikiRoomTitlePolicy.resolved(title, nickname: profileName)
+        do {
+            try await ensureSDKSession()
+            let session = try currentVoiceToken()
+            let state = try await performAPI { try await voiceAPI.updateRoomTitle(roomID, title: title, token: session) }
+            try requireAccess(generation: generation, token: token)
+            guard state.room.hostID == voiceUserID, state.room.isCreatedByMe, state.me.role == .owner,
+                  state.me.userID == voiceUserID else {
+                throw KikiAPIError.security("服务器返回的房主身份不匹配，请重新进入房间。")
+            }
+            // Reads that started before this committed write cannot restore
+            // an older room title. New reads capture the new revision normally.
+            roomMetadataRevision &+= 1
+            func renamed(_ rooms: [DemoRoom]) -> [DemoRoom] {
+                rooms.map { record in
+                    guard record.id == roomID else { return record }
+                    var updated = record; updated.title = state.room.title; return updated
+                }
+            }
+            roomMetadata = renamed(roomMetadata)
+            let updatedRooms = renamed(rooms)
+            if rooms != updatedRooms { rooms = updatedRooms }
+            let updatedLibrary = KikiLibrary(favorites: renamed(library.favorites), recents: renamed(library.recents), created: renamed(library.created))
+            if library.favorites != updatedLibrary.favorites || library.recents != updatedLibrary.recents || library.created != updatedLibrary.created {
+                objectWillChange.send()
+                library = updatedLibrary
+            }
+            rememberRoomTitle(state.room.title)
+            return state
+        } catch { handle(error, expectedToken: token); throw error }
+    }
+
+    private func roomTitleStorageKey(for userID: String) -> String { "lastSuccessfulRoomTitle." + userID }
+
+    private func rememberRoomTitle(_ value: String) {
+        guard !userID.isEmpty, let title = try? KikiRoomTitlePolicy.validated(value) else { return }
+        if lastSuccessfulRoomTitle != title { lastSuccessfulRoomTitle = title }
+        // The remote room is already committed. Failure to save a local
+        // preference must not turn a successful create/rename into a failure.
+        try? identity.write(title, key: roomTitleStorageKey(for: userID))
     }
 
     func startRoom(_ room: DemoRoom) async throws {
-        guard !isJoiningRoom, !needsNickname, let token else { return }
-        isJoiningRoom = true
-        defer { isJoiningRoom = false }
-        try await ensureSDKSession()
-        do {
-            try await rtc.createRoom(roomID: room.id, title: room.title, category: room.category, isLive: room.isLive, theme: room.theme)
-            _ = try await api.setRoomStatus(room.id, status: "live", token: token)
-            try await api.visit(room.id, token: token)
-            await refreshLibrary()
-        } catch {
-            if !rtc.isCurrentRoom(room.id) { _ = try? await api.setRoomStatus(room.id, status: "ended", token: token) }
-            throw error
+        let attempt = reservedRoomAttempts.removeValue(forKey: room.id) ?? KikiRoomAttempt(operation: .createRoom, roomID: room.id, identityEpoch: incidents.identityEpoch)
+        try await KikiIncidentContext.$attempt.withValue(attempt) {
+            let generation = sessionGeneration
+            var session: String?
+            do {
+                try requireAccess()
+                guard !isJoiningRoom, !needsNickname, let token else { return }
+                isJoiningRoom = true
+                defer { isJoiningRoom = false }
+                attempt.enter(.accountAuthorization)
+                try await ensureSDKSession()
+                session = try currentVoiceToken()
+                try requireAccess(generation: generation, token: token)
+                try await rtc.createRoom(roomID: room.id, title: room.title, category: room.category, isLive: room.isLive, theme: room.theme)
+                try requireAccess(generation: generation, token: token)
+                // POST /rooms already activates the server room. A second live
+                // PATCH is redundant and could falsely fail an already presented room.
+                attempt.complete()
+                incidents.retry()
+                await syncVisit(room.id, session: session!, created: true)
+            } catch {
+                let failure = roomOperationFailure(error, attempt: attempt)
+                if permitsBusiness, !rtc.isCurrentRoom(room.id), let session { _ = try? await voiceAPI.setRoomStatus(room.id, status: "ended", token: session) }
+                throw failure
+            }
         }
     }
 
     func openRoom(_ room: DemoRoom) async throws {
-        guard !isJoiningRoom, !needsNickname, let token else { return }
-        isJoiningRoom = true
-        defer { isJoiningRoom = false }
-        try await ensureSDKSession()
-        try await rtc.presentRoom(roomID: room.id, isLive: room.isLive, isOwner: room.isCreatedByMe)
-        do { try await api.visit(room.id, token: token); await refreshLibrary() }
-        catch { notify("已加入房间，浏览记录暂未同步：\(error.localizedDescription)") }
+        let attempt = KikiRoomAttempt(operation: .joinRoom, roomID: room.id, identityEpoch: incidents.identityEpoch)
+        try await KikiIncidentContext.$attempt.withValue(attempt) {
+            do {
+                try requireAccess()
+                let generation = sessionGeneration
+                guard !isJoiningRoom, !needsNickname, let token else { return }
+                isJoiningRoom = true
+                defer { isJoiningRoom = false }
+                attempt.enter(.accountAuthorization)
+                try await ensureSDKSession()
+                let session = try currentVoiceToken()
+                try requireAccess(generation: generation, token: token)
+                try await rtc.presentRoom(roomID: room.id, isLive: room.isLive, isOwner: room.isCreatedByMe)
+                try requireAccess(generation: generation, token: token)
+                attempt.complete()
+                incidents.retry()
+                await syncVisit(room.id, session: session, created: false)
+            } catch { throw roomOperationFailure(error, attempt: attempt) }
+        }
+    }
+
+    private func syncVisit(_ roomID: String, session: String, created: Bool) async {
+        // Nonessential history failures are warnings, independent from the
+        // completed create/join attempt, and retain their own response ID.
+        let trace = KikiRoomAttempt(operation: .runtime, roomID: roomID, identityEpoch: incidents.identityEpoch)
+        trace.enter(.stateSync)
+        do {
+            try await KikiIncidentContext.$attempt.withValue(trace) {
+                try await performAPI { try await voiceAPI.visit(roomID, token: session) }
+                await refreshLibrary()
+            }
+        } catch {
+            incidents.record(error, trace: trace, severity: .warning, dedupeKey: "history_sync")
+            notify(created ? "已创建房间，浏览记录暂未同步。" : "已加入房间，浏览记录暂未同步。")
+        }
+    }
+
+    private func roomOperationFailure(_ error: Error, attempt: KikiRoomAttempt) -> Error {
+        guard !(error is CancellationError) else { return error }
+        let eventID = incidents.record(error, trace: attempt)
+        let message: String
+        if error is KikiTransportFailure || error is KikiAPIError { message = error.localizedDescription }
+        else { message = attempt.operation == .createRoom ? "创建房间未完成，请稍后重试。" : "进入房间未完成，请稍后重试。" }
+        return KikiRoomOperationFailure(message: message, eventID: eventID)
     }
 
     func toggleFavorite(_ room: DemoRoom) {
-        guard let token, !favoriteTasks.contains(room.id) else { return }
+        guard permitsBusiness, let token, !favoriteTasks.contains(room.id) else { return }
         favoriteTasks.insert(room.id)
         let enabled = !favoriteIDs.contains(room.id)
         Task {
             defer { favoriteTasks.remove(room.id) }
             do {
-                try await api.favorite(room.id, enabled: enabled, token: token)
-                guard self.token == token else { return }
+                try await ensureSDKSession()
+                let session = try currentVoiceToken()
+                try await performAPI { try await voiceAPI.favorite(room.id, enabled: enabled, token: session) }
+                guard self.permitsBusiness, self.token == token else { return }
                 await refreshLibrary()
                 notify(enabled ? "已收藏房间" : "已取消收藏")
             } catch {
@@ -283,69 +897,159 @@ struct DemoRoom: Identifiable, Codable, Equatable {
     }
 
     func updateProfile(name: String, bio: String, avatarIndex: Int, jpegData: Data? = nil, clearCustomAvatar: Bool = false) async throws {
+        try requireAccess()
         guard let token else { throw KikiAPIError.server(401, "请先登录。") }
-        let updated = try await api.updateProfile(name: name, bio: bio, avatarIndex: clearCustomAvatar && jpegData == nil ? avatarIndex : nil, token: token)
-        guard self.token == token else { throw CancellationError() }
+        let updated = try await performAPI { try await api.updateProfile(name: name, bio: bio, avatarIndex: clearCustomAvatar && jpegData == nil ? avatarIndex : nil, token: token) }
+        try requireAccess(token: token)
         apply(updated)
         profileNeedsRTCSync = true
         if let jpegData {
-            let uploaded = try await api.uploadAvatar(jpegData: jpegData, token: token)
-            guard self.token == token else { throw CancellationError() }
+            let uploaded = try await performAPI { try await api.uploadAvatar(jpegData: jpegData, token: token) }
+            try requireAccess(token: token)
             apply(uploaded)
         }
         // Profile is already committed to our server. Retry SDK synchronization
         // at next login if its transient request fails rather than losing edits.
         var profileSynced = false
         do { try await syncRTCProfile(); profileSynced = true }
-        catch { notify("资料已保存，音视频名片将在下次进房或重新连接时同步。") }
+        catch { try requireAccess(token: token); notify("资料已保存，音视频名片将在下次进房或重新连接时同步。") }
         await refreshLibrary()
-        guard self.token == token else { throw CancellationError() }
+        try requireAccess(token: token)
         if profileSynced { notify("个人资料已更新") }
     }
 
     func setNotificationsEnabled(_ value: Bool) async throws {
+        try requireAccess()
         guard let token else { throw KikiAPIError.server(401, "请先登录。") }
-        let updated = try await api.updateNotifications(value, token: token)
-        guard self.token == token else { throw CancellationError() }
+        let updated = try await performAPI { try await api.updateNotifications(value, token: token) }
+        try requireAccess(token: token)
         apply(updated)
     }
 
-    func logout() async {
+    func pushStatus() async throws -> KikiPushStatus {
+        let status = try await socialRequest { try await self.api.pushStatus(token: $0) }
+        notificationsEnabled = status.enabled
+        return status
+    }
+    func registerPush(installationID: String, revision: Int64, deviceToken: String, environment: String, permission: String) async throws -> KikiPushReceipt {
+        try await socialRequest {
+            try await self.api.registerPushDevice(installationID: installationID, revision: revision, deviceToken: deviceToken,
+                                                 environment: environment, permission: permission, token: $0)
+        }
+    }
+    func pushUnbindOperation(installationID: String, revision: Int64) -> (() async throws -> Void)? {
+        guard let oldToken = token else { return nil }
+        let client = api
+        return { try await client.unregisterPushDevice(installationID: installationID, revision: revision, token: oldToken) }
+    }
+    func resolvePush(_ deliveryID: String) async throws -> KikiPushRoute {
+        try await socialRequest { try await self.api.resolvePush(deliveryID, token: $0) }
+    }
+    func prepareForPushNavigation() async {
+        guard permitsBusiness, isAuthenticated else { return }
+        await (rtcStorage as? KikiRTCService)?.minimizeRoom()
+    }
+
+    func logout(appleRevoked: Bool = false) async {
+        guard !isEndingSession else { return }
+        pushController?.endSession()
+        isEndingSession = true
+        incidents.clear()
+        sessionGeneration += 1
+        appleStorage?.cancel()
         isSigningIn = true
-        defer { isSigningIn = false }
+        defer { isSigningIn = false; isEndingSession = false }
         let oldToken = token
-        let ownedRoomID = rtc.currentSDKRoomID.flatMap { id in
+        let oldVoiceToken = voiceToken
+        let ownedRoomID = rtcStorage?.currentSDKRoomID.flatMap { id in
             (roomMetadata + library.created).contains(where: { $0.id == id && $0.isCreatedByMe }) ? id : nil
         }
         // Prevent room-close callbacks from starting a new SDK login while the
         // user is intentionally ending this session.
         isAuthenticated = false
+        suspendExperience()
+        rtcStorage?.stopMediaForPrivacy()
+        leaseTask?.cancel(); leaseTask = nil
         renewalTask?.cancel()
+        await apiStorage?.cancelRequestsAndClearAvatarCache()
+        await voiceAPIStorage?.cancelRequestsAndClearAvatarCache()
         _ = await renewalTask?.result
-        await rtc.logout()
+        await rtcStorage?.logout()
         if let oldToken {
-            if let ownedRoomID { _ = try? await api.setRoomStatus(ownedRoomID, status: "ended", token: oldToken) }
-            try? await api.logout(token: oldToken)
+            if let ownedRoomID, let oldVoiceToken { _ = try? await voiceAPI.setRoomStatus(ownedRoomID, status: "ended", token: oldVoiceToken) }
+            queueLogout(oldToken, revoked: appleRevoked)
+            await retryPendingLogouts(allowRightsOnly: true)
         }
         clearSession()
+        await pushController?.waitForTeardown()
     }
 
     func deleteAccount() async throws {
+        try requireAccess()
         guard let token else { throw KikiAPIError.server(401, "请先登录。") }
+        let roomTitleKey = roomTitleStorageKey(for: userID)
+        pushController?.endSession()
         isSigningIn = true
         defer { isSigningIn = false }
-        // Keep the SDK session usable if the server rejects deletion or the
-        // network is offline. Only tear it down after server confirmation.
-        try await api.deleteAccount(token: token)
+        isEndingSession = true
+        incidents.clear()
+        sessionGeneration += 1
         isAuthenticated = false
+        suspendExperience()
+        rtcStorage?.stopMediaForPrivacy()
+        leaseTask?.cancel(); leaseTask = nil
         renewalTask?.cancel()
+        await apiStorage?.cancelRequestsAndClearAvatarCache()
+        await voiceAPIStorage?.cancelRequestsAndClearAvatarCache()
         _ = await renewalTask?.result
-        await rtc.logout()
+        await rtcStorage?.logout()
+        voiceToken = nil; voiceUserID = nil; credentialsExpiry = 0
+        defer { isEndingSession = false }
+        try await api.deleteAccount(token: token)
+        identity.remove(roomTitleKey)
         clearSession()
-        KikiKeychain.remove("lastUserID")
+        await pushController?.waitForTeardown()
+        isEndingSession = false
+    }
+
+    func legalStatus() async throws -> KikiLegalStatus {
+        try requireAccess()
+        guard let token else { throw KikiAPIError.server(401, "请先登录。") }
+        let status = try await performAPI { try await api.legalStatus(token: token) }
+        try requireAccess(token: token)
+        do { try consent.verify(status) }
+        catch { handle(error, expectedToken: token); throw error }
+        return status
+    }
+
+    func withdrawConsent() async {
+        await consent.withdraw { [self] in try await stopForPrivacyWithdrawal() }
+    }
+
+    private func stopForPrivacyWithdrawal() async throws {
+        pushController?.endSession()
+        privacyStopped = true
+        incidents.clear()
+        appleStorage?.cancel()
+        isEndingSession = true
+        isAuthenticated = false
+        sessionGeneration += 1
+        suspendExperience()
+        rtcStorage?.stopMediaForPrivacy()
+        leaseTask?.cancel(); leaseTask = nil
+        renewalTask?.cancel()
+        await apiStorage?.cancelRequestsAndClearAvatarCache()
+        await voiceAPIStorage?.cancelRequestsAndClearAvatarCache()
+        _ = await renewalTask?.result
+        // Keep only the existing Keychain session as a retry credential until
+        // the server acknowledges withdrawal; never resume SDKs from it.
+        clearSession(removeCredential: false)
+        await pushController?.waitForTeardown()
+        try await rtcStorage?.logoutForPrivacy()
     }
 
     func notify(_ message: String) {
+        guard permitsBusiness else { return }
         toastTask?.cancel()
         withAnimation { toast = message }
         toastTask = Task { [weak self] in
@@ -364,7 +1068,11 @@ struct DemoRoom: Identifiable, Codable, Equatable {
     }
 
     private func apply(_ user: KikiUser) {
+        if userID != user.id {
+            lastSuccessfulRoomTitle = identity.read(roomTitleStorageKey(for: user.id)).flatMap { try? KikiRoomTitlePolicy.validated($0) }
+        }
         self.user = user
+        if let token { incidents.bind(userID: user.id, token: token) }
         userID = user.id
         profileName = user.name
         bio = user.bio
@@ -375,70 +1083,564 @@ struct DemoRoom: Identifiable, Codable, Equatable {
     }
 
     private func ensureSDKSession() async throws {
+        try requireAccess()
         if !rtc.isLoggedIn || credentialsExpiry < Int(Date().timeIntervalSince1970) + 300 { try await renewSDKSession() }
         else if profileNeedsRTCSync { try await syncRTCProfile() }
     }
 
     private func renewSDKSession() async throws {
-        if let task = renewalTask { return try await task.value }
+        try requireAccess()
+        if let task = renewalTask {
+            do { return try await task.value }
+            catch { renewalAttempt?.copyFailure(to: KikiIncidentContext.attempt); throw error }
+        }
         guard let token else { throw KikiAPIError.server(401, "登录已过期，请重新登录。") }
+        let generation = sessionGeneration
         let task = Task { @MainActor in
-            let refreshed = try await api.refresh(token: token)
+            let refreshed = try await performAPI { try await api.refresh(token: token) }
             try Task.checkCancellation()
-            guard self.token == token else { throw CancellationError() }
+            try requireAccess(generation: generation, token: token)
             apply(refreshed.user)
-            try await connectSDK(refreshed.sdk)
+            let session = try await performAPI { try await api.voiceSession(token: token) }
+            try requireAccess(generation: generation, token: token)
+            guard session.user.id == refreshed.user.id, !session.token.isEmpty,
+                  session.expiresAt > Int(Date().timeIntervalSince1970),
+                  session.sdk.expiresAt > Int(Date().timeIntervalSince1970) else {
+                throw KikiAPIError.security("语聊授权与当前账号不一致，请重新登录。")
+            }
+            try await connectSDK(session.sdk, voiceSession: session.token,
+                                 expiresAt: session.expiresAt, generation: generation, expectedToken: token)
+
         }
         renewalTask = task
-        defer { renewalTask = nil }
+        renewalAttempt = KikiIncidentContext.attempt
+        defer { renewalTask = nil; renewalAttempt = nil }
         try await task.value
     }
 
-    private func connectSDK(_ credentials: KikiSDKCredentials) async throws {
-        try await rtc.login(sdkAppID: credentials.sdkAppID, userID: credentials.userID, userSig: credentials.userSig)
-        credentialsExpiry = credentials.expiresAt
+    private func startLeaseRenewal() {
+        guard leaseTask == nil else { return }
+        let generation = sessionGeneration
+        let interval = leaseRenewalNanoseconds
+        leaseTask = Task { @MainActor [weak self] in
+            var nextInterval = interval
+            while !Task.isCancelled {
+                // A live background call keeps renewing its authorization. A
+                // temporary control-plane failure retries within the existing
+                // lease, never turning a healthy media connection into a leave.
+                guard let expiry = self?.credentialsExpiry else { return }
+                let remaining = max(0, Double(expiry) - Date().timeIntervalSince1970)
+                let delay = min(nextInterval, UInt64(remaining * 1_000_000_000))
+                do { try await Task.sleep(nanoseconds: delay) }
+                catch { return }
+                guard let self, self.permitsBusiness, self.token != nil,
+                      self.sessionGeneration == generation else { return }
+                let trace = KikiRoomAttempt(operation: .runtime, roomID: self.rtcStorage?.currentSDKRoomID, identityEpoch: self.incidents.identityEpoch)
+                trace.enter(.accountAuthorization)
+                do {
+                    guard self.credentialsExpiry > Int(Date().timeIntervalSince1970) else {
+                        throw KikiAPIError.server(401, "语聊授权已过期，请重新连接。")
+                    }
+                    try await KikiIncidentContext.$attempt.withValue(trace) { try await self.renewSDKSession() }
+                    trace.complete()
+                    nextInterval = interval
+                } catch {
+                    guard self.sessionGeneration == generation, !(error is CancellationError) else { return }
+                    self.incidents.record(error, trace: trace, severity: .warning, dedupeKey: "voice_authorization_renewal")
+                    if KikiVoiceAuthorizationRecovery.canKeepCurrentSession(after: error, expiresAt: self.credentialsExpiry) {
+                        nextInterval = min(interval, 5_000_000_000)
+                        continue
+                    }
+                    self.sessionGeneration += 1
+                    self.isEndingSession = true
+                    self.isAuthenticated = false
+                    self.suspendExperience()
+                    self.rtcStorage?.stopMediaForPrivacy()
+                    self.voiceToken = nil; self.voiceUserID = nil; self.credentialsExpiry = 0
+                    self.loadingError = "语聊授权暂时无法续期，请检查网络后重新连接。"
+                    await self.rtcStorage?.logout()
+                    self.isEndingSession = false
+                    self.leaseTask = nil
+                    return
+                }
+            }
+        }
+    }
+
+    private func currentVoiceToken() throws -> String {
+        guard let voiceToken, !voiceToken.isEmpty else { throw KikiAPIError.server(401, "语聊授权已失效，请重新连接。") }
+        return voiceToken
+    }
+
+    func refreshExperience() async {
+        guard permitsBusiness, isAuthenticated, !needsNickname else { return }
+        let generation = sessionGeneration
+        do {
+            try await ensureSDKSession()
+            try requireAccess(generation: generation)
+            await gifts.refresh()
+        } catch {
+            if generation == sessionGeneration { notify(error.localizedDescription) }
+        }
+    }
+
+    private func connectSDK(_ credentials: KikiSDKCredentials, voiceSession: String, expiresAt: Int,
+                            generation: Int, expectedToken: String) async throws {
+        try requireAccess(generation: generation, token: expectedToken)
+        try await rtc.login(credentials: credentials, sessionToken: voiceSession)
+        do { try requireAccess(generation: generation, token: expectedToken) }
+        catch { await rtcStorage?.logout(); throw error }
+        voiceToken = voiceSession
+        voiceUserID = credentials.userID
+        gifts.configure(api: voiceAPI, token: voiceSession, userID: credentials.userID)
+        rtc.configureGifts(gifts)
+        credentialsExpiry = min(credentials.expiresAt, expiresAt)
+        startLeaseRenewal()
         if !needsNickname { try await syncRTCProfile() }
     }
 
     private func syncRTCProfile() async throws {
-        guard let user else { return }
-        try await rtc.updateProfile(userID: user.sdkUserID, name: user.name, bio: user.bio,
-                                    avatarURL: user.avatarURL ?? KikiAvatarSource.url(for: user.avatarIndex).absoluteString)
+        try requireAccess()
+        guard let user, let voiceUserID else { return }
+        // Re-exchange after a profile edit so the voice server receives only the
+        // account server's authenticated profile; no client-claimed identity.
+        if profileNeedsRTCSync {
+            credentialsExpiry = 0
+            if renewalTask == nil { try await renewSDKSession() }
+        }
+        try await rtc.updateProfile(userID: voiceUserID, name: user.name, bio: user.bio,
+                                    avatarURL: user.avatarURL ?? "")
         profileNeedsRTCSync = false
     }
 
     private func handle(_ error: Error, expectedToken: String? = nil) {
         if let expectedToken, token != expectedToken { return }
         if error is CancellationError { return }
+        guard consent.hasCurrentConsent, !privacyStopped else { return }
         loadingError = error.localizedDescription
+        if let error = error as? KikiAPIError, case .legalUpdateRequired(let message, let required) = error {
+            consent.setServiceTransition(true)
+            sessionGeneration += 1
+            isEndingSession = true
+            rtcStorage?.stopMediaForPrivacy()
+            clearSession()
+            consent.requireUpdatedDocuments(required, message: message)
+            Task { [self] in
+                leaseTask?.cancel(); leaseTask = nil
+                renewalTask?.cancel()
+                await apiStorage?.cancelRequestsAndClearAvatarCache()
+                await voiceAPIStorage?.cancelRequestsAndClearAvatarCache()
+                _ = await renewalTask?.result
+                await rtcStorage?.logout()
+                isEndingSession = false
+                consent.setServiceTransition(false)
+            }
+            return
+        }
         if let error = error as? KikiAPIError, error.isUnauthorized {
+            sessionGeneration += 1
+            rtcStorage?.stopMediaForPrivacy()
             clearSession()
             loadingError = "登录已过期，请重新登录。"
             isEndingSession = true
             Task {
+                leaseTask?.cancel(); leaseTask = nil
                 renewalTask?.cancel()
                 _ = await renewalTask?.result
-                await rtc.logout()
+                await rtcStorage?.logout()
                 isEndingSession = false
             }
         }
     }
 
-    private func clearSession() {
-        KikiKeychain.remove("sessionToken")
-        token = nil; user = nil; credentialsExpiry = 0; profileNeedsRTCSync = false
+    private func requireAccess(generation: Int? = nil, token expectedToken: String? = nil) throws {
+        try Task.checkCancellation()
+        guard permitsBusiness, generation == nil || generation == sessionGeneration,
+              expectedToken == nil || expectedToken == token else { throw CancellationError() }
+    }
+
+    private func performAPI<Value>(_ operation: () async throws -> Value) async throws -> Value {
+        do { return try await operation() }
+        catch {
+            if let apiError = error as? KikiAPIError, case .legalUpdateRequired = apiError { handle(apiError) }
+            throw error
+        }
+    }
+
+    // Every social response is checked against the account session that requested it.
+    // Account tokens remain confined to kiki.group, including when opened from a room.
+    func socialPeople(query: String = "", cursor: String? = nil) async throws -> KikiPeoplePage {
+        try await socialRequest { try await self.api.socialPeople(query: query, cursor: cursor, token: $0) }
+    }
+
+    func socialPerson(_ id: String) async throws -> KikiPerson {
+        try await socialRequest { try await self.api.socialPerson(id, token: $0) }
+    }
+
+    func socialRelationships(_ kind: KikiRelationshipKind, cursor: String? = nil) async throws -> KikiPeoplePage {
+        try await socialRequest { try await self.api.socialRelationships(kind, cursor: cursor, token: $0) }
+    }
+
+    func isFollowing(_ person: KikiPerson) -> Bool {
+        guard isAuthenticated, !isEndingSession else { return false }
+        if let updated = followingOverrides[person.id] { return updated }
+        return hasLoadedFollowingIDs ? followingUserIDs.contains(person.id) : person.following
+    }
+
+    func setFollowing(_ person: KikiPerson, enabled: Bool) async throws -> KikiPerson {
+        let privacy = socialPrivacyRevision
+        let result = try await socialRequest {
+            try await self.api.socialFollow(person.id, enabled: enabled, requestID: UUID(), token: $0)
+        }
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        // A pre-mutation summary cannot overwrite the relationship that this
+        // request has just committed. Secondary counters refresh separately.
+        let summaryRequestID = UUID(); socialRefreshID = summaryRequestID
+        followingOverrides[result.id] = result.following
+        if result.following { followingUserIDs.insert(result.id) } else { followingUserIDs.remove(result.id) }
+        socialRevision += 1
+        socialMutationRefreshTask?.cancel()
+        socialMutationRefreshTask = Task { [weak self] in await self?.refreshSocialSummary(requestID: summaryRequestID) }
+        return result
+    }
+
+    func socialNotifications(cursor: String? = nil) async throws -> KikiNotificationsPage {
+        let privacy = socialPrivacyRevision
+        let fetch = notificationUnreadGate.beginFetch()
+        let result = try await socialRequest { try await self.api.socialNotifications(cursor: cursor, token: $0) }
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        if notificationUnreadGate.accepts(fetch) { unreadNotificationCount = result.unreadCount }
+        return result
+    }
+
+    func readNotifications(ids: [String] = [], all: Bool = false) async throws {
+        let privacy = socialPrivacyRevision
+        let generation = sessionGeneration, expectedToken = token
+        let mutation = notificationUnreadGate.beginMutation()
+        defer { notificationUnreadGate.finishMutation(mutation) }
+        do {
+            _ = try await socialRequest {
+                try await self.api.socialReadNotifications(ids: ids, all: all, token: $0)
+            }
+        } catch {
+            notificationUnreadGate.finishMutation(mutation)
+            if privacy == socialPrivacyRevision, generation == sessionGeneration, token == expectedToken,
+               permitsBusiness, isAuthenticated, !notificationUnreadGate.hasPendingMutation {
+                _ = try? await socialNotifications()
+            }
+            throw error
+        }
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        notificationUnreadGate.finishMutation(mutation)
+        // Concurrent reads can finish out of order. Fetch the authoritative total
+        // after the last mutation instead of applying a stale mutation response.
+        if !notificationUnreadGate.hasPendingMutation { _ = try await socialNotifications() }
+        try requireAccess(generation: generation, token: expectedToken)
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        await pushController?.refresh()
+        try requireAccess(generation: generation, token: expectedToken)
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+    }
+
+    func refreshSocialSummary() async {
+        guard permitsBusiness, isAuthenticated, !needsNickname, !userID.isEmpty else { return }
+        socialMutationRefreshTask?.cancel(); socialMutationRefreshTask = nil
+        let requestID = UUID(); socialRefreshID = requestID
+        await refreshSocialSummary(requestID: requestID)
+    }
+
+    private func refreshSocialSummary(requestID: UUID) async {
+        // A queued mutation refresh must not supersede a newer explicit refresh
+        // merely because its unstructured task was scheduled later.
+        guard !Task.isCancelled, requestID == socialRefreshID,
+              permitsBusiness, isAuthenticated, !needsNickname, !userID.isEmpty else { return }
+        let privacy = socialPrivacyRevision
+        do {
+            let me = try await socialPerson(userID)
+            _ = try await socialNotifications()
+            let relationships = try await socialRequest { try await self.api.socialFollowingIDs(token: $0) }
+            _ = try await socialConversations()
+            guard requestID == socialRefreshID, privacy == socialPrivacyRevision, permitsBusiness, isAuthenticated else { return }
+            if socialProfile != me { socialProfile = me }
+            let following = Set(relationships.followingIDs)
+            if followingUserIDs != following { followingUserIDs = following }
+            if !followingOverrides.isEmpty { followingOverrides = [:] }
+            if !hasLoadedFollowingIDs { hasLoadedFollowingIDs = true }
+        } catch {
+            if !(error is CancellationError) { handleSocialFailure(error) }
+        }
+    }
+
+    func socialImage(_ media: KikiSocialMedia) async throws -> UIImage {
+        try requireAccess()
+        if let cached = socialImageCache.object(forKey: media.id as NSString) { return cached }
+        let privacy = socialPrivacyRevision
+        let image = try await socialRequest { try await self.api.socialImage(media, token: $0) }
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        socialImageCache.setObject(image, forKey: media.id as NSString, cost: Int(image.size.width * image.size.height * 4))
+        return image
+    }
+    func uploadSocialImage(_ jpeg: Data) async throws -> KikiSocialMedia {
+        try await socialRequest { try await self.api.socialUpload(jpeg: jpeg, token: $0) }
+    }
+    func socialMoments(kind: KikiMomentKind, userID: String? = nil, cursor: String? = nil) async throws -> KikiMomentsPage {
+        try await socialRequest { try await self.api.socialMoments(kind: kind, userID: userID, cursor: cursor, token: $0) }
+    }
+    func socialMoment(_ id: String) async throws -> KikiMoment {
+        try await socialRequest { try await self.api.socialMoment(id, token: $0) }
+    }
+    func publishMoment(requestID: UUID, text: String, mediaIDs: [String]) async throws -> KikiMoment {
+        try await socialRequest { try await self.api.socialPublishMoment(requestID: requestID, text: text, mediaIDs: mediaIDs, token: $0) }
+    }
+    func deleteMoment(_ id: String) async throws {
+        try await socialRequest { try await self.api.socialDeleteMoment(id, token: $0) }
+    }
+    func likeMoment(_ moment: KikiMoment) async throws -> KikiMoment {
+        try await socialRequest { try await self.api.socialLike(moment.id, enabled: !moment.liked, requestID: UUID(), token: $0) }
+    }
+    func socialComments(_ id: String, cursor: String? = nil) async throws -> KikiCommentsPage {
+        try await socialRequest { try await self.api.socialComments(id, cursor: cursor, token: $0) }
+    }
+    func commentMoment(_ id: String, text: String, requestID: UUID) async throws -> KikiMomentComment {
+        try await socialRequest { try await self.api.socialComment(id, text: text, requestID: requestID, token: $0) }
+    }
+    func deleteComment(_ id: String) async throws {
+        try await socialRequest { try await self.api.socialDeleteComment(id, token: $0) }
+    }
+    func socialConversations(cursor: String? = nil) async throws -> KikiConversationsPage {
+        let privacy = socialPrivacyRevision
+        let fetch = directUnreadGate.beginFetch()
+        let result = try await socialRequest { try await self.api.socialConversations(cursor: cursor, token: $0) }
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        if directUnreadGate.accepts(fetch) { unreadDirectMessageCount = result.unreadCount }
+        return result
+    }
+    func setInboxPinned(_ entry: KikiInboxEntry, pinned: Bool, requestID: UUID) async throws {
+        try await socialRequest { token in
+            switch entry.content {
+            case .notifications: try await self.api.socialSetNotificationsPinned(pinned: pinned, requestID: requestID, token: token)
+            case .direct(let conversation): try await self.api.socialSetConversationPinned(conversation.person.id, pinned: pinned, requestID: requestID, token: token)
+            }
+        }
+    }
+
+    func clearInboxEntry(_ entry: KikiInboxEntry, throughID: String, requestID: UUID) async throws {
+        let privacy = socialPrivacyRevision
+        let generation = sessionGeneration, expectedToken = token
+        let isDirect: Bool
+        switch entry.content { case .direct: isDirect = true; case .notifications: isDirect = false }
+        let mutation = isDirect ? directUnreadGate.beginMutation() : notificationUnreadGate.beginMutation()
+        defer {
+            if isDirect { directUnreadGate.finishMutation(mutation) }
+            else { notificationUnreadGate.finishMutation(mutation) }
+        }
+        do {
+            try await socialRequest { token in
+                switch entry.content {
+                case .notifications: try await self.api.socialClearNotifications(throughNotificationID: throughID, requestID: requestID, token: token)
+                case .direct(let conversation): try await self.api.socialClearConversation(conversation.person.id, throughMessageID: throughID, requestID: requestID, token: token)
+                }
+            }
+        } catch {
+            if isDirect { directUnreadGate.finishMutation(mutation) } else { notificationUnreadGate.finishMutation(mutation) }
+            if privacy == socialPrivacyRevision, generation == sessionGeneration, token == expectedToken, permitsBusiness, isAuthenticated {
+                if isDirect, !directUnreadGate.hasPendingMutation { _ = try? await socialConversations() }
+                else if !isDirect, !notificationUnreadGate.hasPendingMutation { _ = try? await socialNotifications() }
+            }
+            throw error
+        }
+        try requireAccess(generation: generation, token: expectedToken)
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        switch entry.content {
+        case .notifications:
+            notificationHistoryRevision += 1
+            notificationUnreadGate.finishMutation(mutation)
+            if !notificationUnreadGate.hasPendingMutation { _ = try? await socialNotifications() }
+        case .direct(let conversation):
+            directDrafts[conversation.person.id] = nil; pendingDirectMessages[conversation.person.id] = nil
+            directHistoryRevision[conversation.person.id, default: 0] += 1
+            directUnreadGate.finishMutation(mutation)
+            if !directUnreadGate.hasPendingMutation { _ = try? await socialConversations() }
+        }
+        try requireAccess(generation: generation, token: expectedToken)
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        await pushController?.refresh()
+        try requireAccess(generation: generation, token: expectedToken)
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+    }
+
+    func socialDirectMessages(_ id: String, cursor: String? = nil) async throws -> KikiDirectMessagesPage {
+        let revision = directAccessRevision[id, default: 0]
+        directAccessFetchRevision[id, default: 0] += 1
+        let fetch = directAccessFetchRevision[id, default: 0]
+        do {
+            let page = try await socialRequest { try await self.api.socialDirectMessages(id, cursor: cursor, token: $0) }
+            if revision == directAccessRevision[id, default: 0], fetch == directAccessFetchRevision[id] { applyDirectAccess(page.directAccess, personID: id) }
+            return page
+        } catch {
+            if revision == directAccessRevision[id, default: 0], fetch == directAccessFetchRevision[id], let api = error as? KikiAPIError,
+               case .server(let status, _) = api, status == 403 || status == 404 {
+                applyDirectAccess(.init(canSend: false), personID: id)
+            }
+            throw error
+        }
+    }
+    func directMessagePushReceived() {
+        guard permitsBusiness, isAuthenticated else { return }
+        directContentRevision += 1
+    }
+    private func applyDirectAccess(_ access: KikiDirectMessageAccess, personID: String) {
+        if directMessageAccess[personID] != access { directMessageAccess[personID] = access }
+    }
+    func updateDirectDraft(_ text: String, personID: String) {
+        guard permitsBusiness, isAuthenticated, pendingDirectMessages[personID] == nil else { return }
+        directDrafts[personID] = String(text.prefix(1000))
+    }
+    func sendDirectDraft(_ id: String) async throws -> KikiDirectMessageReceipt {
+        try requireAccess()
+        let generation = sessionGeneration, expectedToken = token, privacy = socialPrivacyRevision
+        let pending: KikiPendingDirectMessage
+        if let current = pendingDirectMessages[id] {
+            guard !current.isSending else { throw CancellationError() }
+            pending = .init(requestID: current.requestID, text: current.text, isSending: true, error: nil)
+        } else {
+            if let access = directMessageAccess[id], !access.canSend {
+                throw KikiAPIError.server(403, access.explanation ?? "暂时无法发送消息。")
+            }
+            let text = (directDrafts[id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { throw KikiAPIError.server(422, "请先输入消息。") }
+            pending = .init(requestID: UUID(), text: text, isSending: true, error: nil)
+        }
+        directAccessRevision[id, default: 0] += 1
+        pendingDirectMessages[id] = pending
+        do {
+            let result = try await socialRequest { try await self.api.socialSendDirect(id, text: pending.text, requestID: pending.requestID, token: $0) }
+            directAccessRevision[id, default: 0] += 1
+            if let access = result.directAccess { applyDirectAccess(access, personID: id) }
+            if pendingDirectMessages[id]?.requestID == pending.requestID {
+                pendingDirectMessages[id] = nil; directDrafts[id] = nil
+            }
+            return result
+        } catch {
+            if !(error is CancellationError), generation == sessionGeneration, expectedToken == token, privacy == socialPrivacyRevision {
+                directAccessRevision[id, default: 0] += 1
+                if let denial = error as? KikiDirectMessageAdmissionError { applyDirectAccess(denial.access, personID: id) }
+                else if let api = error as? KikiAPIError, case .server(403, _) = api { applyDirectAccess(.init(canSend: false), personID: id) }
+            }
+            if pendingDirectMessages[id]?.requestID == pending.requestID {
+                if KikiSocialMutation.needsSameIDRetry(error) {
+                    var failed = pending; failed.isSending = false; failed.error = error.localizedDescription
+                    pendingDirectMessages[id] = failed
+                } else { pendingDirectMessages[id] = nil }
+            }
+            throw error
+        }
+    }
+    func readDirectMessages(_ id: String, throughMessageID: String) async throws {
+        let privacy = socialPrivacyRevision
+        let generation = sessionGeneration, expectedToken = token
+        let mutation = directUnreadGate.beginMutation()
+        defer { directUnreadGate.finishMutation(mutation) }
+        do {
+            _ = try await socialRequest { try await self.api.socialReadDirect(id, throughMessageID: throughMessageID, token: $0) }
+        } catch {
+            directUnreadGate.finishMutation(mutation)
+            if privacy == socialPrivacyRevision, generation == sessionGeneration, token == expectedToken,
+               permitsBusiness, isAuthenticated, !directUnreadGate.hasPendingMutation {
+                _ = try? await socialConversations()
+            }
+            throw error
+        }
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        directUnreadGate.finishMutation(mutation)
+        if !directUnreadGate.hasPendingMutation { _ = try await socialConversations() }
+        try requireAccess(generation: generation, token: expectedToken)
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+        await pushController?.refresh()
+        try requireAccess(generation: generation, token: expectedToken)
+        guard privacy == socialPrivacyRevision else { throw CancellationError() }
+    }
+    func submitSocialReport(_ target: KikiSocialReportTarget, reason: KikiSocialReportReason, details: String, requestID: UUID) async throws -> KikiSocialReportReceipt {
+        try await socialRequest { try await self.api.socialReport(target, reason: reason, details: details, requestID: requestID, token: $0) }
+    }
+    func socialReports() async throws -> KikiSocialReportsPage {
+        try await socialRequest { try await self.api.socialReports(token: $0) }
+    }
+    func socialPolicyChanged(userID: String, blocked: Bool) {
+        socialPrivacyRevision += 1
+        socialRefreshID = UUID()
+        socialMutationRefreshTask?.cancel(); socialMutationRefreshTask = nil
+        notificationUnreadGate = KikiUnreadRequestGate(); directUnreadGate = KikiUnreadRequestGate()
+        if blocked { followingOverrides[userID] = false; followingUserIDs.remove(userID); directDrafts[userID] = nil; pendingDirectMessages[userID] = nil }
+        directMessageAccess = [:]; directAccessRevision = [:]; directAccessFetchRevision = [:]
+        socialImageCache.removeAllObjects(); socialRevision += 1
+        pushController?.privacyChanged()
+    }
+    func setSocialBlock(_ id: String, enabled: Bool) async throws {
+        try await socialRequest { try await self.api.socialBlock(id, enabled: enabled, requestID: UUID(), token: $0) }
+        socialPolicyChanged(userID: id, blocked: enabled)
+        await refreshSafety(); await refreshRooms(); await refreshSocialSummary()
+    }
+
+    private func socialRequest<Value>(_ operation: (String) async throws -> Value) async throws -> Value {
+        try requireAccess()
+        guard isAuthenticated, !needsNickname, let token else { throw KikiAPIError.server(401, "请先登录。") }
+        let generation = sessionGeneration
+        let privacyRevision = socialPrivacyRevision
+        do {
+            let value = try await performAPI { try await operation(token) }
+            try requireAccess(generation: generation, token: token)
+            guard privacyRevision == socialPrivacyRevision else { throw CancellationError() }
+            return value
+        } catch {
+            try requireAccess(generation: generation, token: token)
+            guard privacyRevision == socialPrivacyRevision else { throw CancellationError() }
+            handleSocialFailure(error)
+            throw error
+        }
+    }
+
+    private func handleSocialFailure(_ error: Error) {
+        if let error = error as? KikiAPIError, error.isUnauthorized { handle(error) }
+    }
+
+    private func suspendExperience() {
+        // Invalidate queued writes synchronously, before session teardown awaits.
+        gifts.reset()
+        rtcStorage?.configureGifts(nil)
+    }
+
+    private func clearSession(removeCredential: Bool = true) {
+        roomMetadataRevision &+= 1
+        cancelRoomCatalogRefreshes()
+        if token != nil || isAuthenticated || !userID.isEmpty { pushController?.endSession() }
+        incidents.clear()
+        reservedRoomAttempts = [:]
+        socialMutationRefreshTask?.cancel(); socialMutationRefreshTask = nil
+        socialRefreshID = UUID()
+        socialPrivacyRevision += 1
+        notificationUnreadGate = KikiUnreadRequestGate(); directUnreadGate = KikiUnreadRequestGate()
+        directHistoryRevision = [:]; notificationHistoryRevision += 1
+        socialProfile = nil; followingUserIDs = []; followingOverrides = [:]; hasLoadedFollowingIDs = false; unreadNotificationCount = 0; unreadDirectMessageCount = 0
+        socialImageCache.removeAllObjects()
+        directDrafts = [:]; pendingDirectMessages = [:]
+        directMessageAccess = [:]; directAccessRevision = [:]; directAccessFetchRevision = [:]; directContentRevision += 1
+        socialRevision += 1
+        leaseTask?.cancel(); leaseTask = nil
+        suspendExperience()
+        if removeCredential {
+            identity.remove("sessionToken")
+            identity.remove("appleSubject")
+            identity.remove("appleSessionVersion")
+        }
+        token = nil; voiceToken = nil; voiceUserID = nil; user = nil; credentialsExpiry = 0; profileNeedsRTCSync = false
         isAuthenticated = false
         profileName = ""; bio = ""; avatarIndex = 0; customAvatarURL = nil; needsNickname = false; userID = ""
+        notificationsEnabled = false
+        lastSuccessfulRoomTitle = nil
         favoriteIDs = []; recentRoomIDs = []; rooms = []
         roomMetadata = []; library = KikiLibrary(favorites: [], recents: [], created: [])
-        loadingError = nil
-    }
-}
-
-enum KikiAvatarSource {
-    static func url(for index: Int) -> URL {
-        let safeIndex = max(0, min(11, index)) + 1
-        return URL(string: "https://im.sdk.qcloud.com/download/tuikit-resource/avatar/avatar_\(safeIndex).png")!
+        loadingError = nil; libraryError = nil
     }
 }
 
@@ -453,13 +1655,11 @@ struct KikiAvatar: View {
     var body: some View {
         Group {
             if let customURL {
-                if let image = customImage ?? KikiAPIClient.shared.cachedAvatar(customURL) {
+                if let image = customImage ?? KikiAccountAPIClient.shared.cachedAvatar(customURL) {
                     Image(uiImage: image).resizable().scaledToFill()
                 } else { placeholder }
             } else {
-                AsyncImage(url: KikiAvatarSource.url(for: index)) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: { placeholder }
+                placeholder
             }
         }
         .frame(width: size, height: size)
@@ -471,7 +1671,7 @@ struct KikiAvatar: View {
             customImage = nil
             guard let customURL else { return }
             do {
-                let loaded = try await KikiAPIClient.shared.loadAvatar(customURL)
+                let loaded = try await KikiAccountAPIClient.shared.loadAvatar(customURL)
                 try Task.checkCancellation()
                 customImage = loaded
             } catch { /* Keep a stable avatar fallback when offline. */ }
@@ -479,6 +1679,20 @@ struct KikiAvatar: View {
     }
     private var placeholder: some View {
         Text(faces[abs(index) % faces.count]).font(.system(size: size * 0.62))
+    }
+}
+
+@available(iOS 16.0, *)
+struct KikiDecoratedAvatar: View {
+    @ObservedObject var gifts: KikiGiftStore
+    let userID: String
+    var index: Int
+    var size: CGFloat = 40
+    var customURL: String? = nil
+
+    var body: some View {
+        KikiAvatar(index: index, size: size, customURL: customURL)
+            .overlay { KikiAvatarDecoration(decorationID: gifts.appearance(for: userID).avatarFrame, size: size) }
     }
 }
 

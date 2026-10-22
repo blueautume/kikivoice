@@ -399,6 +399,10 @@ final class KikiVoiceBarrageCell: UIView {
         }
         accessibilityLabel = "\(displayName)：\(barrage.textContent)"
         isAccessibilityElement = true
+        if barrage.extensionInfo?["TYPE"] == "KIKI_FREE_GIFT",
+           let eventID = barrage.extensionInfo?["gift_event_id"] {
+            accessibilityIdentifier = "voice.room.giftMessage.\(eventID)"
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }

@@ -43,6 +43,7 @@ class VoiceRoomRootView: RTCBaseView {
     private let kikiAudienceStrip = KikiVoiceAudienceStrip()
     private let kikiChatTitle = UILabel()
     private let kikiRoomNotice = UILabel()
+    private var kikiGiftMessages = KikiVoiceGiftMessageBuffer()
     
     @Published private var isLinked: Bool = false
     
@@ -264,7 +265,10 @@ class VoiceRoomRootView: RTCBaseView {
     override func bindInteraction() {
         // Top view interaction.
         topView.delegate = self
-        if usesKikiAppearance { bindKikiAppearance() }
+        if usesKikiAppearance {
+            bindKikiAppearance()
+            subscribeKikiGiftMessages()
+        }
         subscribeRoomState()
         subscribeUserState()
         if prepareStore.roomParams.enableCrossRoomInteraction {
@@ -1462,6 +1466,23 @@ extension VoiceRoomRootView: BarrageStreamViewDelegate {
 // MARK: - Kiki room appearance
 
 private extension VoiceRoomRootView {
+    func subscribeKikiGiftMessages() {
+        NotificationCenter.default.publisher(for: Notification.Name("KikiGiftEventConfirmed"))
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notification in
+                self?.appendKikiGiftMessage(notification.userInfo)
+            }
+            .store(in: &cancellableSet)
+    }
+
+    func appendKikiGiftMessage(_ info: [AnyHashable: Any]?) {
+        guard !isExited,
+              let barrage = kikiGiftMessages.takeMessage(info, roomID: liveID) else { return }
+        // Each client receives the same server event independently. Append to
+        // this room's existing chat stream without sending another IM message.
+        barrageStore.appendLocalTip(message: barrage)
+    }
+
     func activateKikiConstraints() {
         kikiHeader.snp.makeConstraints { make in
             make.top.equalTo(safeAreaLayoutGuide.snp.top).offset(8)
@@ -1489,7 +1510,8 @@ private extension VoiceRoomRootView {
         bottomMenu.snp.makeConstraints { make in
             make.trailing.equalToSuperview()
             make.bottom.equalTo(safeAreaLayoutGuide.snp.bottom).offset(-8)
-            make.width.equalTo(112)
+            // Gift + existing room controls: 3 x 44, two 6pt gaps and 16pt trailing inset.
+            make.width.equalTo(160)
             make.height.equalTo(48)
         }
         muteMicrophoneButton.snp.makeConstraints { make in
@@ -1635,6 +1657,43 @@ private extension VoiceRoomRootView {
         // Do not route to .exit: that path leaves the room and cannot be resumed.
         endEditing(true)
         delegate?.rootViewDidRequestMinimize(self)
+    }
+}
+
+/// Converts authoritative gift events into this room's local chat messages.
+/// Keeping only recent IDs prevents an acknowledgement and the subsequent poll
+/// from adding the same gift twice, without retaining an unbounded event log.
+struct KikiVoiceGiftMessageBuffer {
+    private var messageIDs = Set<String>()
+    private var messageOrder: [String] = []
+
+    mutating func takeMessage(_ info: [AnyHashable: Any]?, roomID: String) -> Barrage? {
+        guard let info,
+              info["roomID"] as? String == roomID,
+              let eventID = info["eventID"] as? String, !eventID.isEmpty,
+              let senderID = info["senderID"] as? String, !senderID.isEmpty,
+              let senderName = info["senderName"] as? String,
+              let recipientName = info["recipientName"] as? String,
+              let giftName = info["giftName"] as? String,
+              let quantity = info["quantity"] as? Int, quantity > 0,
+              messageIDs.insert(eventID).inserted else { return nil }
+        messageOrder.append(eventID)
+        if messageOrder.count > 256 {
+            messageIDs.remove(messageOrder.removeFirst())
+        }
+
+        var sender = LiveUserInfo()
+        sender.userID = senderID
+        sender.userName = senderName
+        sender.avatarURL = info["senderAvatarURL"] as? String ?? ""
+        var barrage = Barrage()
+        barrage.liveID = roomID
+        barrage.sender = sender
+        barrage.textContent = "送给 \(recipientName) \(giftName) ×\(quantity)"
+        barrage.timestampInSecond = Date().timeIntervalSince1970
+        barrage.extensionInfo = ["TYPE": "KIKI_FREE_GIFT", "gift_event_id": eventID,
+                                 "gift_name": giftName, "gift_count": String(quantity)]
+        return barrage
     }
 }
 

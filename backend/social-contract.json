@@ -1,0 +1,1021 @@
+{
+  "schemaVersion": 1,
+  "service": "account",
+  "baseURL": "https://kiki.group",
+  "scope": "P1 confirmed: follows, public profiles, in-app notifications, reply-gated text direct messages (five introductions before recipient replies), static-image moments, likes/comments, social reports and independent community moderation. Native APNs provides generic system alerts for current social events. No payments, gifts, VIP or realtime voice changes.",
+  "authentication": "Ordinary account bearer, current adult legal consent and completed nickname. Operations endpoints require independent community Passkey permission.",
+  "privacy": "Every ordinary social request fetches one signed, uncached voice policy snapshot; unavailable/malformed policy fails closed with 503. Bilateral blocked people are absent with 404 for direct lookup and omitted from lists/notifications. Login and account deletion never depend on social policy availability.",
+  "person": {
+    "id": "public kiki_ ID",
+    "name": "1..16 characters",
+    "bio": "0..80 characters",
+    "avatarIndex": "integer0..11",
+    "avatarURL": "https://kiki.group/v1/avatars/<sha256>.jpg or null",
+    "following": "boolean viewer follows person",
+    "followsYou": "boolean person follows viewer",
+    "mutual": "boolean",
+    "followingCount": "integer",
+    "followerCount": "integer",
+    "currentRoomID": "verified live lk_<32hex> ID or null; no room title or inferred online state"
+  },
+  "pagination": "Opaque HMAC cursor derived from high-entropy account bridge material (legacy fixtures use Apple encryption key), bound to actor/filter/sort; expires24h. Conversations use pinned descending, updatedAt descending, id descending with strict conversations-v2 [pinFlag,updatedAt,id] cursor; legacy conversations two-key cursors continue the unpinned portion until refresh. Other lists preserve their existing two-key scopes; DM seq descending; operator reports ascending oldest first. Clear watermarks are applied before pagination and rechecked after policy fetch. List may be shorter after block filtering, follow nextCursor to exhaust.",
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/v1/social/people",
+      "query": {
+        "query": "optional name/publicID literal substring max80",
+        "limit": "1..50 default20",
+        "cursor": "optional opaque"
+      },
+      "response": {
+        "people": [
+          "Person"
+        ],
+        "nextCursor": "string|null"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/people/{id}",
+      "response": {
+        "person": "Person"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/relationships",
+      "query": {
+        "kind": "following|followers|mutual",
+        "limit": "1..50 default20",
+        "cursor": "optional opaque"
+      },
+      "response": {
+        "people": [
+          "Person"
+        ],
+        "nextCursor": "string|null"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/relationships/ids",
+      "response": {
+        "followingIDs": [
+          "complete unblocked public ID, max1000"
+        ],
+        "followingCount": "integer",
+        "followerCount": "integer"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/social/follows/{id}",
+      "body": {
+        "requestID": "UUID"
+      },
+      "response": {
+        "person": "Person"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/social/follows/{id}",
+      "body": {
+        "requestID": "UUID"
+      },
+      "response": {
+        "person": "Person"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/notifications",
+      "query": {
+        "limit": "1..50 default20",
+        "cursor": "optional opaque"
+      },
+      "response": {
+        "notifications": [
+          "Notification DTO (see notification schema including optional momentID)"
+        ],
+        "unreadCount": "integer",
+        "nextCursor": "string|null",
+        "retentionDays": 30,
+        "inboxState": "notificationInboxState (global latest cutoff independent of requested page)"
+      },
+      "behavior": "Viewer-cleared notifications are filtered before pagination. Notification sequence is monotonic even for notices created within the same second. A new visible notification restores the aggregate entry."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/notifications/read",
+      "body": "{ids:[1..100 UUID]} OR {all:true}, exclusive",
+      "response": {
+        "unreadCount": "integer"
+      }
+    },
+    {
+      "method": "PUT|DELETE",
+      "path": "/v1/social/blocks/{id}",
+      "body": {
+        "requestID": "UUID"
+      },
+      "response": {
+        "ok": true,
+        "blocked": "boolean"
+      },
+      "behavior": "Fixed signed account→voice social-block; request UUID persists and old retry never reapplies after newer block request. Successful block drops both follow directions."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/media",
+      "body": "raw static JPEG <=2MiB; Content-Type image/jpeg",
+      "response": "Media; bare object",
+      "behavior": "Source <=10M pixels, re-encode metadata-free RGB JPEG longest dimension1280; private directory0700/file0600."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/media/{id}.jpg",
+      "response": "image/jpeg no-store",
+      "behavior": "Account bearer, current consent, authoritative bilateral block check; visible submitted moment or own unsubmitted upload<24h."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/moments",
+      "query": {
+        "kind": "all|following|mine defaultall",
+        "userID": "optional public user profile feed",
+        "limit": "1..50 default20",
+        "cursor": "opaque"
+      },
+      "response": {
+        "moments": [
+          "Moment"
+        ],
+        "nextCursor": "opaque|null"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/moments/{id}",
+      "response": {
+        "moment": "Moment"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/moments",
+      "body": "momentCreate schema",
+      "response": {
+        "moment": "Moment"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/social/moments/{id}",
+      "response": {
+        "ok": true
+      },
+      "behavior": "Author only; repeated delete succeeds without leaking other author content."
+    },
+    {
+      "method": "PUT|DELETE",
+      "path": "/v1/social/moments/{id}/like",
+      "body": "mutation schema",
+      "response": {
+        "moment": "Moment"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/moments/{id}/comments",
+      "query": "limit1..50,cursor",
+      "response": {
+        "comments": [
+          "Comment"
+        ],
+        "nextCursor": "opaque|null"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/moments/{id}/comments",
+      "body": "commentCreate schema",
+      "response": {
+        "comment": "Comment"
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/social/comments/{id}",
+      "response": {
+        "ok": true
+      },
+      "behavior": "Author only"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/conversations",
+      "query": "limit1..50 default20,cursor",
+      "response": {
+        "conversations": [
+          "Conversation"
+        ],
+        "nextCursor": "opaque|null",
+        "unreadCount": "integer global visible unread"
+      },
+      "behavior": "Pinned conversations first, then recent activity. Viewer-cleared conversations stay absent until a new message sequence exceeds their clear watermark. Pin/clear never affect the other participant."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/conversations/{personID}/messages",
+      "query": "limit1..50 default30,cursor",
+      "response": {
+        "conversationID": "UUID|null",
+        "messages": [
+          "Message newest seq first"
+        ],
+        "nextCursor": "opaque|null",
+        "canSend": "boolean server-authoritative eligibility; independent of follow edges",
+        "unreadCount": "integer",
+        "clearedThroughSeq": "integer per-viewer clear watermark,0 when no conversation; clients discard cached messages at or below watermark",
+        "remainingBeforeReply": "integer0..5|null, null after both directions have committed a message",
+        "requiresReply": "boolean introduction quota is exhausted and recipient has not replied",
+        "replyEstablished": "boolean both account directions have committed a message; survives content expiry and local clear",
+        "initialMessageLimit": 5
+      },
+      "behavior": "Only message sequences after viewer clear watermark are returned, including when paging with an older cursor. Underlying records remain available to the other participant within the 30-day retention window. Replies are allowed independently of follows; five committed introductory messages per account pair until recipient replies. Retained visible history does not define the quota."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/conversations/{personID}/messages",
+      "body": "messageCreate schema",
+      "response": {
+        "message": "Message",
+        "conversationID": "UUID",
+        "canSend": "boolean server-authoritative eligibility; independent of follow edges",
+        "remainingBeforeReply": "integer0..5|null, null after both directions have committed a message",
+        "requiresReply": "boolean introduction quota is exhausted and recipient has not replied",
+        "replyEstablished": "boolean both account directions have committed a message; survives content expiry and local clear",
+        "initialMessageLimit": 5
+      },
+      "behavior": "Five committed introductory messages are allowed before the recipient replies; that first reply permanently unlocks the account pair while current account, consent, block and publication checks still apply. Follow/unfollow never gates sends. A sixth introduction returns403 detail object with code direct_message_reply_required, a user-facing message and the access metadata. A committed send consumes one slot atomically with message/outbox/receipt; failed transactions and exact UUID retries do not consume another slot. Block hides the whole conversation. Sender retry of a receipt already below their clear watermark returns404 and never revives cleared content. Successful send and receipt retry include current access metadata."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/conversations/{personID}/read",
+      "body": "messageRead schema",
+      "response": {
+        "unreadCount": "integer"
+      },
+      "behavior": "Monotonic seq acknowledgement; message must belong to that viewer conversation and remain within30d."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/reports",
+      "body": "reportCreate schema",
+      "response": {
+        "report": "Report"
+      },
+      "behavior": "Server resolves target/evidence; incoming DM report requires actual conversation participation."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/reports/mine",
+      "response": {
+        "reports": [
+          "latest100 Report"
+        ],
+        "retentionDays": 30
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/admin/v2/services/account/social/moderation/query",
+      "body": "moderationQuery schema",
+      "response": {
+        "schemaVersion": 1,
+        "reports": [
+          "ModeratorReport"
+        ],
+        "nextCursor": "opaque|null",
+        "retentionDays": 30,
+        "activeRestrictions": [
+          {
+            "userID": "public kiki_ ID",
+            "userName": "name",
+            "until": "Unix seconds",
+            "sourceReportID": "UUID"
+          }
+        ]
+      },
+      "behavior": "community Passkey scope, oldest pending first; resolved filter includes dismissed."
+    },
+    {
+      "method": "POST",
+      "path": "/admin/v2/services/account/social/moderation/action",
+      "body": "moderationAction schema",
+      "response": {
+        "ok": true,
+        "requestID": "UUID",
+        "reportID": "UUID",
+        "action": "enum"
+      },
+      "behavior": "community only; exact operator+body hash idempotence90d; sourceReportID permits restore after original report expires."
+    },
+    {
+      "method": "GET",
+      "path": "/admin/v2/services/account/social/media/{id}.jpg",
+      "response": "image/jpeg no-store",
+      "behavior": "community Passkey scope plus unexpired report reference; does not expose arbitrary social images."
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/social/conversations/{personID}/pin",
+      "body": "conversationPin schema",
+      "response": {
+        "ok": true
+      },
+      "behavior": "Explicit boolean set, not toggle; current participant with retained visible messages only. Unfollow preserves management; bilateral block returns404. Request UUID/hash receipt prevents an old retry from overriding a later pin/unpin or clear."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/conversations/{personID}/clear",
+      "body": "conversationClear schema",
+      "response": {
+        "ok": true
+      },
+      "behavior": "Advances only the viewer clear and read sequence through the specified retained message in this conversation, cancels their pin and hides the entry when no newer message exists. Other participant and existing report evidence retain underlying records. A concurrent newer message survives; old request retry never repeats a clear. Invalid/cross-conversation cutoff404."
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/social/notifications/pin",
+      "body": "notificationPin schema",
+      "response": {
+        "ok": true
+      },
+      "behavior": "Explicit boolean set for viewer notification aggregate, including the initially empty system entry; synchronized across devices and UUID/hash-idempotent."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/social/notifications/clear",
+      "body": "notificationClear schema",
+      "response": {
+        "ok": true
+      },
+      "behavior": "Advances only viewer notification clear/read watermark through the owned visible retained notification, cancels aggregate pin, hides old notices and aggregate until a new visible notice appears. Fixed monotonic cutoff and UUID receipt preserve newer concurrent notices and prevent a retry clearing them. Invalid/cross-account/blocked cutoff404."
+    }
+  ],
+  "internalVoicePolicy": {
+    "method": "POST",
+    "path": "/internal/v1/account/social-policy",
+    "signature": "account-voice-v1 exact method/path/body digest, persistent one-time nonce",
+    "body": {
+      "accountID": "public kiki_ ID",
+      "targetIDs": [
+        "max50 unique public IDs"
+      ]
+    },
+    "response": {
+      "schemaVersion": 1,
+      "accountID": "echo public ID",
+      "blockedUserIDs": [
+        "complete bilateral block IDs max10000"
+      ],
+      "currentRooms": [
+        {
+          "userID": "requested publicID",
+          "roomID": "live joinable lk_<32hex>"
+        }
+      ],
+      "roomsStale": "boolean; stale SFU cache means empty currentRooms only, block snapshot remains authoritative"
+    }
+  },
+  "limits": {
+    "maxFollowing": 1000,
+    "followMutationsPerHour": 40,
+    "followMutationsPer24Hours": 100,
+    "readRequestsPerMinute": 120,
+    "notificationRetentionDays": 30,
+    "receiptRetentionDays": 30,
+    "maxMomentsPerAccount": 200,
+    "maxMediaPerAccount": 600,
+    "momentsPerHour": 10,
+    "momentsPerDay": 30,
+    "uploadsPerHour": 40,
+    "uploadsPerDay": 90,
+    "maxStaticImagesPerMoment": 3,
+    "maxImageBytes": 2097152,
+    "maxSourcePixels": 10000000,
+    "imageLongestDimension": 1280,
+    "directMessagesPerHour": 300,
+    "directMessagesPerDay": 1000,
+    "commentsPerHour": 120,
+    "commentsPerDay": 300,
+    "likesPerHour": 600,
+    "likesPerDay": 1000,
+    "reportsPerHour": 10,
+    "reportsPerDay": 20,
+    "maxBlocks": 500
+  },
+  "cleanup": "Withdrawal or deletion removes both directions of follows, actor/recipient notifications, both sides of conversations and minimal DM introduction direction counters, authored moments/comments/likes, owned images and related report evidence. Logout retains persistent social data. Active timed posting restrictions survive withdrawal and expire automatically; account deletion removes them. Opaque case action audit remains bounded90days with target and reason unlinked; mutation UUID/hash receipts are bounded30days and actor-owned receipts are cleared on withdrawal.",
+  "errors": {
+    "401": "account session expired",
+    "403": "social publishing restricted",
+    "404": "person/record unavailable or bilateral blocked",
+    "409": "idempotency request changed or follow cap",
+    "422": "invalid params/cursor",
+    "428": "current consent required",
+    "429": "rate limited",
+    "503": "authoritative privacy policy unavailable"
+  },
+  "notification": {
+    "id": "UUID",
+    "kind": "follow|system|safety",
+    "actor": "Person|null",
+    "text": "server-authored text",
+    "createdAt": "Unix seconds",
+    "readAt": "Unix seconds|null",
+    "roomID": "null; room-invite/push not implemented",
+    "momentID": "UUID|null; referenced moment may have been removed",
+    "seq": "monotonic integer insertion sequence; defaults0 only for legacy clients"
+  },
+  "media": {
+    "id": "UUID",
+    "path": "/v1/social/media/<UUID>.jpg; authenticated relative path, never a public URL",
+    "width": "positive integer <=1280",
+    "height": "positive integer <=1280"
+  },
+  "moment": {
+    "id": "UUID",
+    "author": "Person",
+    "text": "string 0..1000",
+    "media": [
+      "Media max3"
+    ],
+    "createdAt": "Unix seconds (fraction permitted)",
+    "likeCount": "integer",
+    "commentCount": "integer; total comments visible to this viewer",
+    "commentPreview": [
+      "Comment max3; same visibility as comments, ordered createdAt DESC then id DESC; additive field, legacy responses may omit it"
+    ],
+    "liked": "boolean",
+    "canDelete": "boolean author is viewer"
+  },
+  "comment": {
+    "id": "UUID",
+    "momentID": "UUID",
+    "author": "Person",
+    "text": "1..300",
+    "createdAt": "Unix seconds",
+    "canDelete": "boolean author is viewer"
+  },
+  "message": {
+    "id": "UUID",
+    "seq": "monotonic integer",
+    "senderID": "public kiki_ ID",
+    "text": "1..1000",
+    "createdAt": "Unix seconds"
+  },
+  "conversation": {
+    "id": "UUID",
+    "person": "Person",
+    "lastMessage": "Message|null",
+    "unreadCount": "integer",
+    "canSend": "boolean server-authoritative eligibility; independent of follow edges",
+    "isPinned": "boolean, per viewer, synchronized across devices; defaults false",
+    "remainingBeforeReply": "integer0..5|null, null after both directions have committed a message",
+    "requiresReply": "boolean introduction quota is exhausted and recipient has not replied",
+    "replyEstablished": "boolean both account directions have committed a message; survives content expiry and local clear",
+    "initialMessageLimit": 5
+  },
+  "report": {
+    "id": "UUID",
+    "targetType": "profile|moment|comment|direct_message",
+    "reason": "harassment|spam|sexual|fraud|other",
+    "status": "pending|resolved|dismissed",
+    "createdAt": "Unix seconds",
+    "resolvedAt": "Unix seconds|null",
+    "lastAction": "string|null"
+  },
+  "moderatorReport": {
+    "allReportFields": "Report",
+    "reporterID": "public kiki_ ID",
+    "reporterName": "current name",
+    "targetUserID": "public kiki_ ID",
+    "targetName": "current name",
+    "contentID": "UUID|null",
+    "details": "0..500",
+    "evidence": {
+      "text": "server-resolved profile/content/message body snapshot",
+      "media": [
+        "Media; operators must use separate authenticated case media path"
+      ]
+    }
+  },
+  "bodySchemas": {
+    "mutation": {
+      "additionalProperties": false,
+      "properties": {
+        "requestID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Requestid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestID"
+      ],
+      "title": "Mutation",
+      "type": "object"
+    },
+    "notificationRead": {
+      "additionalProperties": false,
+      "properties": {
+        "ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ids"
+        },
+        "all": {
+          "default": false,
+          "title": "All",
+          "type": "boolean"
+        }
+      },
+      "title": "ReadNotifications",
+      "type": "object"
+    },
+    "momentCreate": {
+      "additionalProperties": false,
+      "properties": {
+        "requestID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "maxLength": 1000,
+          "title": "Text",
+          "type": "string"
+        },
+        "mediaIDs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 3,
+          "title": "Mediaids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "requestID"
+      ],
+      "title": "MomentCreate",
+      "type": "object"
+    },
+    "messageCreate": {
+      "additionalProperties": false,
+      "properties": {
+        "requestID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestID",
+        "text"
+      ],
+      "title": "MessageCreate",
+      "type": "object"
+    },
+    "messageRead": {
+      "additionalProperties": false,
+      "properties": {
+        "throughMessageID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Throughmessageid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "throughMessageID"
+      ],
+      "title": "MessageRead",
+      "type": "object"
+    },
+    "commentCreate": {
+      "additionalProperties": false,
+      "properties": {
+        "requestID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestID",
+        "text"
+      ],
+      "title": "CommentCreate",
+      "type": "object"
+    },
+    "reportCreate": {
+      "additionalProperties": false,
+      "properties": {
+        "requestID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "targetType": {
+          "enum": [
+            "profile",
+            "moment",
+            "comment",
+            "direct_message"
+          ],
+          "title": "Targettype",
+          "type": "string"
+        },
+        "targetID": {
+          "maxLength": 80,
+          "minLength": 3,
+          "title": "Targetid",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "harassment",
+            "spam",
+            "sexual",
+            "fraud",
+            "other"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "details": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Details",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestID",
+        "targetType",
+        "targetID",
+        "reason"
+      ],
+      "title": "SocialReport",
+      "type": "object"
+    },
+    "moderationQuery": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "resolved",
+            "all"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "limit": {
+          "default": 30,
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        }
+      },
+      "title": "SocialModerationQuery",
+      "type": "object"
+    },
+    "moderationAction": {
+      "additionalProperties": false,
+      "properties": {
+        "requestID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "reportID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Reportid",
+          "type": "string"
+        },
+        "action": {
+          "enum": [
+            "warn",
+            "remove_content",
+            "restrict_posting",
+            "restore_user",
+            "dismiss"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "durationSeconds": {
+          "anyOf": [
+            {
+              "maximum": 2592000,
+              "minimum": 60,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Durationseconds"
+        },
+        "note": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestID",
+        "reportID",
+        "action",
+        "note"
+      ],
+      "title": "SocialModerationAction",
+      "type": "object"
+    },
+    "conversationPin": {
+      "additionalProperties": false,
+      "properties": {
+        "requestID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "pinned": {
+          "title": "Pinned",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requestID",
+        "pinned"
+      ],
+      "title": "ConversationPin",
+      "type": "object"
+    },
+    "conversationClear": {
+      "additionalProperties": false,
+      "properties": {
+        "requestID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "throughMessageID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Throughmessageid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestID",
+        "throughMessageID"
+      ],
+      "title": "ConversationClear",
+      "type": "object"
+    },
+    "notificationPin": {
+      "additionalProperties": false,
+      "properties": {
+        "requestID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "pinned": {
+          "title": "Pinned",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requestID",
+        "pinned"
+      ],
+      "title": "NotificationPin",
+      "type": "object"
+    },
+    "notificationClear": {
+      "additionalProperties": false,
+      "properties": {
+        "requestID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Requestid",
+          "type": "string"
+        },
+        "throughNotificationID": {
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+          "title": "Throughnotificationid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestID",
+        "throughNotificationID"
+      ],
+      "title": "NotificationClear",
+      "type": "object"
+    }
+  },
+  "internalSocialBlock": {
+    "method": "POST",
+    "path": "/internal/v1/account/social-block",
+    "signature": "account-voice-v1 same exact body/path/nonce rules",
+    "body": {
+      "accountID": "public kiki_ ID",
+      "targetID": "public kiki_ ID",
+      "blocked": "boolean",
+      "consentEpoch": "latestaccepted eventID>=1",
+      "lastWithdrawalEpoch": "latestwithdrawal eventID>=0"
+    },
+    "response": {
+      "schemaVersion": 1,
+      "accountID": "echo",
+      "targetID": "echo",
+      "blocked": "echo"
+    },
+    "privacy": "Voice watermark rejects delayed writes after withdrawal/deletion; account ordinary session rechecked before intent and after upstream completion."
+  },
+  "retention": {
+    "directMessages": "rolling30days",
+    "notifications": "30days",
+    "unsubmittedMedia": "24hours",
+    "moments": "until author deletes, withdrawal or account deletion; capped200/account",
+    "reportsAndEvidence": "30days including reported image reference; public content deletion does not make case media publicly readable",
+    "moderationAuditAndIdempotency": "90days; withdrawal/deletion unlinks target and reason, opaque receipt remains untilTTL",
+    "mutations": "30day dedupe receipts",
+    "restrictions": "60sec..30days; survives consent withdrawal to prevent bypass, deleted on account deletion",
+    "mediaCleanup": "unreferenced file cleanup every60sec, only after committed row deletion; files younger60sec protected from in-flight upload race"
+  },
+  "delivery": "Only authenticated foreground/app polling in-app notifications. No APNs remote/offline push is configured or claimed.",
+  "accountReadOnlyMetrics": {
+    "path": "GET /admin/v2/services/account/dashboard",
+    "field": "operations.social",
+    "fields": [
+      "follows",
+      "mutualPairs",
+      "moments",
+      "comments",
+      "privateMedia",
+      "messagesLast30Days",
+      "pendingReports",
+      "activePostingRestrictions",
+      "note"
+    ],
+    "privacy": "Aggregate counts only, no names, IDs, private bodies, or report evidence. Independent community permission still required for cases."
+  },
+  "nativePush": {
+    "topic": "com.kikitalk.demo",
+    "environment": "sandbox|production; derives from signed aps-environment, never DEBUG",
+    "routes": [
+      {
+        "method": "PUT",
+        "path": "/v1/push/devices/{installationID}",
+        "body": {
+          "token": "nonempty even hex2..512 (variable1..256bytes)",
+          "environment": "sandbox|production",
+          "revision": "strict Int64 1..9223372036854775807; Keychain monotonic across accounts",
+          "permission": "authorized|provisional|denied"
+        },
+        "response": {
+          "ok": true,
+          "accountTag": "opaque HMAC string",
+          "registered": "boolean"
+        }
+      },
+      {
+        "method": "DELETE",
+        "path": "/v1/push/devices/{installationID}",
+        "body": {
+          "revision": "same installation monotonic Int64"
+        },
+        "response": {
+          "ok": true
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/push/status",
+        "response": {
+          "enabled": "current account notificationsEnabled",
+          "registered": "this session has unexpired authorized/provisional binding",
+          "badgeCount": "current visible unread DM+in-app count0..9999",
+          "accountTag": "opaque HMAC string"
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/push/destinations/{deliveryID}",
+        "response": {
+          "type": "direct_message|notification",
+          "personID": "optional current public kiki_ ID",
+          "momentID": "optional UUID",
+          "notificationID": "optional UUID"
+        }
+      }
+    ],
+    "payload": {
+      "aps": {
+        "alert": {
+          "title": "Kiki语聊",
+          "body": "你有新的消息，请打开应用查看。"
+        },
+        "sound": "default",
+        "badge": "visible unread count"
+      },
+      "deliveryID": "opaque UUID",
+      "accountTag": "opaque recipient account tag"
+    },
+    "ownership": "No client accountID. Authenticated current consented ordinary account session; no stale or invalid bearer. Same installation revision equal only identical source-session/body is idempotent, lower or changed equal409. Newer revision replaces old account/session; late old DELETE/logout/APNs410 cannot remove a newer generation. Device token encrypted Fernet at rest, installation UUID and token HMAC indexed. Per-account device cap10.",
+    "preferences": "Registration permission does not overwrite account notificationsEnabled. Disabling account pref immediately cancels pending sends; reenabling does not revive old sends. In-app records remain.",
+    "delivery": "Business event and outbox same SQLite transaction. Stable apns-id/collapse-id; durable claimed lease committed before network. APNs200 means accepted only, not delivered/read. 429/5xx/network retry with bounded exponential delay; permanent4xx terminates. Invalid token removal conditional on original binding generation. Fresh bilateral block, current consent/session, sender eligibility, existing content, unread and committed DM checks before send; policy failure retries without sending. Muting/logout/deletion never sends stale content.",
+    "retention": {
+      "bindingInactiveDays": 30,
+      "bindingAlsoExpiresWithSourceSession": true,
+      "pendingHours": 24,
+      "receiptsAndOpaqueDestinationDays": 7,
+      "installationRevisionWatermarkDays": 30
+    },
+    "destinationPrivacy": "Requires current account session+consent; cross-account, deleted, read, blocked, ineligible DM404. No sender name/body/other account ID in system payload. Client validates accountTag against current GETstatus before navigating. Viewer-cleared message/notification sequences always404, even if another participant still retains the message; cleared sequences never contribute badge counts.",
+    "operations": "Top-level account dashboard push summary only: schemaVersion1,configured,enabled,activeDevices(valid consent/session binding, not online),pending(current),accepted(APNs200 last24h),failed(final failures last24h),recentFailures<=10(code,occurredAt). Never token/keyID/installation/account IDs or content.",
+    "settings": [
+      "APNS_ENABLED",
+      "APNS_TEAM_ID",
+      "APNS_SANDBOX_KEY_ID",
+      "APNS_SANDBOX_PRIVATE_KEY_PATH",
+      "APNS_PRODUCTION_KEY_ID",
+      "APNS_PRODUCTION_PRIVATE_KEY_PATH",
+      "APPLE_TOKEN_ENCRYPTION_KEY"
+    ],
+    "omissions": "No rich content, notification extensions, lockscreen text, Android push or guaranteed exactly-once delivery."
+  },
+  "notificationInboxState": {
+    "isPinned": "boolean, per viewer; defaults false",
+    "isHidden": "boolean; true after clearing until a new visible notification is created",
+    "throughNotificationID": "UUID|null of newest visible retained notification by monotonic insertion sequence, across all pages; use as fixed clear cutoff",
+    "clearedThroughSeq": "integer per-viewer clear watermark, defaults0"
+  },
+  "inboxActions": "Per-account pin and clear state survives logout and synchronizes through authenticated GETs. Clear changes viewer visibility, not the peer retained messages or report evidence; underlying retention remains30days. Both clear and read high-water marks advance monotonically. Fresh sends or notifications alone restore entries. Cleared content does not contribute unread/badge or resolve old push destinations. Withdrawal/account erasure clears state and linked sequence mappings by foreign-key cascades.",
+  "directMessageIntroduction": {
+    "limit": 5,
+    "authority": "SQLite BEGIN IMMEDIATE serializes access check, committed message, direction state, mutation receipt and push outbox. Read markers and local conversation clear never count as a reply.",
+    "state": "social_dm_contact_state stores only account-pair direction counts, independent of message/conversation retention. Once both counts are positive the pair is unlocked. Established counters stop increasing; one-sided legacy history may exceed5 and is blocked until reply.",
+    "migration": "On startup before the normal30-day message purge, retained legacy conversation directions backfill with monotonic MAX counts; repeated initialization never restores consumed allowance. Historical messages already erased before this upgrade cannot be reconstructed.",
+    "cleanup": "Minimal handshake state survives logout, local clear and30-day message expiry to prevent quota resets; consent withdrawal or deletion erases both directions and account foreign keys cascade. No message bodies are retained beyond the normal30-day window.",
+    "push": "Committed introductions have the same generic notification, unread, account/consent, bilateral block, sequence-clear and read safeguards as established messages. Follow/unfollow does not cancel DM outbox or destination/badge eligibility."
+  }
+}

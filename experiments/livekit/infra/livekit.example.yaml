@@ -1,0 +1,27 @@
+# Reference only. Actual config with secrets lives outside Git.
+port: 7880
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  node_ip: 139.224.50.108
+  use_external_ip: false
+room:
+  auto_create: false
+  # Configured experiment limit; 8 speaking seats are enforced by the API.
+  max_participants: 32
+  empty_timeout: 300
+  # Keep the SFU room longer than the API's 120 second reconnect grace.
+  departure_timeout: 180
+turn:
+  enabled: true
+  udp_port: 443
+  domain: furby.top
+  tls_port: 5349
+  external_tls: true
+  proxy_protocol: true
+  proxy_protocol_trusted_cidrs:
+    - 127.0.0.1/32
+logging:
+  level: warn
+# keys:
+#   <generated-api-key>: <generated-api-secret>

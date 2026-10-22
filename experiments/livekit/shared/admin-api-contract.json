@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "baseURL": "https://furby.top",
+  "serviceID": "voice-lab",
+  "scope": "Independent LiveKit laboratory voice service only; account service is not connected.",
+  "transport": "HTTPS, Authorization: Bearer <independent-admin-token>, Cache-Control: no-store",
+  "login": {
+    "method": "POST",
+    "path": "/admin/v1/auth/session",
+    "request": {
+      "passphrase": "string, exact (no trimming), 16..256 UTF-8 bytes"
+    },
+    "responseExample": {
+      "token": "opaque-url-safe-43-character-token",
+      "expiresAt": 1792396800,
+      "serviceID": "voice-lab",
+      "role": "viewer"
+    },
+    "errors": {
+      "401": "Wrong passphrase (generic)",
+      "429": "Rate limit with Retry-After",
+      "503": "Admin login not configured"
+    }
+  },
+  "logout": {
+    "method": "DELETE",
+    "path": "/admin/v1/auth/session",
+    "responseExample": {
+      "revoked": true
+    }
+  },
+  "dashboard": {
+    "method": "GET",
+    "path": "/admin/v1/dashboard",
+    "responseExample": {
+      "schemaVersion": 1,
+      "serverTime": "2026-10-19T02:00:00+00:00",
+      "service": {
+        "id": "voice-lab",
+        "name": "LiveKit 语聊实验服务",
+        "host": "furby.top",
+        "mode": "single-host-laboratory",
+        "readOnly": true
+      },
+      "accountService": {
+        "connected": false,
+        "message": "账号服务尚未接入；下列身份是语聊实验参与身份，并非账号 DAU。"
+      },
+      "operations": {
+        "day": "2026-10-19",
+        "timeZone": "Asia/Shanghai",
+        "activeRooms": 0,
+        "roomsCreatedToday": 0,
+        "roomsEndedToday": 0,
+        "totalRooms": 0,
+        "participatingIdentitiesToday": 0,
+        "totalParticipatingIdentities": 0,
+        "identityMetricNote": "按语聊入场记录去重；邀请码每次登录可生成新身份，不代表真实用户数或账号活跃。",
+        "roomEndTrackingSince": "2026-10-19T02:00:00+00:00"
+      },
+      "capacity": {
+        "activeRooms": 0,
+        "activeParticipants": null,
+        "admittedParticipants": 0,
+        "maxRooms": 4,
+        "maxParticipantsPerRoom": 32,
+        "maxParticipantsTotal": 64,
+        "sfuSampledAt": null,
+        "sfuStale": true
+      },
+      "connections": {
+        "windowSeconds": 300,
+        "attempts": 0,
+        "accepted": 0,
+        "rejected": 0,
+        "reconnects": 0,
+        "activeSignals": 0,
+        "handshakeMsP50": null,
+        "successPercent": null,
+        "sampleNote": "窗口内已完成信令接入的成功占比；不是端到端入房成功率；进程重启后重新计数。"
+      },
+      "quality": {
+        "windowSeconds": 300,
+        "samples": 0,
+        "excellent": 0,
+        "good": 0,
+        "poor": 0,
+        "lost": 0,
+        "unknown": 0,
+        "poorPercent": null,
+        "rttMsP50": null,
+        "jitterMsP50": null,
+        "packetLossPercentP50": null,
+        "sampleNote": "最近1000条、最长5分钟的设备上报样本；未知质量也计入样本总数，不代表已验证的音质。"
+      },
+      "infrastructure": {
+        "sampledAt": null,
+        "stale": true,
+        "cpuPercent": null,
+        "cpuCores": null,
+        "memoryUsedBytes": null,
+        "memoryTotalBytes": null,
+        "memoryPercent": null,
+        "diskUsedBytes": null,
+        "diskTotalBytes": null,
+        "diskPercent": null,
+        "networkReceiveBytesPerSecond": null,
+        "networkTransmitBytesPerSecond": null,
+        "uptimeSeconds": null,
+        "certificateExpiresAt": null,
+        "certificateDaysRemaining": null,
+        "services": [
+          {
+            "id": "api",
+            "name": "语聊管理/API",
+            "state": "unknown"
+          },
+          {
+            "id": "livekit",
+            "name": "LiveKit SFU",
+            "state": "unknown"
+          },
+          {
+            "id": "nginx",
+            "name": "Nginx",
+            "state": "unknown"
+          },
+          {
+            "id": "haproxy",
+            "name": "TLS/TURN 入口",
+            "state": "unknown"
+          }
+        ]
+      },
+      "health": {
+        "api": "healthy",
+        "sfu": "unknown",
+        "pendingMediaCleanup": 0
+      },
+      "rooms": [
+        {
+          "id": "opaque-room-id",
+          "title": "房间标题",
+          "category": "闲聊",
+          "createdAt": 1792371600,
+          "admittedParticipants": 1,
+          "onlineParticipants": null,
+          "sfuStale": true,
+          "occupiedSeats": 1,
+          "totalSeats": 8,
+          "owners": 1,
+          "admins": 0,
+          "listeners": 0,
+          "audioMutedMembers": 0,
+          "chatMutedMembers": 0
+        }
+      ],
+      "alerts": [
+        {
+          "code": "metrics_warming_up",
+          "level": "info",
+          "message": "服务器采样尚未就绪。"
+        }
+      ]
+    },
+    "notes": [
+      "All nullable values represent unknown/unavailable, never substitute zero.",
+      "Room array contains only currently active business rooms; no user names, IDs, IPs, tokens, messages or session hashes.",
+      "roomEndTrackingSince is additive migration start; historical ended timestamps are unknown and are not fabricated.",
+      "Linux host sampling is cached ~10 seconds. CPU/network rates require two samples. Infrastructure stale after 30 seconds.",
+      "SFU snapshot fresh for 10 seconds; actual counts unknown when stale. Admission reservations are not actual connected participants.",
+      "No raw quality samples are persisted. Quality/connection window is process-local 5 minutes.",
+      "No administration write endpoints, no account-service requests, no account-service server configuration."
+    ]
+  },
+  "authentication": {
+    "sessionLifetimeSeconds": 28800,
+    "role": "viewer",
+    "ordinaryUserTokensAccepted": false,
+    "adminTokensAcceptedByUserAPI": false,
+    "tokenStorage": "Only SHA256 digest and expiration/revocation/config fingerprint in separate SQLite admin_sessions table.",
+    "passphraseConfiguration": "ADMIN_PASSPHRASE_HASH=pbkdf2_sha256$600000$<32 lower-hex salt>$<64 lower-hex digest>; optional, admin disabled if absent; config rotation invalidates previous admin sessions."
+  },
+  "errors": {
+    "body": {
+      "detail": "human-readable string"
+    },
+    "401": "missing, expired, revoked or wrong-scope token",
+    "429": "Retry-After seconds",
+    "422": "invalid body",
+    "503": "temporarily unavailable"
+  }
+}

@@ -1,0 +1,3 @@
+# The isolated LiveKit lab uses Swift Package Manager exclusively.
+# Open KikiLiveKitLab.xcworkspace; LiveKit is pinned to 2.18.0 in the Xcode project.
+# No CocoaPods targets or Tencent SDKs are linked into the experimental app.

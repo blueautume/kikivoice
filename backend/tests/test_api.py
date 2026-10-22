@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sqlite3
 import stat
+import time
 from urllib.parse import urlsplit
 import zlib
 
@@ -13,22 +14,28 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from app.main import SCHEMA, Settings, create_app, hash_device_secret
+from app.main import LEGAL_DOCUMENTS_PATH, SCHEMA, Settings, create_app, load_legal_requirements
 from app.usersig import generate_user_sig
+from conftest import apple_settings, apple_payload
 
 TEST_KEY = "a" * 64
 
 
+def current_legal_consent():
+    return {**load_legal_requirements(), "accepted": True, "adultConfirmed": True}
+
+
 @pytest.fixture
-def client(tmp_path):
-    settings = Settings(str(tmp_path / "test.sqlite3"), 1234567890, TEST_KEY, False)
+def client(tmp_path, fake_apple):
+    settings = apple_settings(Settings(str(tmp_path / "test.sqlite3"), 1234567890, TEST_KEY, False))
     with TestClient(create_app(settings)) as test_client:
         test_client.settings = settings
+        test_client.fake_apple = fake_apple
         yield test_client
 
 
 def login(client, name="alice", secret="1" * 64, complete_nickname=True):
-    response = client.post("/v1/auth/id", json={"userID": name, "deviceSecret": secret})
+    response = client.post("/v1/auth/apple", json=apple_payload(client, name))
     assert response.status_code == 200
     result = response.json()
     if complete_nickname and result["user"]["needsNickname"]:
@@ -77,19 +84,18 @@ def test_usersig_matches_protocol():
                            hashlib.sha256).digest()).decode()}
 
 
-def test_claim_bound_to_device_and_new_login_stable(client):
+def test_apple_subject_stable_and_legacy_login_removed(client):
     first = login(client)
-    again = login(client)
+    again = login(client, secret="2" * 64)
     assert first["user"]["sdkUserID"] == again["user"]["sdkUserID"]
     assert first["token"] != again["token"]
-    denied = client.post("/v1/auth/id", json={"userID": "alice", "deviceSecret": "2" * 64})
-    assert denied.status_code == 403
-    assert "其他设备" in denied.json()["detail"]
+    assert client.post("/v1/auth/id", json={"userID": "alice", "deviceSecret": "1" * 64}).status_code == 404
+    assert first["user"]["id"] != "alice"
     with sqlite3.connect(client.settings.db_path) as db:
-        serialized = " ".join(str(row) for row in db.execute("SELECT * FROM identities"))
-        assert "1" * 64 not in serialized
         stored = " ".join(str(row) for row in db.execute("SELECT * FROM sessions"))
         assert first["token"] not in stored
+        credentials = " ".join(str(row) for row in db.execute("SELECT * FROM apple_credentials"))
+        assert "refresh-" not in credentials and "not-stored" not in credentials
 
 
 def test_auth_refresh_logout_and_expiration(client):
@@ -164,16 +170,15 @@ def test_delete_account_revokes_every_session_and_identity(client):
     old = client.get("/v1/rooms/" + room["id"], headers=authorization(recreated)).json()
     assert old["status"] == "ended" and not old["isCreatedByMe"]
     assert old["host"] == "已注销用户"
+    assert old["hostID"] == "anonymous" and old["title"] == "已结束的房间" and old["category"] == "其他"
 
 
-@pytest.mark.parametrize("payload", [
-    {"userID": "ab", "deviceSecret": "1" * 64},
-    {"userID": "中文ID", "deviceSecret": "1" * 64},
-    {"userID": "alice", "deviceSecret": "short"},
-    {"userID": "alice", "deviceSecret": "1" * 64, "admin": True},
+@pytest.mark.parametrize("changes", [
+    {"challengeID": "bad"}, {"identityToken": "short"}, {"authorizationCode": ""}, {"admin": True},
 ])
-def test_login_validation(client, payload):
-    response = client.post("/v1/auth/id", json=payload)
+def test_login_validation(client, changes):
+    payload = {**apple_payload(client), **changes}
+    response = client.post("/v1/auth/apple", json=payload)
     assert response.status_code == 422
     assert isinstance(response.json()["detail"], str)
 
@@ -184,7 +189,7 @@ def test_profile_and_room_validation(client):
         assert client.patch("/v1/me", headers=headers, json=body).status_code == 422
     assert client.post("/v1/rooms", headers=headers,
                        json={"title": "", "category": "随心聊", "isLive": False, "theme": 0}).status_code == 422
-    assert client.post("/v1/auth/id", content=b"x" * 20000).status_code == 413
+    assert client.post("/v1/auth/apple", content=b"x" * 20000).status_code == 413
     response = client.get("/health")
     assert response.json() == {"status": "ok", "rtcConfigured": True}
     assert response.headers["Cache-Control"] == "no-store"
@@ -273,12 +278,13 @@ def test_lookup_empty_input_authentication_and_limit(client):
     assert client.post("/v1/rooms/lookup", headers=headers, json={"ids": "invalid"}).status_code == 422
 
 
-def test_auth_rate_limit(tmp_path):
-    settings = Settings(str(tmp_path / "limit.sqlite3"), 123, TEST_KEY, True)
+def test_auth_rate_limit(tmp_path, fake_apple):
+    settings = apple_settings(Settings(str(tmp_path / "limit.sqlite3"), 123, TEST_KEY, True))
     with TestClient(create_app(settings)) as client:
+        client.fake_apple = fake_apple
         for _ in range(12):
-            assert client.post("/v1/auth/id", json={"userID": "alice", "deviceSecret": "1" * 64}).status_code == 200
-        assert client.post("/v1/auth/id", json={"userID": "alice", "deviceSecret": "1" * 64}).status_code == 429
+            assert client.post("/v1/auth/apple", json=apple_payload(client)).status_code == 200
+        assert client.post("/v1/auth/apple", json=apple_payload(client)).status_code == 429
 
 
 def test_first_login_requires_explicit_valid_nickname_before_room_use(client):
@@ -310,7 +316,7 @@ def test_avatar_upload_sanitizes_metadata_serves_publicly_and_syncs_rooms(client
     uploaded = upload_avatar(client, owner, jpeg_bytes(with_metadata=True))
     assert uploaded.status_code == 200
     user = uploaded.json()
-    assert user["avatarURL"].startswith("https://43.138.219.160/v1/avatars/")
+    assert user["avatarURL"].startswith("https://kiki.group/v1/avatars/")
     public_path = urlsplit(user["avatarURL"]).path
     stored_path = client.settings.avatar_path / Path(public_path).name
     assert stat.S_IMODE(stored_path.stat().st_mode) == 0o600
@@ -330,6 +336,26 @@ def test_avatar_upload_sanitizes_metadata_serves_publicly_and_syncs_rooms(client
     assert shared["hostAvatarURL"] == user["avatarURL"]
     assert create_room(client, owner)["hostAvatarURL"] == user["avatarURL"]
     assert client.post("/v1/auth/refresh", headers=owner).json()["user"]["avatarURL"] == user["avatarURL"]
+
+
+def test_configured_public_origin_ignores_request_host_and_proxy_headers(tmp_path, monkeypatch, fake_apple):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "origin.sqlite3"))
+    monkeypatch.setenv("AVATAR_DIRECTORY", str(tmp_path / "avatars"))
+    monkeypatch.setenv("SDKAPPID", "1234567890")
+    monkeypatch.setenv("SECRETKEY", TEST_KEY)
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://media.example.test/")
+    settings = apple_settings(Settings.from_environment())
+    with TestClient(create_app(settings), base_url="https://untrusted.example.test") as configured:
+        configured.fake_apple = fake_apple
+        headers = {**authorization(login(configured)), "Host": "spoofed.example.test",
+                   "X-Forwarded-Host": "forwarded.example.test", "X-Forwarded-Proto": "http"}
+        uploaded = upload_avatar(configured, headers)
+        assert uploaded.status_code == 200
+        avatar = uploaded.json()["avatarURL"]
+        assert avatar.startswith("https://media.example.test/v1/avatars/")
+        assert configured.get("/v1/me", headers=headers).json()["avatarURL"] == avatar
+        assert create_room(configured, headers)["hostAvatarURL"] == avatar
+        assert configured.get(urlsplit(avatar).path).status_code == 200
 
 
 def test_avatar_replacement_preset_and_account_deletion_remove_old_files(client):
@@ -379,28 +405,305 @@ def test_avatar_validation_authentication_size_and_path_boundaries(client):
     assert not list(client.settings.avatar_path.iterdir())
 
 
-def test_upgrade_preserves_custom_nicknames_and_requires_old_default_names(tmp_path):
-    settings = Settings(str(tmp_path / "old.sqlite3"), 123, TEST_KEY, False)
-    old_schema = SCHEMA.replace("  avatar_filename TEXT,\n", "").replace("  needs_nickname INTEGER NOT NULL DEFAULT 1,\n", "")
-    old_schema = old_schema.replace("  host_avatar_filename TEXT,\n", "")
-    cases = (("alice", "alice", True), ("long_account_id_123456789", "long_account_id_", True),
-             ("named_account", "已有昵称", False))
-    with sqlite3.connect(settings.db_path) as db:
-        db.executescript(old_schema)
-        for login_id, name, _ in cases:
-            db.execute("INSERT INTO accounts(account_id,login_id,sdk_user_id,name,created_at) VALUES(?,?,?,?,?)",
-                       (login_id, login_id, "sdk_" + login_id, name, 1))
-            salt = "a" * 32
-            db.execute("INSERT INTO identities VALUES('device_id',?,?,?,?)",
-                       (login_id, login_id, salt, hash_device_secret("1" * 64, salt)))
-    with TestClient(create_app(settings)) as migrated:
-        for login_id, name, needs_nickname in cases:
-            result = login(migrated, login_id, complete_nickname=False)
-            assert result["user"]["name"] == name
-            assert result["user"]["needsNickname"] is needs_nickname
-            assert result["user"]["avatarURL"] is None
-        alice = login(migrated, complete_nickname=False)
-        assert migrated.patch("/v1/me", headers=authorization(alice), json={"name": "alice"}).json()["needsNickname"] is False
-    # Migration runs once; a nickname deliberately equal to ID remains accepted.
-    with TestClient(create_app(settings)) as restarted:
-        assert login(restarted, complete_nickname=False)["user"]["needsNickname"] is False
+def test_legacy_device_identity_cannot_authenticate_or_merge(client):
+    with sqlite3.connect(client.settings.db_path) as db:
+        db.execute("INSERT INTO accounts(account_id,login_id,sdk_user_id,name,created_at) VALUES('legacy','alice','old_sdk','旧昵称',1)")
+        db.execute("INSERT INTO identities(provider,subject,account_id) VALUES('device_id','alice','legacy')")
+        db.execute("INSERT INTO sessions VALUES(?,?,?,1)", (hashlib.sha256(b"old-token").hexdigest(), "legacy", int(time.time())+300))
+    assert client.get("/v1/me", headers={"Authorization": "Bearer old-token"}).status_code == 401
+    result = login(client, complete_nickname=False)
+    assert result["user"]["needsNickname"] is True
+    assert result["user"]["name"] != "旧昵称"
+    assert result["user"]["sdkUserID"] != "old_sdk"
+
+
+@pytest.mark.parametrize("changes", [
+    None,
+    {"accepted": False},
+    {"adultConfirmed": False},
+    {"adultConfirmed": None},
+    {"documentHash": None},
+    {"documentHash": "0" * 64},
+    {"privacyVersion": "2026-10-16"},
+    {"termsVersion": "2026-10-16"},
+])
+def test_login_requires_explicit_current_adult_legal_acceptance(client, changes):
+    payload = apple_payload(client, "unaccepted", consent=False)
+    if changes is not None:
+        consent = current_legal_consent()
+        for key, value in changes.items():
+            if value is None:
+                consent.pop(key)
+            else:
+                consent[key] = value
+        payload["legalConsent"] = consent
+    response = client.post("/v1/auth/apple", json=payload)
+    assert response.status_code == 428
+    assert response.json()["requiredVersions"] == load_legal_requirements()
+    assert isinstance(response.json()["detail"], str)
+    assert "token" not in response.json() and "sdk" not in response.json()
+    with sqlite3.connect(client.settings.db_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM legal_consent_events").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("changes", [
+    {"accepted": "true"}, {"adultConfirmed": 1}, {"acceptedAt": 1}, {"ip": "127.0.0.1"},
+])
+def test_legal_acceptance_rejects_coercion_and_client_evidence(client, changes):
+    response = client.post("/v1/auth/apple", json={**apple_payload(client, "invalid_consent"),
+                                              "legalConsent": {**current_legal_consent(), **changes}})
+    assert response.status_code == 422
+
+
+def test_public_legal_documents_are_complete_anonymous_and_match_consent(client):
+    response = client.get("/v1/legal/documents")
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert "set-cookie" not in response.headers and not client.cookies
+    manifest = response.json()
+    assert manifest == json.loads(LEGAL_DOCUMENTS_PATH.read_text(encoding="utf-8"))
+    assert {document["id"] for document in manifest["documents"]} == {"privacy", "terms", "sdk", "permissions"}
+    canonical = json.dumps({key: value for key, value in manifest.items() if key != "documentHash"},
+                           sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    assert hashlib.sha256(canonical).hexdigest() == manifest["documentHash"]
+    with sqlite3.connect(client.settings.db_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM legal_consent_events").fetchone()[0] == 0
+    rejected = client.post("/v1/auth/apple", json=apple_payload(client, "dynamic_documents", consent=False))
+    required = {key: manifest[key] for key in ("privacyVersion", "termsVersion", "documentHash")}
+    assert rejected.status_code == 428 and rejected.json()["requiredVersions"] == required
+    payload = apple_payload(client, "dynamic_documents", consent=False)
+    payload["legalConsent"] = {**required, "accepted": True, "adultConfirmed": True}
+    accepted = client.post("/v1/auth/apple", json=payload)
+    assert accepted.status_code == 200
+    assert client.get("/v1/me/legal-consent", headers=authorization(accepted.json())).json()["requiresAcceptance"] is False
+
+
+def test_downloaded_legal_documents_allow_an_existing_account_to_accept_current_text(client):
+    account = login(client)
+    with sqlite3.connect(client.settings.db_path) as db:
+        db.execute("UPDATE legal_consent_events SET privacy_version='old',document_hash=?", ("0" * 64,))
+    rejected = client.post("/v1/auth/refresh", headers=authorization(account))
+    assert rejected.status_code == 428
+    manifest = client.get("/v1/legal/documents").json()
+    required = {key: manifest[key] for key in ("privacyVersion", "termsVersion", "documentHash")}
+    assert rejected.json()["requiredVersions"] == required
+    response = client.post("/v1/me/legal-consent", headers=authorization(account),
+                           json={"legalConsent": {**required, "accepted": True, "adultConfirmed": True}})
+    assert response.status_code == 200 and response.json()["requiresAcceptance"] is False
+    assert client.post("/v1/auth/refresh", headers=authorization(account)).status_code == 200
+
+
+def test_public_legal_documents_and_required_versions_share_a_startup_snapshot(client, tmp_path, monkeypatch):
+    account = login(client)
+    manifest = client.get("/v1/legal/documents").json()
+    changed_path = tmp_path / "unpublished-replacement.json"
+    changed_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr("app.main.LEGAL_DOCUMENTS_PATH", changed_path)
+    assert client.get("/v1/legal/documents").json() == manifest
+    status = client.get("/v1/me/legal-consent", headers=authorization(account)).json()
+    assert status["requiredVersions"] == {key: manifest[key] for key in ("privacyVersion", "termsVersion", "documentHash")}
+    assert status["requiresAcceptance"] is False
+
+
+def test_legal_acceptance_uses_server_time_hash_and_idempotent_account_record(client):
+    before = int(time.time())
+    result = login(client)
+    headers = authorization(result)
+    current = client.get("/v1/me/legal-consent", headers=headers)
+    assert current.status_code == 200
+    status = current.json()
+    assert status["requiredVersions"] == load_legal_requirements()
+    assert status["requiresAcceptance"] is False
+    assert status["legalConsent"] == {**current_legal_consent(),
+                                     "acceptedAt": status["legalConsent"]["acceptedAt"], "withdrawnAt": None}
+    assert before <= status["legalConsent"]["acceptedAt"] <= int(time.time())
+    repeated = client.post("/v1/me/legal-consent", headers=headers,
+                           json={"legalConsent": current_legal_consent()})
+    assert repeated.json() == status
+    login(client)
+    with sqlite3.connect(client.settings.db_path) as db:
+        rows = db.execute("""SELECT a.login_id,e.document_hash,e.adult_confirmed,e.accepted,e.recorded_at
+            FROM legal_consent_events e JOIN accounts a ON a.account_id=e.account_id""").fetchall()
+    assert rows == [(result["user"]["id"], load_legal_requirements()["documentHash"], 1, 1,
+                     status["legalConsent"]["acceptedAt"])]
+
+
+def test_existing_session_can_review_and_accept_before_business_or_sdk_use(client, monkeypatch):
+    headers = authorization(login(client))
+    with sqlite3.connect(client.settings.db_path) as db:
+        db.execute("DELETE FROM legal_consent_events")
+    calls = []
+
+    def guarded_signer(*args, **kwargs):
+        calls.append(args)
+        return generate_user_sig(*args, **kwargs)
+
+    monkeypatch.setattr("app.main.generate_user_sig", guarded_signer)
+    assert client.get("/v1/me/legal-consent", headers=headers).json() == {
+        "requiredVersions": load_legal_requirements(), "legalConsent": None, "requiresAcceptance": True}
+    business_calls = [
+        ("GET", "/v1/me", None), ("PATCH", "/v1/me", {"name": "不能修改"}),
+        ("POST", "/v1/auth/refresh", None), ("GET", "/v1/rooms", None),
+        ("POST", "/v1/rooms/lookup", {"ids": []}),
+        ("POST", "/v1/rooms", {"title": "未同意", "category": "语聊", "isLive": False, "theme": 0}),
+        ("GET", "/v1/rooms/missing", None), ("PATCH", "/v1/rooms/missing", {"status": "live"}),
+        ("GET", "/v1/library", None), ("PUT", "/v1/favorites/missing", None),
+        ("DELETE", "/v1/favorites/missing", None), ("POST", "/v1/history/missing", None),
+    ]
+    for method, path, body in business_calls:
+        response = client.request(method, path, headers=headers, json=body)
+        assert response.status_code == 428, (method, path, response.text)
+        assert response.json()["requiredVersions"] == load_legal_requirements()
+    assert upload_avatar(client, headers).status_code == 428
+    assert not calls
+    assert client.get("/health").status_code == 200
+    assert client.post("/v1/me/legal-consent", headers=headers, json={}).status_code == 428
+    accepted = client.post("/v1/me/legal-consent", headers=headers,
+                           json={"legalConsent": current_legal_consent()})
+    assert accepted.status_code == 200 and accepted.json()["requiresAcceptance"] is False
+    assert client.get("/v1/me", headers=headers).status_code == 200
+    assert client.post("/v1/auth/refresh", headers=headers).status_code == 200
+    assert len(calls) == 1
+
+
+def test_outdated_consent_does_not_grandfather_sdk_or_business_access(client):
+    headers = authorization(login(client))
+    with sqlite3.connect(client.settings.db_path) as db:
+        db.execute("UPDATE legal_consent_events SET privacy_version='2026-10-16',document_hash=?", ("0" * 64,))
+    status = client.get("/v1/me/legal-consent", headers=headers).json()
+    assert status["legalConsent"]["privacyVersion"] == "2026-10-16"
+    assert status["requiresAcceptance"] is True
+    assert client.post("/v1/auth/refresh", headers=headers).status_code == 428
+    stale = {**current_legal_consent(), "documentHash": "0" * 64}
+    assert client.post("/v1/me/legal-consent", headers=headers, json={"legalConsent": stale}).status_code == 428
+    assert client.post("/v1/me/legal-consent", headers=headers,
+                       json={"legalConsent": current_legal_consent()}).status_code == 200
+    with sqlite3.connect(client.settings.db_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM legal_consent_events").fetchone()[0] == 2
+    assert client.post("/v1/auth/refresh", headers=headers).status_code == 200
+
+
+def test_withdrawal_records_event_and_revokes_all_account_sessions(client):
+    first = login(client)
+    second = login(client)
+    other = authorization(login(client, "other", "2" * 64))
+    headers = authorization(first)
+    before = int(time.time())
+    withdrawn = client.delete("/v1/me/legal-consent", headers=headers)
+    assert withdrawn.status_code == 200 and withdrawn.json() == {"ok": True}
+    for revoked in (headers, authorization(second)):
+        assert client.get("/v1/me", headers=revoked).status_code == 401
+        assert client.post("/v1/auth/refresh", headers=revoked).status_code == 401
+        assert client.get("/v1/me/legal-consent", headers=revoked).status_code == 401
+        assert client.post("/v1/me/legal-consent", headers=revoked,
+                           json={"legalConsent": current_legal_consent()}).status_code == 401
+    assert client.get("/v1/me", headers=other).status_code == 200
+    with sqlite3.connect(client.settings.db_path) as db:
+        account = db.execute("SELECT account_id FROM identities WHERE provider='apple' AND subject='alice'").fetchone()[0]
+        events = db.execute("""SELECT accepted,adult_confirmed,document_hash,recorded_at
+            FROM legal_consent_events WHERE account_id=? ORDER BY event_id""", (account,)).fetchall()
+        assert db.execute("SELECT COUNT(*) FROM sessions WHERE account_id=?", (account,)).fetchone()[0] == 0
+    assert [row[0] for row in events] == [1, 0]
+    assert events[-1][1:3] == (1, load_legal_requirements()["documentHash"])
+    assert before <= events[-1][3] <= int(time.time())
+    # Withdrawing does not silently accept again on a legacy login request.
+    assert client.post("/v1/auth/apple", json=apple_payload(client, consent=False)).status_code == 428
+    renewed = login(client)
+    assert renewed["user"]["sdkUserID"] == first["user"]["sdkUserID"]
+    assert client.get("/v1/me/legal-consent", headers=authorization(renewed)).json()["requiresAcceptance"] is False
+    with sqlite3.connect(client.settings.db_path) as db:
+        assert [row[0] for row in db.execute("SELECT accepted FROM legal_consent_events WHERE account_id=? ORDER BY event_id",
+                                           (account,))] == [1, 0, 1]
+
+
+def test_withdrawal_response_loss_can_retry_without_revoking_new_sessions(client):
+    original = login(client)
+    unrelated_session = login(client)
+    old_headers = authorization(original)
+    # Treat the first successful response as lost to the caller.
+    assert client.delete("/v1/me/legal-consent", headers=old_headers).status_code == 200
+    assert client.delete("/v1/me/legal-consent", headers=old_headers).json() == {"ok": True}
+    assert client.delete("/v1/me/legal-consent", headers=authorization(unrelated_session)).status_code == 401
+    renewed_headers = authorization(login(client))
+    assert client.delete("/v1/me/legal-consent", headers=old_headers).json() == {"ok": True}
+    assert client.get("/v1/me", headers=renewed_headers).status_code == 200
+    assert client.get("/v1/me/legal-consent", headers=old_headers).status_code == 401
+    with sqlite3.connect(client.settings.db_path) as db:
+        receipt = db.execute("SELECT token_hash,expires_at FROM legal_withdrawal_receipts").fetchone()
+        assert receipt[0] == hashlib.sha256(original["token"].encode()).hexdigest()
+        assert int(time.time()) + 86000 < receipt[1] <= int(time.time()) + 86400
+        assert db.execute("SELECT COUNT(*) FROM legal_consent_events WHERE accepted=0").fetchone()[0] == 1
+        db.execute("UPDATE legal_withdrawal_receipts SET expires_at=1")
+    assert client.delete("/v1/me/legal-consent", headers=old_headers).status_code == 401
+    assert client.get("/v1/me", headers=renewed_headers).status_code == 200
+    with sqlite3.connect(client.settings.db_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM legal_withdrawal_receipts").fetchone()[0] == 0
+
+
+def test_account_deletion_removes_consent_and_withdrawal_receipts(client):
+    old_headers = authorization(login(client))
+    assert client.delete("/v1/me/legal-consent", headers=old_headers).status_code == 200
+    current_headers = authorization(login(client))
+    assert client.delete("/v1/account", headers=current_headers).status_code == 200
+    assert client.delete("/v1/me/legal-consent", headers=old_headers).status_code == 401
+    with sqlite3.connect(client.settings.db_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM legal_consent_events").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM legal_withdrawal_receipts").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("action", ["logout", "delete"])
+def test_unaccepted_legacy_sessions_can_logout_or_delete_account(client, action):
+    headers = authorization(login(client))
+    with sqlite3.connect(client.settings.db_path) as db:
+        db.execute("UPDATE legal_consent_events SET privacy_version='2026-10-16'")
+    if action == "logout":
+        assert client.post("/v1/auth/logout", headers=headers).status_code == 200
+    else:
+        assert client.delete("/v1/account", headers=headers).status_code == 200
+        with sqlite3.connect(client.settings.db_path) as db:
+            assert db.execute("SELECT COUNT(*) FROM legal_consent_events").fetchone()[0] == 0
+    assert client.get("/v1/me/legal-consent", headers=headers).status_code == 401
+
+
+@pytest.mark.parametrize("manifest", [None, {}, {"draft": True}, {"status": "draft"}, {"documentHash": "invalid"}])
+def test_server_refuses_missing_invalid_or_draft_legal_documents(tmp_path, monkeypatch, manifest):
+    path = tmp_path / "legal_documents.json"
+    if manifest is not None:
+        path.write_text(json.dumps({**load_legal_requirements(), **manifest}), encoding="utf-8")
+        if manifest == {}:
+            path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr("app.main.LEGAL_DOCUMENTS_PATH", path)
+    with pytest.raises(RuntimeError, match="隐私政策"):
+        create_app(Settings(str(tmp_path / "invalid.sqlite3"), 123, TEST_KEY, False))
+
+
+def test_server_refuses_legal_text_changed_without_new_content_hash(tmp_path, monkeypatch):
+    manifest = json.loads(LEGAL_DOCUMENTS_PATH.read_text(encoding="utf-8"))
+    manifest["documents"][0]["sections"][0]["paragraphs"][0] += "修改后的内容"
+    path = tmp_path / "changed_documents.json"
+    path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr("app.main.LEGAL_DOCUMENTS_PATH", path)
+    with pytest.raises(RuntimeError, match="隐私政策"):
+        create_app(Settings(str(tmp_path / "changed.sqlite3"), 123, TEST_KEY, False))
+
+
+@pytest.mark.parametrize("damage", ["missing-document", "duplicate-document", "empty-paragraph"])
+def test_server_refuses_incomplete_legal_text_even_with_recomputed_hash(tmp_path, monkeypatch, damage):
+    manifest = json.loads(LEGAL_DOCUMENTS_PATH.read_text(encoding="utf-8"))
+    if damage == "missing-document":
+        manifest["documents"].pop()
+    elif damage == "duplicate-document":
+        manifest["documents"][-1] = manifest["documents"][0]
+    else:
+        manifest["documents"][0]["sections"][0]["paragraphs"] = ["  "]
+    manifest["documentHash"] = hashlib.sha256(json.dumps(
+        {key: value for key, value in manifest.items() if key != "documentHash"},
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+    path = tmp_path / "incomplete_documents.json"
+    path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr("app.main.LEGAL_DOCUMENTS_PATH", path)
+    with pytest.raises(RuntimeError, match="隐私政策"):
+        create_app(Settings(str(tmp_path / "incomplete.sqlite3"), 123, TEST_KEY, False))

@@ -14,6 +14,8 @@ public class TUILiveRoomAudienceViewController: UIViewController {
     /// Applications with their own room directory can keep navigation inside it.
     public var enableRoomSwiping = true
     public var enableGifts = true
+    /// Optional app-owned menu customization; the built-in gift service remains independent.
+    public var onConfigureLiveView: ((AudienceLiveView) -> Void)?
     
     private lazy var audienceView: AudienceView = {
         let view = AudienceView(roomId: roomId)
@@ -179,6 +181,7 @@ extension TUILiveRoomAudienceViewController: AudienceEndStatisticsViewDelegate {
 extension TUILiveRoomAudienceViewController: AudienceViewDelegate {
     public func audienceView(_ audienceView: AudienceView, onCreateLiveView liveView: AudienceLiveView, for liveInfo: LiveInfo) {
         if !enableGifts { liveView.bottomItems = [.coGuest, .like, .more] }
+        onConfigureLiveView?(liveView)
     }
 
     public func onLiveEnded(roomId: String, ownerName userName: String, ownerAvatarUrl avatarUrl: String) {

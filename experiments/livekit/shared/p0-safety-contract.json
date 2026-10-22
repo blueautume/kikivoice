@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "scope": "中文语聊社区安全；不封禁普通 Apple 账号，不涉及支付、礼物或容量配置。所有时间为 Unix 秒或 null，无永久封禁 sentinel。",
+  "publicOrigin": "https://furby.top",
+  "authorization": "普通语聊业务 Bearer。封禁用户仍可建立或续期业务会话，访问安全中心、提交或查看举报，以及退出/撤回/注销；不能创建/发现/加入房间，旧媒体凭证和重连同样受限制。",
+  "safety": {
+    "method": "GET", "path": "/v1/safety",
+    "response": {
+      "schemaVersion": 1,
+      "blockedUsers": [{"userID":"稳定账号编号","name":"当前昵称","createdAt":"Unix秒"}],
+      "notices": [{"id":"notice_编号","message":"处置理由","action":"warn|mute_chat|mute_audio|ban_user|restore_user","createdAt":"Unix秒","expiresAt":"Unix秒"}],
+      "restrictions": {"chatMutedUntil":null,"voiceMutedUntil":null,"bannedUntil":null}
+    },
+    "noticeLimit": 50,
+    "noticeReadState": "首版无服务端已读；客户端可按 notice ID 去重提示。"
+  },
+  "blocks": {
+    "methods": ["PUT", "DELETE"], "path": "/v1/safety/blocks/{userID}",
+    "body": "空或 {}，PUT 不接受额外参数。", "response": "完整 /v1/safety 对象",
+    "limit": 500,
+    "behavior": "服务器过滤本人可见的被拉黑者消息和公告，游标不回退；客户端同步清除旧消息缓存，入房前取得拉黑列表并不订阅该身份的媒体。解除拉黑后可重新订阅。公开房间中的在线状态和共同在场不被隔离，不承诺双方互不可见。"
+  },
+  "reports": {
+    "method": "POST", "path": "/v1/safety/reports",
+    "body": {"clientRequestID":"标准 UUID 36字符","targetType":"room|user|message","roomID":"房间编号","targetUserID":"用户举报必填；消息举报可省略并由服务器确定","messageID":"消息举报必填","reason":"harassment|spam|sexual|fraud|other","details":"可空，最多500字符"},
+    "response": {"id":"report_编号","status":"pending|resolved|dismissed","targetType":"room|user|message","roomID":"房间编号","targetUserID":"服务器确定的被举报账号","messageID":null,"reason":"harassment","details":"举报详情","createdAt":"Unix秒","resolvedAt":null},
+    "mine": {"method":"GET","path":"/v1/safety/reports/mine","response":{"reports":"本人最近100条未过期report对象","retentionDays":30}},
+    "validation": "举报者必须有服务器 SFU 实际观察到的参与记录。消息必须属于该房间且仍在2小时/200条窗口内，证据作者和正文仅取数据库；用户举报对象必须有该房间成员记录；禁止举报自己。房间举报不能附加targetUserID/messageID。",
+    "idempotency": "同一用户clientRequestID与内容一致返回原举报，改内容409；幂等范围为30天保留窗口。",
+    "limits": "每用户3条/分钟、20条/24小时，24小时总量持久化并可跨重启；HTTP另有限流。"
+  },
+  "moderation": {
+    "publicProxy": "账号服务器 /admin/v2/services/voice/moderation/query 与 action；仅独立 community 权限，voice/account只读权限均不能代替。",
+    "query": {"method":"POST","path":"/internal/admin/v2/moderation/query","body":{"status":"pending|resolved|all，默认pending","limit":"整数1..50，默认50","opsActorID":"账号网关验证后注入精确ops_编号"},"response":{"schemaVersion":1,"reports":"report对象，加roomTitle/reporterID/reporterName/targetName/messageExcerpt(无消息则null)/lastAction/evidenceExpiresAt","activeRestrictions":[{"reportID":"仅保留opaque来源编号，证据仍按30天删除","targetUserID":"被限制的稳定账号编号","chatMutedUntil":null,"voiceMutedUntil":null,"bannedUntil":null}],"retentionDays":30},"restoreAfterEvidenceExpiry":"restore_user允许以activeRestrictions的reportID定位仍生效的制裁，不要求原证据仍存在，也不延长证据保留。"},
+    "action": {"method":"POST","path":"/internal/admin/v2/moderation/action","body":{"requestID":"标准UUID","reportID":"举报编号","action":"warn|mute_chat|mute_audio|ban_user|close_room|dismiss|restore_user","durationSeconds":"mute_chat/mute_audio/ban_user必须60..2592000；其它动作不得传","note":"trim后必填1..500字符","opsActorID":"网关注入"},"response":{"ok":true,"requestID":"原UUID","reportID":"原举报ID","action":"原action","status":"resolved或dismissed","mediaCleanupPending":false}},
+    "enforcement": "所有处置目标从举报证据确定，不接受客户端任意目标。语聊禁令和禁言先持久化，RTC token、信令再授权、HTTP聊天与上麦均强制校验；实际SFU更新权限/停止音轨，失败关闭信令并移除媒体，待确认任务持久重试。restore_user只解除平台临时限制，不覆盖房主管理。ban_user关闭该用户主持的房间并移除其余入场，不撤销Apple登录。close_room不复活旧房间。处理消息举报的警告/禁言/封禁同时删除该条消息，证据保留至期限。",
+    "signature": "沿用account-voice-ops-v2域：HMAC-SHA256(secret,newline join([domain,POST,exactPath,timestamp,nonce,SHA256(rawBody)]))。只接受application/json，无Authorization/query/路径变体。",
+    "replay": "dashboard/query/action共享持久化ops_bridge_nonces池，一次性nonce61秒，时间容差30秒；requestID另作90天幂等回执。"
+  },
+  "errors": {"voice_banned":"403，语聊封禁，until/reason；保持业务登录以查看安全中心和注销","chat_muted":"403，文字禁言，until/reason；保留客户端草稿","voice_muted":"403，临时禁麦，until/reason","content_filtered":"422，修改文字后再发；不是完整实时音频审核"},
+  "contentFilter": {"environment":"SAFETY_TERMS_PATH，可选绝对JSON路径","format":{"blockedTerms":["需要阻止的短语"]},"limits":"最多2000条，每条2..80字符。NFKC/casefold，忽略空格与格式字符，作用于房名/分类/消息/公告；未配置时使用有限默认诈骗/违法内容短语。需人工举报配合，不录制音频。"},
+  "retention": {"reportsAndEvidenceDays":30,"noticesDays":30,"observedParticipationDays":30,"activityDays":35,"minimalOperatorAuditDays":90,"erasure":"注销或撤回清除本人双向拉黑关系、关联举报/证据、通知、观察记录和活跃统计标识；审计清除自由文本note及targetID，只留不含业务身份和内容的动作/opaque回执至90天。有效语聊限制不因撤回被绕过，正式注销完成后清除。备份仍受独立7天保留窗口约束。"},
+  "privacyOrdering": {"exchange":"账号签名 Exchange 增加 consentEpoch=最后accepted事件event_id、lastWithdrawalEpoch=最后withdrawal事件event_id(无则0)。首次旧协议可省略，已知epoch后拒绝回退或省略。","withdrawal":"签名 account/revoke 增加 reason=withdrawal 与 consentEpoch=撤回事件event_id；普通logout不清安全数据。","behavior":"语聊在接受新epoch前先处理尚未送达的lastWithdrawalEpoch、撤销旧epoch来源并清旧数据；之后迟到的旧撤回只撤销旧来源，不全局撤回新同意或误删新数据。单调事件ID避免同秒事件乱序。"},
+  "metrics": {"path":"operations.activity，语聊只读看板","fields":["trackingSince","day","timeZone","activeUsersToday","returningUsersToday","onlineUsersNow","onlineSampledAt","roomStaySecondsToday","micSeatJoinsToday","reportsToday","pendingReports","note"],"semantics":"日活是成功业务认证的账号ID去重，回访为近35天此前活跃；在线按SFU观察与有效房间成员交集全服去重，缺完整新鲜采样则null。停留为5秒采样估计，只累计相邻间隔<=15秒，重启/中断不补算；上麦是授权麦位进入次数，不代表持续发声。历史无记录不推算，trackingSince明确起算；原始SFU在线和准入占位另保留既有字段。"}
+}

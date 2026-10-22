@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>仅在你主动使用视频功能时用于采集并发送画面。当前版本未开放视频功能，不会申请相机权限或采集图像。</string>
     <key>CFBundleDevelopmentRegion</key>
     <string>zh-Hans</string>
     <key>UILaunchStoryboardName</key>
@@ -14,20 +16,5 @@
     <array>
         <string>audio</string>
     </array>
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSExceptionDomains</key>
-        <dict>
-            <key>43.138.219.160</key>
-            <dict>
-                <!-- This endpoint uses the bundled private trust anchor.
-                     KikiAPIClient still requires HTTPS and exact certificate,
-                     IP SAN, validity, signature and trust verification. -->
-                <key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
-                <key>NSExceptionMinimumTLSVersion</key><string>TLSv1.2</string>
-                <key>NSExceptionRequiresForwardSecrecy</key><true/>
-            </dict>
-        </dict>
-    </dict>
 </dict>
 </plist>

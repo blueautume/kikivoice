@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "accountService": "https://kiki.group",
+  "voiceService": "https://furby.top",
+  "clientExchange": {
+    "method": "POST",
+    "path": "/v1/voice/session",
+    "authorization": "Account-service Bearer only",
+    "response": {"token": "Voice-only opaque Bearer", "expiresAt": "Unix seconds, at most 15 minutes", "user": "Account public ID and profile snapshot", "sdk": {"provider": "livekit", "serverURL": "wss://furby.top", "userID": "Same stable account public ID", "expiresAt": "Same expiry as the voice Bearer"}},
+    "renewal": "Exchange every 5 minutes while in a room or before resuming. The same source account session returns the same voice Bearer."
+  },
+  "serverExchange": {
+    "method": "POST",
+    "paths": ["/internal/v1/account/session", "/internal/v1/account/revoke", "/internal/v1/account/delete"],
+    "credentials": "Independent ACCOUNT_VOICE_BRIDGE_SECRET held only by the two servers",
+    "headers": ["X-Kiki-Timestamp", "X-Kiki-Nonce", "X-Kiki-Signature"],
+    "signature": "HMAC-SHA256(secret, UTF8(join([account-voice-v1, POST, path, timestamp, nonce, SHA256(rawBody)], newline))) as lowercase hex",
+    "timestampToleranceSeconds": 30,
+    "nonce": "Random 16-byte lowercase hex, durably consumed once",
+    "authorizationID": "HMAC-SHA256(secret, voice-authorization-v1: + SHA256(accountBearer)) lowercase hex",
+    "sessionBody": {"authorizationID": "64 lowercase hex", "sourceExpiresAt": "Unexpired account session expiry, at most 31 days", "user": "Profile snapshot; id and sdkUserID equal account public ID", "legalConsent": {"privacyVersion": "Exact currently published version", "termsVersion": "Exact currently published version", "documentHash": "Exact current document hash"}},
+    "revokeBody": {"authorizationID": "One specific source account session"},
+    "deleteBody": {"accountID": "Account public ID, never Apple subject"},
+    "revocation": "Account SQLite session-delete trigger persists an outbox in the same transaction. Immediate bounded HTTPS attempt and background retries. Voice tombstones prevent delayed session exchanges; tombstones last 32 days. Durable revocation precedes media cleanup retries."
+  },
+  "ownership": {"account": ["Apple authentication", "Profile and uploaded avatars", "Legal consent", "Logout and account deletion"], "voice": ["LiveKit rooms and admission", "Membership and microphone seats", "Chat and announcements", "Room favorites and history", "Audio quality and capacity"]},
+  "avatarPolicy": "Only https://kiki.group/v1/avatars/<64 lowercase hex>.jpg; no query, credentials, alternate host or scheme",
+  "modes": {"production": "VOICE_AUTH_MODE=account refuses invitation login and pre-existing lab Bearers", "laboratory": "VOICE_AUTH_MODE=lab requires separate invitation and refuses account bridge requests"},
+  "capacity": {"rooms": 4, "participantsPerRoom": 32, "participantsTotal": 64},
+  "migration": "Maintenance cutover; no old room/user metadata migration, video and gifts hidden in the replacement client."
+}

@@ -10,8 +10,9 @@ def shared_pods
 
   # ── Third-party open source libraries ──
   pod 'Alamofire', '5.0.0'
-  pod 'SnapKit', '5.0.1'
-  pod 'Kingfisher', '6.3.1'
+  # These versions include the maintainers' CocoaPods privacy manifests.
+  pod 'SnapKit', '5.7.1'
+  pod 'Kingfisher', '7.12.0'
   pod 'AtomicXCore', '4.3.10'
   pod 'RTCRoomEngine/Professional', '4.3.10'
   pod 'Toast-Swift'
@@ -44,20 +45,8 @@ target 'RTCubeLab' do
   end
 end
 
-# KikiTalk deliberately links only the real voice/live stack. The legacy
-# application target above remains available for SDK reference development.
-target 'KikiTalk' do
-  use_frameworks!
-  pod 'AtomicXCore', '4.3.10'
-  pod 'RTCRoomEngine/Professional', '4.3.10'
-  pod 'TXLiteAVSDK_Professional', TXLITEAVSDK_VERSION
-  pod 'TUILiveKit', :path => '../live/TUILiveKit.podspec'
-  pod 'AtomicX', :path => '../atomic_x/AtomicX.podspec'
-
-  target 'KikiTalkTests' do
-    inherit! :search_paths
-  end
-end
+# KikiTalk uses the pinned LiveKit Swift package directly. Tencent pods are
+# retained only by the separate RTCubeLab reference target above.
 
 post_install do |installer|
   installer.pods_project.targets.each do |target|

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101018">
+  <meta name="description" content="第三方 SDK 与信息共享清单，版本 2026-10-20-r9。运营者：李浩（个人开发者）。">
+  <title>第三方 SDK 与信息共享清单 · 2026-10-20-r9</title>
+  <link rel="canonical" href="https://kiki.group/legal/2026-10-20-r9/sdk/">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/legal.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳至正文</a>
+  <header class="legal-header"><a class="brand" href="/"><img src="/favicon.svg" width="34" height="34" alt=""><span>KikiTalk</span></a><a class="home-link" href="/">返回官网 ↗</a></header>
+  <main id="main" class="legal-main">
+    <nav class="legal-nav" aria-label="协议与说明"><a href="/privacy/">隐私政策</a><a href="/terms/">用户协议</a><a href="/privacy/sdk/" aria-current="page">第三方 SDK 与信息共享清单</a><a href="/privacy/permissions/">系统权限使用说明</a></nav>
+    <div class="document-header"><span class="eyebrow">协议与说明 / LEGAL</span><h1>第三方 SDK 与信息共享清单</h1><p class="metadata">版本与生效日期：2026-10-20-r9 · 最近更新：2026-10-20</p><p class="operator">运营者：李浩（个人开发者） · 联系邮箱：<a href="mailto:2114581274@qq.com">2114581274@qq.com</a></p><p class="version-note">此页为留存版本。<a href="/privacy/sdk/">查看当前版本</a>。</p></div>
+    <details class="contents"><summary>目录</summary><ol><li><a href="#section-1">一、清单范围</a></li><li><a href="#section-2">二、LiveKit Swift SDK</a></li><li><a href="#section-3">三、SDK 随附的 WebRTC 与原生依赖</a></li><li><a href="#section-4">Apple 系统登录与身份服务</a></li><li><a href="#section-5">Apple 系统通知与 APNs 服务</a></li><li><a href="#section-6">五、系统基础组件与未启用范围</a></li></ol></details>
+    <article class="legal-article" aria-label="第三方 SDK 与信息共享清单正文"><section id="section-1"><h2>一、清单范围</h2><p>本清单根据当前 KikiTalk iOS 目标实际链接及使用的组件整理，接入范围不同于仓库内其他示例项目的全部依赖。通信组件在您同意适用隐私政策后按所选功能启用；系统权限在具体使用场景申请。第三方处理应符合约定目的及适用法律，您可通过运营者李浩的邮箱 2114581274@qq.com 提出个人信息请求。</p></section><section id="section-2"><h2>二、LiveKit Swift SDK</h2><p>组件：LiveKit Swift Client SDK 2.18.0，由 LiveKit 开源发布。用途：在用户进入房间并主动开麦时连接自建语聊节点，发布、订阅和播放实时音频，以及处理连接状态和房间数据提示。账号鉴权、麦位、文字正文和公告权限由本服务业务接口管理。</p><p>必要处理包括公开用户和房间标识、主动发布的实时音频、设备和系统版本、网络连接及通信质量信息。当前配置连接 <a href="https://furby.top/" rel="noreferrer">https://furby.top/</a> 对应的自建信令与媒体节点，未配置 LiveKit Cloud 房间服务。未接入录制、转写或 AI 语音服务。官方源代码：<a href="https://github.com/livekit/client-sdk-swift" rel="noreferrer">https://github.com/livekit/client-sdk-swift</a> 。自建部署说明：<a href="https://docs.livekit.io/transport/self-hosting/" rel="noreferrer">https://docs.livekit.io/transport/self-hosting/</a> 。</p></section><section id="section-3"><h2>三、SDK 随附的 WebRTC 与原生依赖</h2><p>当前固定的依赖包括 LiveKitWebRTC 150.7871.3 和 LiveKitUniFFI 0.1.9，随 LiveKit SDK 发布，负责必要的原生实时通信与桥接。它们不是独立的广告、支付或商业分析服务。音频编解码及网络适配不表示应用已经开启录音保存。实际网络和诊断处理限于实现所选通信功能所需范围。</p></section><section id="section-4"><h2>Apple 系统登录与身份服务</h2><p>组件：iOS 系统 AuthenticationServices 框架与 Sign in with Apple 服务。提供方：Apple。用途：在用户主动选择登录时完成账户授权、服务端验证、状态核验及注销时撤销授权；系统框架随 iOS 提供，不另行嵌入第三方登录 SDK。</p><p>必要处理：Apple 提供的开发者范围用户标识、身份令牌、一次性授权码、随机挑战及为管理授权使用的令牌。本版本不主动请求或保存 Apple 姓名和邮箱，不向业务服务器提交 Apple 密码。认证请求访问 Apple 服务，按其规则处理。官方说明：<a href="https://www.apple.com/legal/privacy/data/zh-cn/sign-in-with-apple/" rel="noreferrer">https://www.apple.com/legal/privacy/data/zh-cn/sign-in-with-apple/</a> 。</p></section><section id="section-5"><h2>Apple 系统通知与 APNs 服务</h2><p>组件：iOS 系统 UserNotifications、UIApplication 远程通知注册及 Apple Push Notification service（APNs）。提供方：Apple。用途：经用户主动授权后向其已登录设备发送私聊和互动的通用提醒、必要角标，以及处理通知点击。没有新增第三方推送 SDK。</p><p>必要处理：Apple 为本应用提供的设备推送令牌、应用标识、通用通知载荷与随机事件标识。账号服务将随机安装编号与有效会话关联管理，推送私钥仅位于受限服务端。推送不包含私聊或评论正文、昵称、照片或房间名称。Apple 隐私政策：<a href="https://www.apple.com/legal/privacy/zh-cn/" rel="noreferrer">https://www.apple.com/legal/privacy/zh-cn/</a> 。</p></section><section id="section-6"><h2>五、系统基础组件与未启用范围</h2><p>界面、网络、照片选择、音频设备和安全存储使用 iOS 的 SwiftUI、UIKit、URLSession、PhotosUI、AVAudioSession 与 Keychain 等系统组件。用户照片头像从账号服务 kiki.group 加载并缓存在本机；预设头像随应用提供。</p><p>当前正式 KikiTalk 目标不再链接腾讯语聊、直播、Room Engine 或 IM SDK，不使用独立广告分析、支付、内容审核、AI 转写或厂商 Push SDK。仓库中保留的腾讯参考工程不属于此目标。后续新增第三方处理或改变用途时会更新此清单。</p></section></article>
+    <aside class="document-proof"><p>文档集合校验值（SHA-256）</p><code>4c2c2a3b06319eb18730ac0a7ea58926b0f4c46cf7a195b2376fe14ec6944ead</code><p>用于核对应用、服务端和官网所提供的同一组协议文本，不是签名或身份证明。</p></aside>
+  </main>
+  <footer class="legal-footer"><a href="/">KikiTalk · kiki.group</a><span>仅限 18 周岁及以上 · iOS 内测中</span><a href="mailto:2114581274@qq.com">联系运营者</a></footer>
+</body>
+</html>

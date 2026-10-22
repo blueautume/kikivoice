@@ -1,0 +1,12 @@
+# Dedicated experiment host; the existing furby-top alias points to another server.
+Host furby-livekit-lab
+  HostName 139.224.50.108
+  User root
+  IdentityFile ~/.ssh/furby_livekit_lab.pem
+  IdentitiesOnly yes
+  BatchMode yes
+  StrictHostKeyChecking yes
+  UserKnownHostsFile ~/.ssh/furby_livekit_lab_known_hosts
+  ConnectTimeout 10
+  ServerAliveInterval 30
+  ServerAliveCountMax 3

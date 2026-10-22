@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "baseURL": "https://kiki.group",
+  "serviceID": "account",
+  "scope": "Account service only. No voice rooms, voice capacity or voice host metrics. Aggregate statistics only; no personal identifiers.",
+  "transport": "HTTPS; Authorization Bearer independent account admin token; no cookies; Cache-Control no-store; no redirects",
+  "login": {
+    "method": "POST",
+    "path": "/admin/v1/auth/session",
+    "request": {
+      "passphrase": "exact string, 16..256 UTF-8 bytes"
+    },
+    "responseExample": {
+      "token": "opaque-url-safe-43-character-token",
+      "expiresAt": 1792396800,
+      "serviceID": "account",
+      "role": "viewer"
+    },
+    "limits": "600000 PBKDF2-SHA256; 8 hour viewer sessions; independent 5 per source IP / 5 minutes, 30 global / 5 minutes; max 32 sessions"
+  },
+  "logout": {
+    "method": "DELETE",
+    "path": "/admin/v1/auth/session",
+    "responseExample": {
+      "revoked": true
+    }
+  },
+  "dashboard": {
+    "method": "GET",
+    "path": "/admin/v1/dashboard",
+    "responseExample": {
+      "schemaVersion": 1,
+      "serverTime": "2026-10-19T02:00:00+00:00",
+      "service": {
+        "id": "account",
+        "name": "Kiki 账号服务",
+        "host": "kiki.group",
+        "mode": "account",
+        "readOnly": true
+      },
+      "voiceService": {
+        "included": false,
+        "message": "语聊数据请切换服务查看。"
+      },
+      "operations": {
+        "day": "2026-10-19",
+        "timeZone": "Asia/Shanghai",
+        "totalAccounts": 12,
+        "accountsCreatedToday": 3,
+        "validBusinessSessions": 5,
+        "accountsWithValidSessions": 4,
+        "accountsWithSessionsCreatedToday": 2,
+        "sessionMetricNote": "有效会话可能包含离线设备，不代表在线人数或 DAU。",
+        "appleAuthorizedAccounts": 12,
+        "pendingAppleRevocations": 1,
+        "dueAppleRevocations": 1,
+        "appleMetricNote": "仅汇总数量，无账号明细。",
+        "accountsWithCustomAvatar": 3
+      },
+      "storage": {
+        "databaseBytes": 4096,
+        "avatarFiles": 3,
+        "avatarBytes": 1024,
+        "avatarScanLimited": false,
+        "sampleNote": "仅账号服务器本地数据。"
+      },
+      "infrastructure": {
+        "sampledAt": null,
+        "stale": true,
+        "cpuPercent": null,
+        "cpuCores": null,
+        "memoryUsedBytes": null,
+        "memoryTotalBytes": null,
+        "memoryPercent": null,
+        "diskUsedBytes": null,
+        "diskTotalBytes": null,
+        "diskPercent": null,
+        "networkReceiveBytesPerSecond": null,
+        "networkTransmitBytesPerSecond": null,
+        "uptimeSeconds": null,
+        "certificateExpiresAt": null,
+        "certificateDaysRemaining": null,
+        "services": [
+          {
+            "id": "api",
+            "name": "账号 API",
+            "state": "active"
+          },
+          {
+            "id": "nginx",
+            "name": "Nginx",
+            "state": "active"
+          }
+        ]
+      },
+      "health": {
+        "api": "healthy"
+      },
+      "alerts": []
+    }
+  },
+  "deployment": {
+    "ADMIN_PASSPHRASE_HASH": "independent account credential hash; do not reuse voice credential",
+    "ADMIN_TLS_CERT_PATH": "absolute path to public certificate only",
+    "ADMIN_API_SYSTEMD_UNIT": "fixed account API service unit; default kikitalk.service"
+  }
+}
