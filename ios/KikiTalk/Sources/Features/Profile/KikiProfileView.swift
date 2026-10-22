@@ -81,25 +81,11 @@ struct KikiProfileView: View {
                 Spacer(minLength: 0)
             }
 
-            HStack(alignment: .top, spacing: 12) {
-                Text(store.bio.isEmpty ? "写一句介绍，让同频的人找到你。" : store.bio)
-                    .font(.system(size: 14))
-                    .lineSpacing(5)
-                    .foregroundStyle(KikiPalette.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Button {
-                    activeSheet = .edit
-                } label: {
-                    Text("编辑资料")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(KikiPalette.lavender)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .background(KikiPalette.purple.opacity(0.12), in: Capsule())
-                        .overlay(Capsule().stroke(KikiPalette.purple.opacity(0.24), lineWidth: 1))
-                }
-            }
+            Text(store.bio.isEmpty ? "写一句介绍，让同频的人找到你。" : store.bio)
+                .font(.system(size: 14))
+                .lineSpacing(5)
+                .foregroundStyle(KikiPalette.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
