@@ -584,12 +584,12 @@ final class KikiConsentTests: XCTestCase {
         XCTAssertEqual(KikiAppleAuthorizationService.hashedNonce("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
     }
 
-    private func waitUntil(_ condition: () -> Bool) async throws {
+    private func waitUntil(file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool) async throws {
         for _ in 0..<100 {
             if condition() { return }
             try await Task.sleep(nanoseconds: 20_000_000)
         }
-        XCTFail("Timed out waiting for controlled test continuation")
+        XCTFail("Timed out waiting for controlled test continuation", file: file, line: line)
         throw URLError(.timedOut)
     }
 }
@@ -787,8 +787,9 @@ extension KikiConsentTests {
             store.updateDirectDraft("离线验收草稿 😀", personID: peer)
             let expectedEnabled = established || remaining > 0
             try await withMomentWindow { window in
-                window.rootViewController = UIHostingController(rootView: KikiDirectConversationView(person: person, store: store)
-                    .environment(\.scenePhase, .active).preferredColorScheme(.light))
+                window.rootViewController = UIHostingController(rootView: NavigationStack {
+                    KikiDirectConversationView(person: person, store: store)
+                }.environment(\.scenePhase, .active).preferredColorScheme(.light))
                 window.makeKeyAndVisible()
                 try await self.waitUntil { !requests.values.isEmpty && store.directMessageAccess[peer]?.canSend == expectedEnabled && !self.momentEditableViews(window).isEmpty }
                 try await Task.sleep(nanoseconds: 350_000_000)
@@ -1394,9 +1395,9 @@ extension KikiConsentTests {
         await store.logout()
     }
 
-    /// Public UIButton target-actions exercise the production profile inside a
-    /// real native half sheet. Fixtures are local; no message is sent.
-    func testPublicProfileHalfSheetNativeActionsLayoutAndPrivateConversationPresentation() async throws {
+    /// Public UIButton target-actions exercise the production profile and the
+    /// central native dismissal bridge. Fixtures are local; no message is sent.
+    func testPublicProfileHalfSheetNativeActionsPushConversationIntoMessagesTab() async throws {
         let docs = try XCTUnwrap(KikiLegalBundle.bundled), peer = "kiki_fixture0002"
         let folder = URL(fileURLWithPath: "/tmp/kiki-public-profile-actions", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -1407,6 +1408,9 @@ extension KikiConsentTests {
         func presentedChain(_ controller: UIViewController) -> [UIViewController] {
             guard let next = controller.presentedViewController else { return [] }
             return [next] + presentedChain(next)
+        }
+        func navigationControllers(_ controller: UIViewController) -> [UINavigationController] {
+            ((controller as? UINavigationController).map { [$0] } ?? []) + controller.children.flatMap(navigationControllers)
         }
         var manifest: [[String: Any]] = []
         for (name, size, typeSize) in [("375", CGSize(width: 375, height: 812), DynamicTypeSize.large),
@@ -1435,16 +1439,47 @@ extension KikiConsentTests {
             try await withMomentWindow { window in
                 let original = window.frame
                 window.frame = CGRect(origin: original.origin, size: size)
-                let presenter = UIViewController(); window.rootViewController = presenter; window.makeKeyAndVisible()
-                let profile = UIHostingController(rootView: KikiPublicProfileView(userID: peer, store: store)
-                    .dynamicTypeSize(typeSize).environment(\.scenePhase, .active).preferredColorScheme(.light))
-                profile.modalPresentationStyle = .pageSheet
-                profile.sheetPresentationController?.detents = [.medium(), .large()]
-                profile.sheetPresentationController?.selectedDetentIdentifier = .medium
-                await withCheckedContinuation { continuation in presenter.present(profile, animated: false) { continuation.resume() } }
+                let tabs = KikiDirectNavigationFixtureTabs()
+                let presenter = UIHostingController(rootView: KikiDirectNavigationFixture(store: store, tabs: tabs)
+                    .environment(\.scenePhase, .active).preferredColorScheme(.light))
+                window.rootViewController = presenter; window.makeKeyAndVisible()
+                store.setAppForeground(true)
+                try await self.waitUntil { !navigationControllers(presenter).isEmpty }
+                let profile: UIViewController
+                if name == "375" {
+                    // Exercise SwiftUI's real presentation binding too: the
+                    // central UIKit dismissal must reconcile that state.
+                    tabs.profile = person
+                    try await self.waitUntil {
+                        guard let presented = presenter.presentedViewController else { return false }
+                        return nativeButtons(presented.view).contains { $0.accessibilityIdentifier == "social.direct.open" }
+                    }
+                    profile = try XCTUnwrap(presenter.presentedViewController)
+                    XCTAssertEqual(tabs.profile?.id, person.id)
+                    XCTAssertEqual(tabs.profileDismissals, 0)
+                } else {
+                    let nativeProfile = UIHostingController(rootView: KikiPublicProfileView(userID: peer, store: store)
+                        .dynamicTypeSize(typeSize).environment(\.scenePhase, .active).preferredColorScheme(.light))
+                    nativeProfile.modalPresentationStyle = .pageSheet
+                    nativeProfile.sheetPresentationController?.detents = [.medium(), .large()]
+                    nativeProfile.sheetPresentationController?.selectedDetentIdentifier = .medium
+                    // Cover both nested sheets and a room-style full-screen
+                    // presentation that removes the underlying host from window.
+                    let intermediate = UIViewController()
+                    intermediate.view.backgroundColor = UIColor(KikiPalette.background)
+                    intermediate.modalPresentationStyle = name == "ipad-width" ? .fullScreen : .pageSheet
+                    await withCheckedContinuation { continuation in presenter.present(intermediate, animated: false) { continuation.resume() } }
+                    await withCheckedContinuation { continuation in intermediate.present(nativeProfile, animated: false) { continuation.resume() } }
+                    profile = nativeProfile
+                }
                 try await self.waitUntil { nativeButtons(profile.view).filter { ["social.direct.open", "social.follow", "social.profile.more"].contains($0.accessibilityIdentifier ?? "") }.count == 3 }
+                try await self.waitUntil { !profile.isBeingPresented && profile.transitionCoordinator == nil }
                 try await Task.sleep(nanoseconds: 250_000_000)
                 profile.view.layoutIfNeeded(); window.layoutIfNeeded()
+                if name == "ipad-width" {
+                    XCTAssertNil(presenter.viewIfLoaded?.window, "The full-screen fixture must remove the root host from its window")
+                    XCTAssertTrue(profile.view.window === window, "The visible profile must still belong to this scene's window")
+                }
                 let buttons = nativeButtons(profile.view)
                 let direct = try XCTUnwrap(buttons.first { $0.accessibilityIdentifier == "social.direct.open" })
                 let follow = try XCTUnwrap(buttons.first { $0.accessibilityIdentifier == "social.follow" })
@@ -1478,25 +1513,154 @@ extension KikiConsentTests {
                     let attachment = XCTAttachment(image: image); attachment.name = device + "-" + name + "-" + suffix; attachment.lifetime = .keepAlways; self.add(attachment)
                 }
                 try capture("profile")
-                let before = presentedChain(presenter).count
-                direct.sendActions(for: .touchUpInside)
-                try await self.waitUntil { presentedChain(presenter).count > before && !directReads.values.isEmpty && !self.momentEditableViews(window).isEmpty }
-                XCTAssertGreaterThan(presentedChain(presenter).count, before, "Native profile action must present the real conversation sheet")
-                try capture("direct-presented")
-                let conversation = try XCTUnwrap(presentedChain(presenter).last)
-                await withCheckedContinuation { continuation in conversation.dismiss(animated: false) { continuation.resume() } }
-                try await self.waitUntil { presentedChain(presenter).count == before }
                 follow.sendActions(for: .touchUpInside)
                 try await self.waitUntil { writes.values == ["PUT"] && store.isFollowing(person) && follow.isEnabled && follow.configuration?.title == "已关注" }
-                manifest.append(["layout": name, "viewportWidth": profile.view.bounds.width,
-                                 "buttonsStayInOneRow": true, "nativeDirectActionPresentedConversation": true, "confirmedFollowUpdatedButton": true])
-                await withCheckedContinuation { continuation in profile.dismiss(animated: false) { continuation.resume() } }
+                let depth = presentedChain(presenter).count
+                XCTAssertEqual(depth, name == "375" ? 1 : 2)
+                XCTAssertEqual(tabs.selectedTab, 1)
+                direct.sendActions(for: .touchUpInside)
+                do {
+                    try await self.waitUntil {
+                        presentedChain(presenter).isEmpty && tabs.selectedTab == 2
+                            && store.directConversationPath.map(\.person.id) == [peer]
+                            && !directReads.values.isEmpty && !self.momentEditableViews(window).isEmpty
+                    }
+                } catch {
+                    func allControllers(_ value: UIViewController) -> [UIViewController] { [value] + value.children.flatMap(allControllers) }
+                    let hosts = allControllers(presenter).compactMap { $0 as? KikiDirectConversationPresenter.Host }
+                    print("Navigation fixture diagnostic", name, "pending", store.pendingDirectConversation != nil,
+                          "path", store.directConversationPath.map(\.person.id), "tab", tabs.selectedTab,
+                          "modalDepth", presentedChain(presenter).count, "reads", directReads.values.count,
+                          "inputs", self.momentEditableViews(window).count, "hosts", hosts.count,
+                          "hostWindows", hosts.map { $0.viewIfLoaded?.window != nil },
+                          "cachedWindows", hosts.map { $0.hostingWindow != nil },
+                          "parentDepths", hosts.map { host in var depth = 0; var current = host.parent; while let value = current { depth += 1; current = value.parent }; return depth })
+                    try capture("route-failure")
+                    throw error
+                }
+                let navigation = try XCTUnwrap(navigationControllers(presenter).first {
+                    $0.viewControllers.count == 2 && $0.topViewController?.navigationItem.title == person.name
+                }, "The real messages NavigationStack must push a conversation above its root")
+                XCTAssertNil(presenter.presentedViewController, "A private conversation must not remain in a sheet")
+                XCTAssertNil(store.pendingDirectConversation)
+                if name == "375" {
+                    try await self.waitUntil { tabs.profile?.id == nil && tabs.profileDismissals == 1 }
+                    XCTAssertNil(tabs.profile, "Imperative dismissal must clear the parent SwiftUI sheet binding")
+                    XCTAssertEqual(tabs.profileDismissals, 1, "SwiftUI must acknowledge the actual dismissal once")
+                }
+                try await self.waitUntil { store.foregroundNotificationContext.conversationPersonID == peer }
+                try await self.waitUntil { navigation.transitionCoordinator == nil && navigation.topViewController?.viewIfLoaded?.window === window }
+                try capture("direct-pushed")
+
+                store.requestDirectConversation(person)
+                try await self.waitUntil { store.pendingDirectConversation?.id == nil }
+                XCTAssertEqual(store.directConversationPath.map(\.person.id), [peer])
+                XCTAssertEqual(navigation.viewControllers.count, 2, "Opening the same conversation cannot append a second chat")
+                XCTAssertNil(presenter.presentedViewController)
+
+                // A preserved navigation path in another resident tab must not
+                // suppress foreground notices for this conversation.
+                tabs.selectedTab = 1
+                try await self.waitUntil { store.foregroundNotificationContext.conversationPersonID == nil }
+                XCTAssertEqual(store.directConversationPath.map(\.person.id), [peer])
+                tabs.selectedTab = 2
+                try await self.waitUntil { store.foregroundNotificationContext.conversationPersonID == peer }
+
+                XCTAssertNotNil(navigation.popViewController(animated: false), "Use the real navigation controller's system back path")
+                try await self.waitUntil {
+                    store.directConversationPath.isEmpty && navigation.viewControllers.count == 1
+                        && store.foregroundNotificationContext.conversationPersonID == nil
+                        && navigation.transitionCoordinator == nil
+                }
+                XCTAssertEqual(tabs.selectedTab, 2, "Back returns to the messages list")
+                XCTAssertNil(presenter.presentedViewController, "The old profile sheet must not revive after navigation and tab updates")
+                if name == "375" { XCTAssertEqual(tabs.profileDismissals, 1) }
+                try capture("messages-after-back")
+                manifest.append(["layout": name, "viewportWidth": size.width,
+                                 "buttonsStayInOneRow": true, "dismissedNativeSheetDepth": depth,
+                                 "rootRemovedFromWindowBeforeRouting": name == "ipad-width",
+                                 "swiftUISheetBindingExercised": name == "375", "swiftUISheetDismissals": tabs.profileDismissals,
+                                 "messagesTabSelected": true, "nativeConversationPushed": true,
+                                 "inactiveTabClearedVisibility": true, "nativeBackReturnedToMessages": true,
+                                 "confirmedFollowUpdatedButton": true])
                 window.frame = original
             }
             await store.logout()
         }
         let result: [String: Any] = ["scope": "Offline fixtures; production half-sheet view and public UIButton target-actions; no real account or DM send", "device": device, "checks": manifest]
         try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: folder.appendingPathComponent(device + "-validation.json"))
+    }
+
+    func testDirectConversationRequestDeduplicationAndLateCompletionRespectPrivacyAndSession() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        for invalidatesSession in [false, true] {
+            let mock = KikiAPIMockServer { try p1VisualResponse($0, documents: docs) }
+            let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+            let person = momentFixturePerson(following: false)
+            store.requestDirectConversation(person)
+            let first = try XCTUnwrap(store.pendingDirectConversation)
+            store.requestDirectConversation(person)
+            XCTAssertEqual(store.pendingDirectConversation?.id, first.id, "Repeated taps share the in-flight native dismissal")
+            XCTAssertTrue(store.isCurrentDirectConversationRequest(first.id))
+            XCTAssertTrue(store.completeDirectConversationNavigation(first.id))
+            XCTAssertFalse(store.completeDirectConversationNavigation(first.id), "A dismissal completion is consumed once")
+            XCTAssertEqual(store.directConversationPath.map(\.person.id), [person.id])
+
+            store.requestDirectConversation(person)
+            let repeated = try XCTUnwrap(store.pendingDirectConversation)
+            XCTAssertTrue(store.completeDirectConversationNavigation(repeated.id))
+            XCTAssertEqual(store.directConversationPath.map(\.person.id), [person.id], "An existing chat is replaced without accumulating history")
+
+            store.requestDirectConversation(person)
+            let superseded = try XCTUnwrap(store.pendingDirectConversation)
+            store.cancelPendingDirectConversation()
+            XCTAssertFalse(store.completeDirectConversationNavigation(superseded.id), "A newer notification intent cancels the older direct handoff")
+            XCTAssertEqual(store.directConversationPath.map(\.person.id), [person.id], "Cancelling a pending handoff preserves the current conversation")
+
+            store.requestDirectConversation(person)
+            let stale = try XCTUnwrap(store.pendingDirectConversation)
+            if invalidatesSession { await store.logout() }
+            else { store.socialPolicyChanged(userID: person.id, blocked: true) }
+            XCTAssertNil(store.pendingDirectConversation)
+            XCTAssertTrue(store.directConversationPath.isEmpty)
+            XCTAssertFalse(store.isCurrentDirectConversationRequest(stale.id))
+            XCTAssertFalse(store.completeDirectConversationNavigation(stale.id), "An old native completion cannot cross a session or privacy boundary")
+            XCTAssertTrue(store.directConversationPath.isEmpty)
+            if invalidatesSession {
+                store.requestDirectConversation(person)
+                XCTAssertNil(store.pendingDirectConversation, "A signed-out page cannot queue navigation")
+            } else { await store.logout() }
+        }
+    }
+}
+
+@MainActor
+private final class KikiDirectNavigationFixtureTabs: ObservableObject {
+    @Published var selectedTab = 1
+    @Published var profile: KikiPerson?
+    @Published var profileDismissals = 0
+}
+
+/// The production inbox owns the NavigationStack and the production bridge
+/// owns native dismissal and route consumption. Only tab selection is local.
+@MainActor
+private struct KikiDirectNavigationFixture: View {
+    @ObservedObject var store: KikiAppStore
+    @ObservedObject var tabs: KikiDirectNavigationFixtureTabs
+
+    var body: some View {
+        ZStack {
+            KikiPalette.background.ignoresSafeArea()
+            KikiMessagesView(store: store, isActive: tabs.selectedTab == 2)
+                .opacity(tabs.selectedTab == 2 ? 1 : 0)
+                .allowsHitTesting(tabs.selectedTab == 2)
+                .accessibilityHidden(tabs.selectedTab != 2)
+        }
+        .sheet(item: $tabs.profile, onDismiss: { tabs.profileDismissals += 1 }) { person in
+            KikiPublicProfileView(userID: person.id, store: store).kikiRoomSheet()
+        }
+        .background(KikiDirectConversationPresenter(store: store, onOpen: { tabs.selectedTab = 2 }))
+        .environmentObject(store)
     }
 }
 
@@ -1898,7 +2062,9 @@ extension KikiConsentTests {
             ("messages-unified-light", mainTabVisualScreen(AnyView(KikiMessagesView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.light)))),
             ("person-light", AnyView(KikiPublicProfileView(userID: person.id, store: store).preferredColorScheme(.light))),
             ("comments-dark", AnyView(KikiMomentCommentsView(moment: moment, store: store).preferredColorScheme(.dark))),
-            ("direct-light", AnyView(KikiDirectConversationView(person: person, store: store).preferredColorScheme(.light))),
+            ("direct-light", AnyView(NavigationStack {
+                KikiDirectConversationView(person: person, store: store)
+            }.preferredColorScheme(.light))),
             ("profile-large-text", mainTabVisualScreen(AnyView(KikiProfileView().environmentObject(store).preferredColorScheme(.light).dynamicTypeSize(.accessibility1))))
         ]
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })

@@ -128,10 +128,9 @@ struct KikiPublicProfileView: View {
     @State private var moments: [KikiMoment] = []
     @State private var confirmsUnfollow = false
     private enum Destination: Identifiable {
-        case direct(KikiPerson), report(KikiSocialReportTarget), moment(KikiMoment)
+        case report(KikiSocialReportTarget), moment(KikiMoment)
         var id: String {
             switch self {
-            case .direct(let person): return "direct:" + person.id
             case .report(let report): return "report:" + report.id
             case .moment(let moment): return "moment:" + moment.id
             }
@@ -203,7 +202,6 @@ struct KikiPublicProfileView: View {
                 .sheet(item: $destination) { value in
                     Group {
                         switch value {
-                        case .direct(let person): KikiDirectConversationView(person: person, store: store)
                         case .report(let target): KikiSocialReportForm(target: target, store: store)
                         case .moment(let moment): KikiMomentCommentsView(moment: moment, store: store)
                         }
@@ -224,7 +222,7 @@ struct KikiPublicProfileView: View {
         return HStack(spacing: 10) {
             KikiPublicProfileButton(style: .message, isEnabled: !isBlocking, isBusy: false, action: {
                 guard destination == nil, !isBlocking else { return }
-                destination = .direct(person)
+                store.requestDirectConversation(person)
             }).frame(maxWidth: .infinity).frame(height: 48)
             KikiPublicProfileButton(style: .follow(following), isEnabled: !isBlocking && !isFollowing, isBusy: isFollowing, action: {
                 if following { confirmsUnfollow = true }
@@ -512,7 +510,6 @@ struct KikiMessagesView: View {
     @State private var isLoading = false
     @State private var hasLoaded = false
     @State private var error: String?
-    @State private var directPerson: KikiPerson?
     @State private var selectedPerson: KikiPersonDestination?
     @State private var selectedMoment: KikiMoment?
     @State private var showsSafety = false
@@ -531,16 +528,19 @@ struct KikiMessagesView: View {
     private var hasRetry: Bool { retryMutation != nil || retryBulk != nil }
     private var refreshIsActive: Bool {
         isActive && scenePhase == .active && store.isAuthenticated && !store.isPresentingRoom
-            && directPerson == nil && selectedPerson == nil && selectedMoment == nil && !showsSafety
+            && store.directConversationPath.isEmpty && selectedPerson == nil && selectedMoment == nil && !showsSafety
     }
     private var showsDeletion: Binding<Bool> {
         Binding(get: { pendingDeletion != nil || pendingBulkDeletion != nil }, set: { if !$0 { pendingDeletion = nil; pendingBulkDeletion = nil } })
     }
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $store.directConversationPath) {
             messageList
                 .navigationTitle("").navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
+                .navigationDestination(for: KikiDirectConversationRoute.self) { route in
+                    KikiDirectConversationView(person: route.person, store: store, isActive: isActive)
+                }
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
@@ -567,7 +567,6 @@ struct KikiMessagesView: View {
                         if !isActive || scenePhase != .active || store.isPresentingRoom { navigationRequestID = UUID() }
                     }
                 }
-                .sheet(item: $directPerson, onDismiss: localSheetDidDismiss) { KikiDirectConversationView(person: $0, store: store) }
                 .sheet(item: $selectedPerson, onDismiss: localSheetDidDismiss) { KikiPublicProfileView(userID: $0.id, store: store) }
                 .sheet(item: $selectedMoment, onDismiss: localSheetDidDismiss) { KikiMomentCommentsView(moment: $0, store: store) }
                 .sheet(isPresented: $showsSafety, onDismiss: localSheetDidDismiss) { KikiSafetyCenter(rtc: .shared) }
@@ -594,7 +593,7 @@ struct KikiMessagesView: View {
                     generation = UUID(); navigationRequestID = UUID(); entries = []; nextCursor = nil
                     pendingDeletion = nil; activeMutation = nil; retryMutation = nil
                     pendingBulkDeletion = nil; activeBulk = nil; retryBulk = nil; isPreparingBulk = false; error = nil
-                    isLoading = false; hasLoaded = false; directPerson = nil; selectedPerson = nil; selectedMoment = nil; showsSafety = false
+                    isLoading = false; hasLoaded = false; selectedPerson = nil; selectedMoment = nil; showsSafety = false
                     isDismissingForInbox = false
                     if isActive && store.isAuthenticated { Task { await reload() } }
                 }
@@ -653,7 +652,7 @@ struct KikiMessagesView: View {
     private func open(_ entry: KikiInboxEntry) async {
         let id = UUID(); navigationRequestID = id
         switch entry.content {
-        case .direct(let conversation): directPerson = conversation.person
+        case .direct(let conversation): store.requestDirectConversation(conversation.person)
         case .notification(let notice):
             let privacy = store.socialPrivacyRevision; let account = store.userID
             do {
@@ -725,8 +724,9 @@ struct KikiMessagesView: View {
     private func handlePushRequest() {
         guard isActive, store.isAuthenticated, !isDismissingForInbox,
               let request = push.pendingInboxRequest, push.inboxPresentationReady else { return }
-        if directPerson != nil || selectedPerson != nil || selectedMoment != nil || showsSafety {
-            isDismissingForInbox = true; directPerson = nil; selectedPerson = nil; selectedMoment = nil; showsSafety = false
+        store.directConversationPath = []
+        if selectedPerson != nil || selectedMoment != nil || showsSafety {
+            isDismissingForInbox = true; selectedPerson = nil; selectedMoment = nil; showsSafety = false
             return
         }
         guard push.consumeInboxRequest(request) else { return }

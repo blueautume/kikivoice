@@ -16,6 +16,19 @@ struct KikiPerson: Codable, Equatable, Identifiable {
     var relationshipLabel: String { mutual ? "互相关注" : (following ? "已关注" : "关注") }
 }
 
+struct KikiDirectConversationRoute: Hashable {
+    let person: KikiPerson
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.person.id == rhs.person.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(person.id) }
+}
+
+struct KikiDirectConversationRequest: Identifiable {
+    let id = UUID()
+    let person: KikiPerson
+    let sessionKey: String
+    let privacyRevision: Int
+}
+
 struct KikiPeoplePage: Decodable {
     let people: [KikiPerson]
     let nextCursor: String?

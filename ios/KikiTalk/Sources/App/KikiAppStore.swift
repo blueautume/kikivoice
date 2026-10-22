@@ -40,6 +40,8 @@ import Combine
     @Published private(set) var directDrafts: [String: String] = [:]
     @Published private(set) var pendingDirectMessages: [String: KikiPendingDirectMessage] = [:]
     @Published private(set) var directMessageAccess: [String: KikiDirectMessageAccess] = [:]
+    @Published private(set) var pendingDirectConversation: KikiDirectConversationRequest?
+    @Published var directConversationPath: [KikiDirectConversationRoute] = []
     @Published private(set) var directContentRevision = 0
     private var directAccessRevision: [String: Int] = [:]
     private var directAccessFetchRevision: [String: Int] = [:]
@@ -896,7 +898,33 @@ import Combine
     func resolvePush(_ deliveryID: String) async throws -> KikiPushRoute {
         try await socialRequest { try await self.api.resolvePush(deliveryID, token: $0) }
     }
-    func prepareForPushNavigation() async {
+    func requestDirectConversation(_ person: KikiPerson) {
+        guard permitsBusiness, isAuthenticated, !isEndingSession, let key = pushSessionKey,
+              !person.id.isEmpty, person.id != userID else { return }
+        if let pending = pendingDirectConversation, pending.person.id == person.id,
+           pending.sessionKey == key, pending.privacyRevision == socialPrivacyRevision { return }
+        pendingDirectConversation = .init(person: person, sessionKey: key, privacyRevision: socialPrivacyRevision)
+    }
+
+    func isCurrentDirectConversationRequest(_ id: UUID) -> Bool {
+        guard let request = pendingDirectConversation else { return false }
+        return request.id == id && request.sessionKey == pushSessionKey
+            && request.privacyRevision == socialPrivacyRevision && permitsBusiness && isAuthenticated && !isEndingSession
+    }
+
+    func cancelPendingDirectConversation() { pendingDirectConversation = nil }
+
+    @discardableResult
+    func completeDirectConversationNavigation(_ id: UUID) -> Bool {
+        guard isCurrentDirectConversationRequest(id), let request = pendingDirectConversation else { return false }
+        if directConversationPath.count != 1 || directConversationPath.first?.person.id != request.person.id {
+            directConversationPath = [.init(person: request.person)]
+        }
+        pendingDirectConversation = nil
+        return true
+    }
+
+    func prepareForMessageNavigation() async {
         guard permitsBusiness, isAuthenticated else { return }
         await (rtcStorage as? KikiRTCService)?.minimizeRoom()
     }
@@ -1606,6 +1634,7 @@ import Combine
     }
     func socialPolicyChanged(userID: String, blocked: Bool) {
         socialPrivacyRevision += 1
+        pendingDirectConversation = nil; directConversationPath = []
         socialRefreshID = UUID()
         socialMutationRefreshTask?.cancel(); socialMutationRefreshTask = nil
         notificationUnreadGate = KikiUnreadRequestGate(); directUnreadGate = KikiUnreadRequestGate()
@@ -1658,6 +1687,7 @@ import Combine
         socialMutationRefreshTask?.cancel(); socialMutationRefreshTask = nil
         socialRefreshID = UUID()
         socialPrivacyRevision += 1
+        pendingDirectConversation = nil; directConversationPath = []
         notificationUnreadGate = KikiUnreadRequestGate(); directUnreadGate = KikiUnreadRequestGate()
         notificationForegroundScope = nil; directForegroundScope = nil
         visibleDirectConversations = []

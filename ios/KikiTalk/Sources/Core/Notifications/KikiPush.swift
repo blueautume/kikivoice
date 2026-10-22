@@ -508,7 +508,7 @@ enum KikiPushEnvironment {
             else if route.type == "notification" { content = nil }
             else { throw KikiAPIError.invalidResponse }
             guard valid(id, key: key), pendingTap == tap else { return }
-            await store.prepareForPushNavigation()
+            await store.prepareForMessageNavigation()
             guard valid(id, key: key), pendingTap == tap else { return }
             pendingTap = nil; tapAccount = nil
             commitNavigation(content)

@@ -1,4 +1,5 @@
 import AuthenticationServices
+import Combine
 import SwiftUI
 import UIKit
 
@@ -127,6 +128,13 @@ private struct KikiAuthorizedRootView: View {
         return foregroundSessionKey
     }
 
+    private var pushedMoment: Binding<KikiPushNavigation?> {
+        Binding(get: {
+            guard let route = push.navigation, case .moment = route.content else { return nil }
+            return route
+        }, set: { push.navigation = $0 })
+    }
+
     var body: some View {
         ZStack {
             KikiPalette.background.ignoresSafeArea()
@@ -142,12 +150,14 @@ private struct KikiAuthorizedRootView: View {
                             .allowsHitTesting(selectedTab == 0).accessibilityHidden(selectedTab != 0)
                         KikiMomentsView(store: store, isActive: selectedTab == 1).opacity(selectedTab == 1 ? 1 : 0)
                             .allowsHitTesting(selectedTab == 1).accessibilityHidden(selectedTab != 1)
-                        KikiMessagesView(store: store, isActive: selectedTab == 2).opacity(selectedTab == 2 ? 1 : 0)
+                        KikiMessagesView(store: store, isActive: selectedTab == 2 && push.navigation == nil).opacity(selectedTab == 2 ? 1 : 0)
                             .allowsHitTesting(selectedTab == 2).accessibilityHidden(selectedTab != 2)
                         KikiProfileView(isActive: selectedTab == 3).opacity(selectedTab == 3 ? 1 : 0)
                             .allowsHitTesting(selectedTab == 3).accessibilityHidden(selectedTab != 3)
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                } tabBar: { tabBar }
+                } tabBar: {
+                    if selectedTab != 2 || store.directConversationPath.isEmpty { tabBar }
+                }
             } else { KikiLoginView() }
         }
         .foregroundStyle(KikiPalette.text).environmentObject(store)
@@ -162,17 +172,28 @@ private struct KikiAuthorizedRootView: View {
         .task(id: store.pushSessionKey) { if store.pushSessionKey != nil { await push.refresh() } }
         .onChange(of: store.isPresentingRoom) { _ in push.foregroundContextDidChange() }
         .onChange(of: store.notificationsEnabled) { _ in push.foregroundContextDidChange() }
-        .onChange(of: push.inboxRequest) { _ in if store.isAuthenticated { selectedTab = 2 } }
+        .onChange(of: push.inboxRequest) { _ in
+            guard store.isAuthenticated else { return }
+            if let route = push.navigation, case .direct(let person) = route.content {
+                push.navigation = nil
+                store.requestDirectConversation(person)
+            } else {
+                store.cancelPendingDirectConversation()
+            }
+            selectedTab = 2
+        }
         .onChange(of: selectedTab) { _ in
             isRoomSearchFocused = false
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
-        .sheet(item: $push.navigation, onDismiss: { push.navigationDidDismiss() }) { route in
+        .sheet(item: pushedMoment, onDismiss: { push.navigationDidDismiss() }) { route in
             switch route.content {
-            case .direct(let person): KikiDirectConversationView(person: person, store: store)
             case .moment(let moment): KikiMomentCommentsView(moment: moment, store: store)
+            case .direct: EmptyView()
             }
         }
+        .background(KikiDirectConversationPresenter(store: store, onOpen: { selectedTab = 2 })
+            .allowsHitTesting(false).accessibilityHidden(true))
         .task(id: roomCatalogKey) {
             guard roomCatalogKey != nil else { return }
             await store.watchRoomCatalog()
@@ -260,6 +281,146 @@ private struct KikiAuthorizedRootView: View {
         }.buttonStyle(.plain).accessibilityIdentifier(index == 0 ? "discoverTab" : (index == 1 ? "momentsTab" : (index == 2 ? "messagesTab" : "profileTab")))
             .accessibilityAddTraits(selectedTab == index ? .isSelected : [])
             .accessibilityValue(index == 2 && store.unreadMessageCount > 0 ? "\(store.unreadMessageCount) 条未读消息" : "")
+    }
+}
+
+/// Finish dismissing the current scene's entire presentation chain before the
+/// messages stack opens a conversation. UIKit's completion owns the handoff;
+/// no timing delay or unrelated scene/window lookup is involved.
+struct KikiDirectConversationPresenter: UIViewControllerRepresentable {
+    @ObservedObject var store: KikiAppStore
+    let onOpen: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeUIViewController(context: Context) -> Host {
+        let host = Host()
+        host.view.backgroundColor = .clear
+        host.appeared = { [weak coordinator = context.coordinator] in coordinator?.schedule() }
+        return host
+    }
+    func updateUIViewController(_ host: Host, context: Context) {
+        context.coordinator.host = host
+        context.coordinator.attach(store)
+        context.coordinator.onOpen = onOpen
+        context.coordinator.schedule()
+    }
+    static func dismantleUIViewController(_ host: Host, coordinator: Coordinator) {
+        host.appeared = nil
+        coordinator.task?.cancel()
+        coordinator.requestSubscription?.cancel()
+        coordinator.requestSubscription = nil
+        coordinator.host = nil
+    }
+
+    final class Host: UIViewController {
+        var appeared: (() -> Void)?
+        weak var hostingWindow: UIWindow?
+        override func loadView() {
+            let view = WindowView()
+            view.attached = { [weak self] window in
+                self?.hostingWindow = window
+                self?.appeared?()
+            }
+            self.view = view
+        }
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            if let window = view.window { hostingWindow = window }
+            appeared?()
+        }
+    }
+
+    final class WindowView: UIView {
+        var attached: ((UIWindow) -> Void)?
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if let window { attached?(window) }
+        }
+    }
+
+    @MainActor final class Coordinator {
+        weak var host: Host?
+        weak var store: KikiAppStore?
+        var onOpen: (() -> Void)?
+        var task: Task<Void, Never>?
+        var requestSubscription: AnyCancellable?
+        private var isRouting = false
+
+        func attach(_ store: KikiAppStore) {
+            guard self.store !== store else { return }
+            self.store = store
+            // A full-screen room may suspend the underlying SwiftUI root's
+            // rendering. Observe the intent directly instead of waiting for a
+            // representable update. @Published emits before assigning its value.
+            requestSubscription = store.$pendingDirectConversation.sink { [weak self] _ in
+                Task { @MainActor [weak self] in self?.schedule() }
+            }
+        }
+
+        func schedule() {
+            guard !isRouting, let store, let request = store.pendingDirectConversation,
+                  store.isCurrentDirectConversationRequest(request.id), presentationRoot != nil else { return }
+            isRouting = true
+            task = Task { [weak self] in
+                guard let self else { return }
+                defer { self.isRouting = false; self.task = nil }
+                while !Task.isCancelled, let store = self.store, let request = store.pendingDirectConversation,
+                      store.isCurrentDirectConversationRequest(request.id) {
+                    guard let initialRoot = self.presentationRoot else { return }
+                    await self.waitForTransitions(from: initialRoot, requestID: request.id)
+                    guard !Task.isCancelled else { return }
+                    guard store.isCurrentDirectConversationRequest(request.id) else { continue }
+                    await store.prepareForMessageNavigation()
+                    guard !Task.isCancelled else { return }
+                    guard store.isCurrentDirectConversationRequest(request.id) else { continue }
+                    guard let root = self.presentationRoot else { return }
+                    root.view.endEditing(true)
+                    await self.dismissPresentations(from: root, requestID: request.id)
+                    guard !Task.isCancelled else { return }
+                    if store.completeDirectConversationNavigation(request.id) { self.onOpen?() }
+                }
+            }
+        }
+
+        private var presentationRoot: UIViewController? {
+            // A full-screen room detaches the underlying host's view. Keep a
+            // weak reference to this same window so the room can minimize.
+            (host?.viewIfLoaded?.window ?? host?.hostingWindow)?.rootViewController
+        }
+
+        private func waitForTransitions(from root: UIViewController, requestID: UUID) async {
+            while !Task.isCancelled, store?.isCurrentDirectConversationRequest(requestID) == true {
+                var controller: UIViewController? = root
+                var transition: UIViewControllerTransitionCoordinator?
+                while let current = controller {
+                    if current.isBeingPresented || current.isBeingDismissed,
+                       let active = current.transitionCoordinator { transition = active; break }
+                    controller = current.presentedViewController
+                }
+                guard let transition else { return }
+                let completed = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                        var resumed = false
+                        let finish: (Bool) -> Void = { completed in
+                            guard !resumed else { return }; resumed = true
+                            continuation.resume(returning: completed)
+                        }
+                        if !transition.animate(alongsideTransition: nil, completion: { _ in finish(true) }) { finish(false) }
+                }
+                guard completed else { return }
+            }
+        }
+
+        private func dismissPresentations(from root: UIViewController, requestID: UUID) async {
+            while !Task.isCancelled, store?.isCurrentDirectConversationRequest(requestID) == true,
+                  root.presentedViewController != nil {
+                await waitForTransitions(from: root, requestID: requestID)
+                guard !Task.isCancelled, store?.isCurrentDirectConversationRequest(requestID) == true else { return }
+                if root.presentedViewController == nil { return }
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    root.dismiss(animated: true) { continuation.resume() }
+                }
+            }
+        }
     }
 }
 

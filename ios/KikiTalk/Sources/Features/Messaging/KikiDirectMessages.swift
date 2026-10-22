@@ -3,7 +3,7 @@ import SwiftUI
 struct KikiDirectConversationView: View {
     let person: KikiPerson
     @ObservedObject var store: KikiAppStore
-    @Environment(\.dismiss) private var dismiss
+    let isActive: Bool
     @Environment(\.scenePhase) private var scenePhase
     @State private var messages: [KikiDirectMessage] = []
     @State private var clearedThroughSeq = 0
@@ -22,12 +22,17 @@ struct KikiDirectConversationView: View {
     @State private var lastAcknowledgedID: String?
     @State private var visibilityOwner = UUID()
     @FocusState private var isComposing: Bool
+
+    init(person: KikiPerson, store: KikiAppStore, isActive: Bool = true) {
+        self.person = person; self.store = store; self.isActive = isActive
+    }
+
     private var pending: KikiPendingDirectMessage? { store.pendingDirectMessages[person.id] }
     private var directAccess: KikiDirectMessageAccess? { store.directMessageAccess[person.id] }
     private var visibleMessages: [KikiDirectMessage] { loadedPersonID == person.id ? messages : [] }
     private var canSend: Bool { hasLoaded && loadedPersonID == person.id && directAccess?.canSend == true }
     private var refreshScope: KikiDirectRefreshScope {
-        .init(personID: person.id, isForeground: scenePhase == .active, isVisible: isVisible,
+        .init(personID: person.id, isForeground: scenePhase == .active, isVisible: isVisible && isActive,
               hasOverlay: showsProfile || report != nil)
     }
     private var draft: Binding<String> { Binding(get: { store.directDrafts[person.id] ?? "" }, set: { store.updateDirectDraft($0, personID: person.id) }) }
@@ -37,93 +42,91 @@ struct KikiDirectConversationView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                if let error { KikiInlineError(message: error) { Task { await reload() } }.padding(.horizontal, 16) }
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 16) {
-                            if nextCursor != nil { Button("更早的消息") { Task { await loadMore() } }.disabled(isLoading) }
-                            if isLoading && visibleMessages.isEmpty { ProgressView().padding(30) }
-                            if !isLoading && visibleMessages.isEmpty && error == nil {
-                                KikiEmptyState(symbol: "bubble.left.and.bubble.right", title: "这里什么都没有", message: "")
-                            }
-                            ForEach(visibleMessages) { message in
-                                VStack(spacing: 16) {
-                                    if showsTimestamp(before: message) {
-                                        Text(Date(timeIntervalSince1970: message.createdAt), format: .dateTime.month().day().hour().minute())
-                                            .font(.caption2).foregroundStyle(KikiPalette.muted).padding(.top, 8)
-                                    }
-                                    messageRow(message)
-                                }.id(message.id)
-                                    .onAppear { if message.id == messages.last?.id { latestVisibleID = message.id; Task { await acknowledgeVisible() } } }
-                            }
-                            if let pending {
-                                HStack { Spacer(minLength: 45)
-                                    VStack(alignment: .trailing, spacing: 7) {
-                                        Text(pending.text).font(.body).padding(13).background(KikiPalette.purple.opacity(0.13), in: RoundedRectangle(cornerRadius: 16))
-                                        if pending.isSending { Label("正在发送", systemImage: "clock").font(.caption).foregroundStyle(KikiPalette.muted) }
-                                        else { Button("发送未确认，点击重试") { Task { await send() } }.font(.caption).foregroundStyle(KikiPalette.lavender) }
-                                    }
-                                }.id("pending")
-                            }
-                            Color.clear.frame(height: 1).id("bottom")
-                        }.padding(18).frame(maxWidth: 760).frame(maxWidth: .infinity)
-                    }.onChange(of: visibleMessages.last?.id) { old, _ in
-                        if old == nil || latestVisibleID == old || isComposing { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) } }
-                    }
-                        .onChange(of: pending?.isSending) { _ in proxy.scrollTo("bottom", anchor: .bottom) }
+        VStack(spacing: 0) {
+            if let error { KikiInlineError(message: error) { Task { await reload() } }.padding(.horizontal, 16) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 16) {
+                        if nextCursor != nil { Button("更早的消息") { Task { await loadMore() } }.disabled(isLoading) }
+                        if isLoading && visibleMessages.isEmpty { ProgressView().padding(30) }
+                        if !isLoading && visibleMessages.isEmpty && error == nil {
+                            KikiEmptyState(symbol: "bubble.left.and.bubble.right", title: "这里什么都没有", message: "")
+                        }
+                        ForEach(visibleMessages) { message in
+                            VStack(spacing: 16) {
+                                if showsTimestamp(before: message) {
+                                    Text(Date(timeIntervalSince1970: message.createdAt), format: .dateTime.month().day().hour().minute())
+                                        .font(.caption2).foregroundStyle(KikiPalette.muted).padding(.top, 8)
+                                }
+                                messageRow(message)
+                            }.id(message.id)
+                                .onAppear { if message.id == messages.last?.id { latestVisibleID = message.id; Task { await acknowledgeVisible() } } }
+                        }
+                        if let pending {
+                            HStack { Spacer(minLength: 45)
+                                VStack(alignment: .trailing, spacing: 7) {
+                                    Text(pending.text).font(.body).padding(13).background(KikiPalette.purple.opacity(0.13), in: RoundedRectangle(cornerRadius: 16))
+                                    if pending.isSending { Label("正在发送", systemImage: "clock").font(.caption).foregroundStyle(KikiPalette.muted) }
+                                    else { Button("发送未确认，点击重试") { Task { await send() } }.font(.caption).foregroundStyle(KikiPalette.lavender) }
+                                }
+                            }.id("pending")
+                        }
+                        Color.clear.frame(height: 1).id("bottom")
+                    }.padding(18).frame(maxWidth: 760).frame(maxWidth: .infinity)
+                }.onChange(of: visibleMessages.last?.id) { old, _ in
+                    if old == nil || latestVisibleID == old || isComposing { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) } }
                 }
-                composer
-            }.background(KikiPalette.background.ignoresSafeArea())
-                .navigationTitle(person.name).navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
-                    ToolbarItem(placement: .topBarTrailing) { Button { showsProfile = true } label: { Image(systemName: "person.crop.circle") }.accessibilityLabel("查看个人主页") }
-                }
-                .onAppear { isVisible = true }
-                .onDisappear {
-                    isVisible = false; generation = UUID(); isComposing = false
-                    store.setDirectConversationVisibility(owner: visibilityOwner, personID: person.id,
-                                                          isVisible: false, hasOverlay: false)
-                }
-                .onChange(of: refreshScope, initial: true) { _, scope in
-                    store.setDirectConversationVisibility(owner: visibilityOwner, personID: scope.personID,
-                                                          isVisible: scope.isForeground && scope.isVisible,
-                                                          hasOverlay: scope.hasOverlay)
-                }
-                .onChange(of: person.id) { _, _ in
-                    generation = UUID(); messages = []; loadedPersonID = nil; hasLoaded = false
-                    clearedThroughSeq = 0; nextCursor = nil; error = nil; refreshRequestID = nil
-                    latestVisibleID = nil; lastAcknowledgedID = nil; isLoading = false
-                    requestRefresh()
-                }
-                .task(id: refreshScope) {
+                    .onChange(of: pending?.isSending) { _ in proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            composer
+        }.background(KikiPalette.background.ignoresSafeArea())
+            .navigationTitle(person.name).navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { Button { showsProfile = true } label: { Image(systemName: "person.crop.circle") }.accessibilityLabel("查看个人主页") }
+            }
+            .onAppear { isVisible = true }
+            .onDisappear {
+                isVisible = false; generation = UUID(); isComposing = false
+                store.setDirectConversationVisibility(owner: visibilityOwner, personID: person.id,
+                                                      isVisible: false, hasOverlay: false)
+            }
+            .onChange(of: refreshScope, initial: true) { _, scope in
+                store.setDirectConversationVisibility(owner: visibilityOwner, personID: scope.personID,
+                                                      isVisible: scope.isForeground && scope.isVisible,
+                                                      hasOverlay: scope.hasOverlay)
+            }
+            .onChange(of: person.id) { _, _ in
+                generation = UUID(); messages = []; loadedPersonID = nil; hasLoaded = false
+                clearedThroughSeq = 0; nextCursor = nil; error = nil; refreshRequestID = nil
+                latestVisibleID = nil; lastAcknowledgedID = nil; isLoading = false
+                requestRefresh()
+            }
+            .task(id: refreshScope) {
+                guard refreshScope.permitsRefresh else { return }
+                await reload(silent: hasLoaded)
+                while !Task.isCancelled {
+                    do { try await Task.sleep(nanoseconds: KikiDirectRefreshScope.fallbackNanoseconds) } catch { return }
                     guard refreshScope.permitsRefresh else { return }
-                    await reload(silent: hasLoaded)
-                    while !Task.isCancelled {
-                        do { try await Task.sleep(nanoseconds: KikiDirectRefreshScope.fallbackNanoseconds) } catch { return }
-                        guard refreshScope.permitsRefresh else { return }
-                        await reload(silent: true)
-                    }
+                    await reload(silent: true)
                 }
-                .onChange(of: store.directHistoryRevision[person.id]) { _, _ in
-                    generation = UUID(); messages = []; nextCursor = nil; isLoading = false; refreshRequestID = nil
-                    latestVisibleID = nil; lastAcknowledgedID = nil
-                    if refreshScope.permitsRefresh { Task { await reload(silent: true) } }
-                }
-                .onChange(of: store.socialPrivacyRevision) { _ in
-                    generation = UUID(); messages = []; nextCursor = nil; clearedThroughSeq = 0
-                    hasLoaded = false
-                    latestVisibleID = nil; lastAcknowledgedID = nil; isLoading = false; refreshRequestID = nil
-                    report = nil; showsProfile = false
-                    if refreshScope.permitsRefresh { Task { await reload() } }
-                }
-                .onChange(of: store.socialRevision) { _, _ in requestRefresh() }
-                .onChange(of: store.directContentRevision) { _, _ in requestRefresh() }
-                .sheet(isPresented: $showsProfile) { KikiPublicProfileView(userID: person.id, store: store).kikiRoomSheet() }
-                .sheet(item: $report) { KikiSocialReportForm(target: $0, store: store).kikiRoomSheet() }
-        }.tint(KikiPalette.lavender).foregroundStyle(KikiPalette.text)
+            }
+            .onChange(of: store.directHistoryRevision[person.id]) { _, _ in
+                generation = UUID(); messages = []; nextCursor = nil; isLoading = false; refreshRequestID = nil
+                latestVisibleID = nil; lastAcknowledgedID = nil
+                if refreshScope.permitsRefresh { Task { await reload(silent: true) } }
+            }
+            .onChange(of: store.socialPrivacyRevision) { _ in
+                generation = UUID(); messages = []; nextCursor = nil; clearedThroughSeq = 0
+                hasLoaded = false
+                latestVisibleID = nil; lastAcknowledgedID = nil; isLoading = false; refreshRequestID = nil
+                report = nil; showsProfile = false
+                if refreshScope.permitsRefresh { Task { await reload() } }
+            }
+            .onChange(of: store.socialRevision) { _, _ in requestRefresh() }
+            .onChange(of: store.directContentRevision) { _, _ in requestRefresh() }
+            .sheet(isPresented: $showsProfile) { KikiPublicProfileView(userID: person.id, store: store).kikiRoomSheet() }
+            .sheet(item: $report) { KikiSocialReportForm(target: $0, store: store).kikiRoomSheet() }
+            .tint(KikiPalette.lavender).foregroundStyle(KikiPalette.text)
     }
     private var composer: some View {
         VStack(spacing: 8) {
