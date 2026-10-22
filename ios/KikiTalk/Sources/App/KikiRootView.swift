@@ -152,8 +152,16 @@ private struct KikiAuthorizedRootView: View {
         }
         .foregroundStyle(KikiPalette.text).environmentObject(store)
         .tint(KikiPalette.purple)
-        .task { push.attach(store); await store.start(); await push.refresh() }
+        .task {
+            push.attach(store)
+            push.foregroundContext = { [weak store] in store?.foregroundNotificationContext ?? .init(isActive: false) }
+            store.setAppForeground(scenePhase == .active)
+            await store.start()
+            await push.refresh()
+        }
         .task(id: store.pushSessionKey) { if store.pushSessionKey != nil { await push.refresh() } }
+        .onChange(of: store.isPresentingRoom) { _ in push.foregroundContextDidChange() }
+        .onChange(of: store.notificationsEnabled) { _ in push.foregroundContextDidChange() }
         .onChange(of: push.inboxRequest) { _ in if store.isAuthenticated { selectedTab = 2 } }
         .onChange(of: selectedTab) { _ in
             isRoomSearchFocused = false
@@ -171,6 +179,14 @@ private struct KikiAuthorizedRootView: View {
         }
         .task(id: foregroundSessionKey) {
             guard foregroundSessionKey != nil else { return }
+            while !Task.isCancelled {
+                await store.refreshInboxSummary()
+                do { try await Task.sleep(nanoseconds: 5_000_000_000) }
+                catch { return }
+            }
+        }
+        .task(id: foregroundSessionKey) {
+            guard foregroundSessionKey != nil else { return }
             await store.recordForegroundActivity()
             await store.refreshSafety()
             await store.refreshSocialSummary()
@@ -184,6 +200,7 @@ private struct KikiAuthorizedRootView: View {
             }
         }
         .onChange(of: scenePhase) { phase in
+            store.setAppForeground(phase == .active)
             if phase == .active {
                 Task {
                     await store.checkAppleCredentialState()
@@ -197,6 +214,7 @@ private struct KikiAuthorizedRootView: View {
         .onReceive(NotificationCenter.default.publisher(for: ASAuthorizationAppleIDProvider.credentialRevokedNotification)) { _ in
             Task { await store.appleCredentialRevoked() }
         }
+        .background(KikiForegroundNoticePresenter(push: push))
         .overlay(alignment: .top) {
             if let toast = store.toast {
                 Text(toast).font(.system(size: 13, weight: .medium)).multilineTextAlignment(.center)
@@ -232,9 +250,8 @@ private struct KikiAuthorizedRootView: View {
                 Image(systemName: icon).font(.system(size: 22, weight: selectedTab == index ? .semibold : .regular))
                     .overlay(alignment: .topTrailing) {
                         if index == 2, store.unreadMessageCount > 0 {
-                            Text(store.unreadMessageCount > 99 ? "99+" : "\(store.unreadMessageCount)")
-                                .font(.caption2.weight(.semibold)).foregroundStyle(.white).padding(.horizontal, 5).padding(.vertical, 2)
-                                .background(KikiPalette.action, in: Capsule()).offset(x: 16, y: -8)
+                            Circle().fill(.red).frame(width: 8, height: 8)
+                                .offset(x: 5, y: -3).accessibilityHidden(true)
                         }
                     }
                 Text(title).font(.system(size: 10, weight: .medium))
@@ -242,6 +259,7 @@ private struct KikiAuthorizedRootView: View {
                 .frame(maxWidth: .infinity).frame(height: 43).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityIdentifier(index == 0 ? "discoverTab" : (index == 1 ? "momentsTab" : (index == 2 ? "messagesTab" : "profileTab")))
             .accessibilityAddTraits(selectedTab == index ? .isSelected : [])
+            .accessibilityValue(index == 2 && store.unreadMessageCount > 0 ? "\(store.unreadMessageCount) 条未读消息" : "")
     }
 }
 

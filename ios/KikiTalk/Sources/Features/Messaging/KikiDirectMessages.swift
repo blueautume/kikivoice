@@ -20,6 +20,7 @@ struct KikiDirectConversationView: View {
     @State private var generation = UUID()
     @State private var latestVisibleID: String?
     @State private var lastAcknowledgedID: String?
+    @State private var visibilityOwner = UUID()
     @FocusState private var isComposing: Bool
     private var pending: KikiPendingDirectMessage? { store.pendingDirectMessages[person.id] }
     private var directAccess: KikiDirectMessageAccess? { store.directMessageAccess[person.id] }
@@ -81,7 +82,16 @@ struct KikiDirectConversationView: View {
                     ToolbarItem(placement: .topBarTrailing) { Button { showsProfile = true } label: { Image(systemName: "person.crop.circle") }.accessibilityLabel("查看个人主页") }
                 }
                 .onAppear { isVisible = true }
-                .onDisappear { isVisible = false; generation = UUID(); isComposing = false }
+                .onDisappear {
+                    isVisible = false; generation = UUID(); isComposing = false
+                    store.setDirectConversationVisibility(owner: visibilityOwner, personID: person.id,
+                                                          isVisible: false, hasOverlay: false)
+                }
+                .onChange(of: refreshScope, initial: true) { _, scope in
+                    store.setDirectConversationVisibility(owner: visibilityOwner, personID: scope.personID,
+                                                          isVisible: scope.isForeground && scope.isVisible,
+                                                          hasOverlay: scope.hasOverlay)
+                }
                 .onChange(of: person.id) { _, _ in
                     generation = UUID(); messages = []; loadedPersonID = nil; hasLoaded = false
                     clearedThroughSeq = 0; nextCursor = nil; error = nil; refreshRequestID = nil

@@ -1500,6 +1500,114 @@ extension KikiConsentTests {
     }
 }
 
+extension KikiConsentTests {
+    func testSwitchingAwayFromProfileDuringItsActualRefreshDoesNotShowCancellationToast() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let started = expectation(description: "The visible profile starts its library refresh")
+        let cancelled = expectation(description: "Switching tabs cancels the profile URLSession request")
+        let requestGate = KikiProfileCancellationRequestGate(started: started, cancelled: cancelled)
+        defer { requestGate.release() }
+        let mock = KikiConcurrentConsentServer(beforeResponse: { request, id in
+            requestGate.suspendProfileRequest(request, id: id)
+        }, onStop: { _, id in requestGate.stopped(id) }) { request in
+            return try consentResponse(request, documents: docs)
+        }
+        let store = try await directIntroductionStore(documents: docs, api: mock.client, voice: mock.voiceClient)
+        XCTAssertTrue(store.isAuthenticated)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        let tabs = KikiProfileTabCancellationFixture()
+        requestGate.arm()
+        window.rootViewController = UIHostingController(rootView: KikiProfileTabCancellationView(tabs: tabs).environmentObject(store))
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        await fulfillment(of: [started], timeout: 2)
+        tabs.isProfileActive = false
+        await fulfillment(of: [cancelled], timeout: 2)
+        requestGate.release()
+        // URLSession cancellation resumes the production .task, whose remaining
+        // refresh calls must complete without publishing a user-facing error.
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertNil(store.toast)
+        XCTAssertNil(store.loadingError)
+        XCTAssertNil(store.libraryError)
+        XCTAssertTrue(store.isAuthenticated)
+        await store.logout()
+    }
+
+    func testExperienceRefreshStillShowsGenuineServiceFailure() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let phase = TestRequests()
+        let message = "体验服务暂不可用"
+        let mock = KikiAPIMockServer { request in
+            if request.url?.path == "/v1/auth/refresh", !phase.values.isEmpty {
+                return (503, try JSONSerialization.data(withJSONObject: ["detail": message]))
+            }
+            return try consentResponse(request, documents: docs)
+        }
+        let identity = TestIdentity(values: ["sessionToken": "existing-session", "appleSubject": "apple-subject", "appleSessionVersion": "2"])
+        let consent = KikiConsentStore(documents: docs, defaults: defaults(), identity: identity, apiProvider: { mock.client }, requiresRemoteDocuments: false)
+        try consent.accept()
+        let rtc = TestRTC()
+        let store = KikiAppStore(consent: consent, identity: identity, apiProvider: { mock.client }, voiceAPIProvider: { mock.voiceClient }, rtcProvider: { rtc }, appleProvider: { TestApple() })
+        await store.start()
+        XCTAssertTrue(store.isAuthenticated)
+        rtc.isLoggedIn = false
+        phase.append("renewal-fails")
+        await store.refreshExperience()
+        XCTAssertEqual(store.toast, message)
+        XCTAssertTrue(store.isAuthenticated)
+        await store.logout()
+    }
+}
+
+/// Correlates cancellation to the one library request deliberately suspended
+/// after mounting the profile. Other completed/startup requests are irrelevant.
+private final class KikiProfileCancellationRequestGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private let response = DispatchSemaphore(value: 0)
+    private let started: XCTestExpectation
+    private let cancelled: XCTestExpectation
+    private var armed = false
+    private var requestID: UUID?
+    private var observedStop = false
+
+    init(started: XCTestExpectation, cancelled: XCTestExpectation) {
+        self.started = started; self.cancelled = cancelled
+    }
+    func arm() { lock.lock(); armed = true; lock.unlock() }
+    func suspendProfileRequest(_ request: URLRequest, id: UUID) {
+        lock.lock()
+        guard armed, requestID == nil, request.url?.path == "/v1/library" else { lock.unlock(); return }
+        requestID = id
+        lock.unlock()
+        started.fulfill()
+        _ = response.wait(timeout: .now() + 5)
+    }
+    func stopped(_ id: UUID) {
+        lock.lock()
+        guard requestID == id, !observedStop else { lock.unlock(); return }
+        observedStop = true
+        lock.unlock()
+        cancelled.fulfill()
+    }
+    func release() { response.signal() }
+}
+
+@MainActor
+private final class KikiProfileTabCancellationFixture: ObservableObject {
+    @Published var isProfileActive = true
+}
+
+private struct KikiProfileTabCancellationView: View {
+    @ObservedObject var tabs: KikiProfileTabCancellationFixture
+    var body: some View {
+        KikiProfileView(isActive: tabs.isProfileActive)
+    }
+}
+
 private final class TestIdentity: KikiIdentityStoring {
     var values: [String: String]
     var readCount = 0
@@ -3027,9 +3135,10 @@ private final class KikiConcurrentConsentServer {
     let voiceClient: KikiAPIClient
     private let session: URLSession
     private let host = UUID().uuidString.lowercased() + ".consent.example.invalid"
-    init(responder: @escaping KikiConcurrentConsentProtocol.Responder) {
-        KikiConcurrentConsentProtocol.install(responder, host: host)
-        KikiConcurrentConsentProtocol.install(responder, host: "voice-" + host)
+    init(beforeResponse: ((URLRequest, UUID) -> Void)? = nil, onStop: ((URLRequest, UUID) -> Void)? = nil,
+         responder: @escaping KikiConcurrentConsentProtocol.Responder) {
+        KikiConcurrentConsentProtocol.install(responder, host: host, beforeResponse: beforeResponse, onStop: onStop)
+        KikiConcurrentConsentProtocol.install(responder, host: "voice-" + host, beforeResponse: beforeResponse, onStop: onStop)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [KikiConcurrentConsentProtocol.self]
         session = URLSession(configuration: configuration)
@@ -3046,12 +3155,14 @@ private final class KikiConcurrentConsentServer {
 private final class KikiConcurrentConsentProtocol: URLProtocol, @unchecked Sendable {
     typealias Responder = (URLRequest) throws -> (Int, Data)
     private static let handlersLock = NSLock()
-    private static var handlers: [String: Responder] = [:]
+    private static var handlers: [String: (responder: Responder, beforeResponse: ((URLRequest, UUID) -> Void)?, onStop: ((URLRequest, UUID) -> Void)?)] = [:]
     private let stateLock = NSLock()
     private var stopped = false
-    static func install(_ responder: @escaping Responder, host: String) {
+    private let requestID = UUID()
+    static func install(_ responder: @escaping Responder, host: String, beforeResponse: ((URLRequest, UUID) -> Void)? = nil,
+                        onStop: ((URLRequest, UUID) -> Void)? = nil) {
         handlersLock.lock(); defer { handlersLock.unlock() }
-        handlers[host] = responder
+        handlers[host] = (responder, beforeResponse, onStop)
     }
     static func remove(host: String) {
         handlersLock.lock(); defer { handlersLock.unlock() }
@@ -3061,12 +3172,13 @@ private final class KikiConcurrentConsentProtocol: URLProtocol, @unchecked Senda
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         Self.handlersLock.lock()
-        let responder = Self.handlers[request.url?.host ?? ""]
+        let handler = Self.handlers[request.url?.host ?? ""]
         Self.handlersLock.unlock()
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             do {
-                guard let responder, let url = request.url else { throw URLError(.badServerResponse) }
-                let (status, data) = try responder(request)
+                guard let handler, let url = request.url else { throw URLError(.badServerResponse) }
+                handler.beforeResponse?(request, requestID)
+                let (status, data) = try handler.responder(request)
                 stateLock.lock(); let shouldReturn = !stopped; stateLock.unlock()
                 guard shouldReturn else { return }
                 guard let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"]) else { throw URLError(.badServerResponse) }
@@ -3080,7 +3192,12 @@ private final class KikiConcurrentConsentProtocol: URLProtocol, @unchecked Senda
         }
     }
     override func stopLoading() {
-        stateLock.lock(); stopped = true; stateLock.unlock()
+        stateLock.lock(); let wasStopped = stopped; stopped = true; stateLock.unlock()
+        guard !wasStopped else { return }
+        Self.handlersLock.lock()
+        let onStop = Self.handlers[request.url?.host ?? ""]?.onStop
+        Self.handlersLock.unlock()
+        onStop?(request, requestID)
     }
 }
 

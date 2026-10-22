@@ -50,6 +50,34 @@ import Combine
     private var socialMutationRefreshTask: Task<Void, Never>?
     private var notificationUnreadGate = KikiUnreadRequestGate()
     private var directUnreadGate = KikiUnreadRequestGate()
+    private var notificationForegroundScope: KikiForegroundNotificationScope?
+    private var directForegroundScope: KikiForegroundNotificationScope?
+    private var appIsForeground = false
+    private struct VisibleDirectConversation {
+        let owner: UUID
+        let personID: String
+        let hasOverlay: Bool
+    }
+    private var visibleDirectConversations: [VisibleDirectConversation] = []
+
+    var foregroundNotificationContext: KikiForegroundNotificationContext {
+        // A covered parent may report its scene change after the nested chat.
+        // Prefer the conversation the user can actually read in either order.
+        let conversation = visibleDirectConversations.last(where: { !$0.hasOverlay }) ?? visibleDirectConversations.last
+        return .init(isActive: appIsForeground, conversationPersonID: conversation?.personID,
+                     hasConversationOverlay: conversation?.hasOverlay == true || isPresentingRoom)
+    }
+
+    func setAppForeground(_ isActive: Bool) {
+        appIsForeground = isActive
+        pushController?.foregroundContextDidChange()
+    }
+
+    func setDirectConversationVisibility(owner: UUID, personID: String, isVisible: Bool, hasOverlay: Bool) {
+        visibleDirectConversations.removeAll { $0.owner == owner }
+        if isVisible { visibleDirectConversations.append(.init(owner: owner, personID: personID, hasOverlay: hasOverlay)) }
+        pushController?.foregroundContextDidChange()
+    }
 
     let consent: KikiConsentStore
     let gifts = KikiGiftStore()
@@ -159,7 +187,10 @@ import Combine
         // metrics, polling, or other high-frequency publications.
         roomPresentationObservation = rtc.roomPresentationChanges?
             .removeDuplicates().dropFirst()
-            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+                self?.pushController?.foregroundContextDidChange()
+            }
         rtc.onRoomClosed = { [weak self] roomID in
             Task { @MainActor in
                 guard let self, self.permitsBusiness, self.isAuthenticated else { return }
@@ -1058,8 +1089,10 @@ import Combine
             try await ensureSDKSession()
             try requireAccess(generation: generation)
             await gifts.refresh()
-        } catch {
-            if generation == sessionGeneration { notify(error.localizedDescription) }
+        } catch is CancellationError { }
+        catch {
+            guard !Task.isCancelled, generation == sessionGeneration else { return }
+            notify(error.localizedDescription)
         }
     }
 
@@ -1185,10 +1218,21 @@ import Combine
 
     func socialNotifications(cursor: String? = nil) async throws -> KikiNotificationsPage {
         let privacy = socialPrivacyRevision
+        let scope = pushSessionKey.map { KikiForegroundNotificationScope(sessionKey: $0, privacyRevision: privacy) }
         let fetch = notificationUnreadGate.beginFetch()
         let result = try await socialRequest { try await self.api.socialNotifications(cursor: cursor, token: $0) }
         guard privacy == socialPrivacyRevision else { throw CancellationError() }
-        if notificationUnreadGate.accepts(fetch) { unreadNotificationCount = result.unreadCount }
+        if notificationUnreadGate.accepts(fetch) {
+            unreadNotificationCount = result.unreadCount
+            if cursor == nil, let push = pushController, let scope, scope == push.currentForegroundScope {
+                let baseline = notificationForegroundScope != scope
+                notificationForegroundScope = scope
+                let candidates = result.notifications.filter(\.isUnread)
+                    .sorted { $0.createdAt < $1.createdAt }
+                    .map { KikiForegroundNotificationCandidate(id: $0.id, kind: .notifications) }
+                push.receiveForegroundCandidates(candidates, scope: scope, baseline: baseline)
+            }
+        }
         return result
     }
 
@@ -1226,6 +1270,20 @@ import Combine
         socialMutationRefreshTask?.cancel(); socialMutationRefreshTask = nil
         let requestID = UUID(); socialRefreshID = requestID
         await refreshSocialSummary(requestID: requestID)
+    }
+
+    /// Keep the message tab and foreground alerts current on every tab without
+    /// repeatedly fetching profiles, relationships or room state.
+    func refreshInboxSummary() async {
+        guard !Task.isCancelled, permitsBusiness, isAuthenticated, !needsNickname else { return }
+        do {
+            _ = try await socialNotifications()
+        } catch is CancellationError { }
+        catch { handleSocialFailure(error) }
+        guard !Task.isCancelled, permitsBusiness, isAuthenticated else { return }
+        do { _ = try await socialConversations() }
+        catch is CancellationError { }
+        catch { handleSocialFailure(error) }
     }
 
     private func refreshSocialSummary(requestID: UUID) async {
@@ -1288,10 +1346,25 @@ import Combine
     }
     func socialConversations(cursor: String? = nil) async throws -> KikiConversationsPage {
         let privacy = socialPrivacyRevision
+        let scope = pushSessionKey.map { KikiForegroundNotificationScope(sessionKey: $0, privacyRevision: privacy) }
         let fetch = directUnreadGate.beginFetch()
         let result = try await socialRequest { try await self.api.socialConversations(cursor: cursor, token: $0) }
         guard privacy == socialPrivacyRevision else { throw CancellationError() }
-        if directUnreadGate.accepts(fetch) { unreadDirectMessageCount = result.unreadCount }
+        if directUnreadGate.accepts(fetch) {
+            unreadDirectMessageCount = result.unreadCount
+            if cursor == nil, let push = pushController, let scope, scope == push.currentForegroundScope {
+                let baseline = directForegroundScope != scope
+                directForegroundScope = scope
+                let candidates = result.conversations
+                    .sorted { ($0.lastMessage?.createdAt ?? 0) < ($1.lastMessage?.createdAt ?? 0) }
+                    .compactMap { conversation -> KikiForegroundNotificationCandidate? in
+                        guard conversation.unreadCount > 0, let message = conversation.lastMessage,
+                              message.senderID != userID else { return nil }
+                        return .init(id: message.id, kind: .direct(personID: conversation.person.id))
+                    }
+                push.receiveForegroundCandidates(candidates, scope: scope, baseline: baseline)
+            }
+        }
         return result
     }
     func setInboxPinned(_ entry: KikiInboxEntry, pinned: Bool, requestID: UUID) async throws {
@@ -1450,6 +1523,7 @@ import Combine
         socialRefreshID = UUID()
         socialMutationRefreshTask?.cancel(); socialMutationRefreshTask = nil
         notificationUnreadGate = KikiUnreadRequestGate(); directUnreadGate = KikiUnreadRequestGate()
+        notificationForegroundScope = nil; directForegroundScope = nil
         if blocked { followingOverrides[userID] = false; followingUserIDs.remove(userID); directDrafts[userID] = nil; pendingDirectMessages[userID] = nil }
         directMessageAccess = [:]; directAccessRevision = [:]; directAccessFetchRevision = [:]
         socialImageCache.removeAllObjects(); socialRevision += 1
@@ -1499,6 +1573,8 @@ import Combine
         socialRefreshID = UUID()
         socialPrivacyRevision += 1
         notificationUnreadGate = KikiUnreadRequestGate(); directUnreadGate = KikiUnreadRequestGate()
+        notificationForegroundScope = nil; directForegroundScope = nil
+        visibleDirectConversations = []
         directHistoryRevision = [:]; notificationHistoryRevision += 1
         socialProfile = nil; followingUserIDs = []; followingOverrides = [:]; hasLoadedFollowingIDs = false; unreadNotificationCount = 0; unreadDirectMessageCount = 0
         socialImageCache.removeAllObjects()

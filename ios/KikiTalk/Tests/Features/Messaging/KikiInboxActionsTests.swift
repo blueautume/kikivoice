@@ -4,6 +4,42 @@ import XCTest
 @testable import KikiTalk
 
 final class KikiInboxActionsTests: XCTestCase {
+    func testCancelledInboxLoadsAndMutationsRemainCancellationInsteadOfUserFacingFailures() async throws {
+        let server = KikiAPIMockServer { _ in throw URLError(.cancelled) }
+        let operations: [() async throws -> Void] = [
+            { _ = try await server.client.socialNotifications(cursor: nil, token: "account-inbox-only") },
+            { _ = try await server.client.socialConversations(cursor: nil, token: "account-inbox-only") },
+            { try await server.client.socialSetConversationPinned("kiki_target0000", pinned: true, requestID: UUID(), token: "account-inbox-only") },
+            { try await server.client.socialClearConversation("kiki_target0000", throughMessageID: UUID().uuidString, requestID: UUID(), token: "account-inbox-only") }
+        ]
+        for operation in operations {
+            do { try await operation(); XCTFail("A cancelled URLSession request must not succeed") }
+            catch is CancellationError { }
+            catch { XCTFail("Inbox UI catches CancellationError; transport cancellation must not become \(error)") }
+            XCTAssertFalse(Task.isCancelled, "The API must normalize transport cancellation even when its caller was not cancelled")
+        }
+    }
+
+    func testRealInboxLoadAndMutationFailuresStillReachTheCaller() async throws {
+        let message = "消息服务暂不可用"
+        let server = KikiAPIMockServer { _ in (503, try inboxActionsJSON(["detail": message])) }
+        let operations: [() async throws -> Void] = [
+            { _ = try await server.client.socialNotifications(cursor: nil, token: "account-inbox-only") },
+            { _ = try await server.client.socialConversations(cursor: nil, token: "account-inbox-only") },
+            { try await server.client.socialSetConversationPinned("kiki_target0000", pinned: true, requestID: UUID(), token: "account-inbox-only") },
+            { try await server.client.socialClearConversation("kiki_target0000", throughMessageID: UUID().uuidString, requestID: UUID(), token: "account-inbox-only") }
+        ]
+        for operation in operations {
+            do { try await operation(); XCTFail("A genuine service failure must remain visible to the inbox") }
+            catch let error as KikiAPIError {
+                guard case .server(let status, let detail) = error else { return XCTFail("Unexpected inbox error: \(error)") }
+                XCTAssertEqual(status, 503)
+                XCTAssertEqual(detail, message)
+                XCTAssertEqual(error.localizedDescription, message)
+            } catch { XCTFail("Unexpected inbox error: \(error)") }
+        }
+    }
+
     func testConversationPinAndUnpinUseAccountBearerStrictBooleanAndStableRetryID() async throws {
         for pinned in [true, false] {
             let nonce = UUID()

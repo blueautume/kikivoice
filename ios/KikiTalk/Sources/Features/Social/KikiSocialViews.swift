@@ -425,7 +425,6 @@ struct KikiMessagesView: View {
     @State private var error: String?
     @State private var directPerson: KikiPerson?
     @State private var showsNotifications = false
-    @State private var showsPush = false
     @State private var isDismissingForInbox = false
     @State private var generation = UUID()
     @State private var isFetching = false
@@ -443,7 +442,7 @@ struct KikiMessagesView: View {
     }
     private var refreshIsActive: Bool {
         isActive && scenePhase == .active && store.isAuthenticated && !store.isPresentingRoom
-            && directPerson == nil && !showsNotifications && !showsPush
+            && directPerson == nil && !showsNotifications
     }
     var body: some View {
         NavigationStack {
@@ -489,12 +488,6 @@ struct KikiMessagesView: View {
                 .background(KikiPalette.background.ignoresSafeArea())
                 .refreshable { await reload() }
                 .navigationTitle("消息")
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { showsPush = true } label: { Image(systemName: "bell.badge") }
-                            .accessibilityLabel("消息提醒设置").accessibilityIdentifier("messages.pushPreferences")
-                    }
-                }
                 .task(id: refreshIsActive) {
                     if refreshIsActive {
                         handlePushRequest(); await reload(silent: hasLoaded)
@@ -506,7 +499,6 @@ struct KikiMessagesView: View {
                 }
                 .sheet(isPresented: $showsNotifications, onDismiss: localSheetDidDismiss) { KikiNotificationInboxView(store: store) }
                 .sheet(item: $directPerson, onDismiss: localSheetDidDismiss) { KikiDirectConversationView(person: $0, store: store) }
-                .sheet(isPresented: $showsPush, onDismiss: localSheetDidDismiss) { KikiPushPreferencesView(store: store, push: push) }
                 .onChange(of: push.inboxRequest) { _ in handlePushRequest() }
                 .onChange(of: push.pendingInboxRequest) { _ in handlePushRequest() }
                 .onChange(of: push.inboxPresentationReady) { _ in handlePushRequest() }
@@ -525,7 +517,7 @@ struct KikiMessagesView: View {
                 .onChange(of: store.socialPrivacyRevision) { _ in
                     generation = UUID(); notifications = []; conversations = []; conversationCursor = nil
                     notificationState = .init(); pendingDeletion = nil; activeMutation = nil; retryMutation = nil; error = nil
-                    isLoading = false; hasLoaded = false; directPerson = nil; showsNotifications = false; showsPush = false
+                    isLoading = false; hasLoaded = false; directPerson = nil; showsNotifications = false
                     isDismissingForInbox = false
                     if isActive && store.isAuthenticated { Task { await reload() } }
                 }
@@ -560,6 +552,7 @@ struct KikiMessagesView: View {
         } catch {
             guard privacy == store.socialPrivacyRevision, store.isAuthenticated else { return }
             activeMutation = nil
+            guard !Task.isCancelled else { return }
             if KikiSocialMutation.needsSameIDRetry(error) { retryMutation = action }
             self.error = error.localizedDescription
         }
@@ -567,7 +560,6 @@ struct KikiMessagesView: View {
     private func handlePushRequest() {
         guard isActive, store.isAuthenticated, !isDismissingForInbox,
               let request = push.pendingInboxRequest, push.inboxPresentationReady else { return }
-        if showsPush { isDismissingForInbox = true; showsPush = false; return }
         if directPerson != nil { isDismissingForInbox = true; directPerson = nil; return }
         if showsNotifications { isDismissingForInbox = true; showsNotifications = false; return }
         guard push.consumeInboxRequest(request) else { return }

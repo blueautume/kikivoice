@@ -38,6 +38,86 @@ struct KikiPushTap: Equatable {
         deliveryID = id; accountTag = tag
     }
 }
+
+struct KikiForegroundNotificationScope: Equatable {
+    let sessionKey: String
+    let privacyRevision: Int
+}
+
+struct KikiForegroundNotificationContext: Equatable {
+    let isActive: Bool
+    var conversationPersonID: String? = nil
+    var hasConversationOverlay = false
+
+    func isReading(_ candidate: KikiForegroundNotificationCandidate) -> Bool {
+        if case .direct(let personID) = candidate.kind {
+            return conversationPersonID == personID && !hasConversationOverlay
+        }
+        return false
+    }
+}
+
+/// Candidates come only from accepted authenticated inbox responses. Remote
+/// notification payloads can invalidate those responses, never supply a preview.
+struct KikiForegroundNotificationCandidate: Equatable {
+    enum Kind: Equatable { case direct(personID: String), notifications }
+    let id: String
+    let kind: Kind
+
+    fileprivate var key: String {
+        switch kind {
+        case .direct(let personID): return "direct:\(personID):\(id)"
+        case .notifications: return "notification:\(id)"
+        }
+    }
+    fileprivate var isValid: Bool {
+        guard !id.isEmpty, id.utf8.count <= 256 else { return false }
+        if case .direct(let personID) = kind { return !personID.isEmpty && personID.utf8.count <= 160 }
+        return true
+    }
+}
+
+struct KikiForegroundNotice: Identifiable, Equatable {
+    let id = UUID()
+    let scope: KikiForegroundNotificationScope
+    let candidate: KikiForegroundNotificationCandidate
+    var title: String { "收到新消息" }
+    var message: String {
+        if case .direct = candidate.kind { return "收到一条新私信，可在消息页查看。" }
+        return "有新的互动消息，可在消息页查看。"
+    }
+}
+
+/// Consume suppressed/baseline events too: leaving a conversation, returning
+/// from the background or enabling notifications must not replay old alerts.
+struct KikiForegroundNotificationGate {
+    private var scope: KikiForegroundNotificationScope?
+    private var seen: Set<String> = []
+    private var order: [String] = []
+
+    mutating func reset() { scope = nil; seen = []; order = [] }
+
+    mutating func accepts(_ candidate: KikiForegroundNotificationCandidate,
+                         scope expected: KikiForegroundNotificationScope,
+                         currentScope: KikiForegroundNotificationScope?,
+                         context: KikiForegroundNotificationContext,
+                         notificationsEnabled: Bool, baseline: Bool) -> Bool {
+        guard expected == currentScope, candidate.isValid else { return false }
+        if scope != expected { reset(); scope = expected }
+        if seen.contains(candidate.key) {
+            order.removeAll { $0 == candidate.key }
+            order.append(candidate.key)
+            return false
+        }
+        seen.insert(candidate.key)
+        order.append(candidate.key)
+        if order.count > 512 { seen.remove(order.removeFirst()) }
+        guard !baseline, notificationsEnabled, context.isActive else { return false }
+        if context.isReading(candidate) { return false }
+        return true
+    }
+}
+
 struct KikiPushNavigation: Identifiable {
     enum Content { case direct(KikiPerson), moment(KikiMoment) }
     let id = UUID()
@@ -116,6 +196,10 @@ enum KikiPushEnvironment {
     @Published private(set) var inboxRequest = UUID()
     @Published private(set) var pendingInboxRequest: UUID?
     @Published private(set) var inboxPresentationReady = true
+    @Published private(set) var foregroundNotice: KikiForegroundNotice?
+    var foregroundContext: @MainActor () -> KikiForegroundNotificationContext = { .init(isActive: false) } {
+        didSet { foregroundContextDidChange() }
+    }
     var inboxOpensNotifications: Bool { pendingInboxRequest != nil }
     @Published var navigation: KikiPushNavigation?
     private let system: any KikiPushSystem
@@ -136,6 +220,12 @@ enum KikiPushEnvironment {
     private var pendingTap: KikiPushTap?
     private var tapAccount: String?
     private var resolving = false
+    private var foregroundGate = KikiForegroundNotificationGate()
+
+    var currentForegroundScope: KikiForegroundNotificationScope? {
+        guard let store, let key = store.pushSessionKey else { return nil }
+        return .init(sessionKey: key, privacyRevision: store.socialPrivacyRevision)
+    }
 
     init(system: (any KikiPushSystem)? = nil, identity: any KikiIdentityStoring = KikiKeychainStorage(),
          environment: @escaping () -> String? = { KikiPushEnvironment.current() }) {
@@ -159,6 +249,7 @@ enum KikiPushEnvironment {
             let status = try await store.pushStatus()
             guard valid(id, key: key) else { return }
             accountTag = status.accountTag
+            if !status.enabled { foregroundNotice = nil }
             if !status.registered { isRegistered = false; registeredFingerprint = nil }
             system.setBadge(status.enabled && settings.permitsDelivery ? status.badgeCount : 0)
             if !status.enabled || !settings.permitsDelivery {
@@ -202,6 +293,7 @@ enum KikiPushEnvironment {
             guard store.pushSessionKey == key else { return }
             pendingTap = nil; tapAccount = nil; navigation = nil
             pendingInboxRequest = nil; inboxPresentationReady = true
+            foregroundNotice = nil
             system.clearNotifications()
             await refresh()
         } catch is CancellationError { }
@@ -221,21 +313,60 @@ enum KikiPushEnvironment {
         if store?.pushSessionKey != nil { message = "系统通知注册未完成，可稍后重试。" }
     }
     func receiveTap(_ tap: KikiPushTap) {
+        foregroundNotice = nil
         pendingInboxRequest = nil
         pendingTap = tap; tapAccount = store?.pushSessionKey
         scheduleRefresh()
     }
     func receiveForeground(_ tap: KikiPushTap?) {
         // A push invalidates visible content; HTTPS remains authoritative.
-        guard let store, store.pushSessionKey != nil,
-              tap == nil || accountTag == nil || tap?.accountTag == accountTag else { return }
-        store.directMessagePushReceived()
+        guard let tap, let store, let scope = currentForegroundScope,
+              accountTag == nil || tap.accountTag == accountTag else { return }
         Task { [weak self, weak store] in
-            await store?.refreshSocialSummary()
-            await self?.refresh()
+            guard let self, let store else { return }
+            if self.accountTag == nil { await self.refresh() }
+            guard self.currentForegroundScope == scope, tap.accountTag == self.accountTag else { return }
+            store.directMessagePushReceived()
+            await store.refreshSocialSummary()
+            guard self.currentForegroundScope == scope else { return }
+            await self.refresh()
         }
     }
+
+    func receiveForegroundCandidates(_ candidates: [KikiForegroundNotificationCandidate],
+                                     scope: KikiForegroundNotificationScope, baseline: Bool = false) {
+        let current = currentForegroundScope
+        let context = foregroundContext()
+        let enabled = store?.notificationsEnabled == true
+        foregroundContextDidChange()
+        for candidate in candidates {
+            if foregroundGate.accepts(candidate, scope: scope, currentScope: current, context: context,
+                                      notificationsEnabled: enabled, baseline: baseline) {
+                foregroundNotice = .init(scope: scope, candidate: candidate)
+            }
+        }
+    }
+
+    /// Call after changing scene visibility or the currently visible conversation.
+    func foregroundContextDidChange() {
+        let context = foregroundContext()
+        guard let notice = foregroundNotice else { return }
+        guard notice.scope == currentForegroundScope, context.isActive, store?.notificationsEnabled == true else {
+            foregroundNotice = nil; return
+        }
+        if context.isReading(notice.candidate) { foregroundNotice = nil }
+    }
+
+    func dismissForegroundNotice(_ id: UUID? = nil) {
+        guard id == nil || foregroundNotice?.id == id else { return }
+        foregroundNotice = nil
+    }
+
+    private func clearForegroundSession() {
+        foregroundNotice = nil; foregroundGate.reset()
+    }
     func privacyChanged() {
+        clearForegroundSession()
         operation = UUID(); task?.cancel(); task = nil
         bindingTask?.cancel(); bindingTask = nil; bindingFingerprint = nil
         bindingAttempt = UUID()
@@ -245,6 +376,7 @@ enum KikiPushEnvironment {
         scheduleRefresh()
     }
     func endSession() {
+        clearForegroundSession()
         let oldStore = store
         let removal = sessionKey != nil ? nextRevision(create: false) : nil
         operation = UUID(); task?.cancel(); task = nil
@@ -339,12 +471,7 @@ enum KikiPushEnvironment {
             await store.prepareForPushNavigation()
             guard valid(id, key: key), pendingTap == tap else { return }
             pendingTap = nil; tapAccount = nil
-            let request = UUID()
-            let waitsForDismissal = navigation != nil && content == nil
-            inboxPresentationReady = !waitsForDismissal
-            pendingInboxRequest = content == nil ? request : nil
-            navigation = content.map { KikiPushNavigation(content: $0) }
-            inboxRequest = request
+            commitNavigation(content)
             await store.refreshSocialSummary()
         } catch is CancellationError { }
         catch {
@@ -352,6 +479,15 @@ enum KikiPushEnvironment {
             pendingTap = nil; tapAccount = nil
             store.notify("这条提醒已失效或当前账号无法查看。")
         }
+    }
+
+    private func commitNavigation(_ content: KikiPushNavigation.Content?) {
+        let request = UUID()
+        let waitsForDismissal = navigation != nil && content == nil
+        inboxPresentationReady = !waitsForDismissal
+        pendingInboxRequest = content == nil ? request : nil
+        navigation = content.map { KikiPushNavigation(content: $0) }
+        inboxRequest = request
     }
 }
 
