@@ -675,11 +675,8 @@ private struct KikiDiscoverSearchFixture: View {
                 if model.selectedTab != 0 { Text("动态") }
             }
         } tabBar: {
-            HStack {
-                ForEach(Array(["语聊", "动态", "消息", "我"].enumerated()), id: \.offset) { index, title in
-                    Button(title) { model.selectedTab = index }.frame(maxWidth: .infinity, minHeight: 44)
-                }
-            }.padding(.vertical, 8).background(KikiSearchBarProbe(model: model))
+            KikiMainTabBar(selection: $model.selectedTab, unreadCount: 0)
+                .background(KikiSearchBarProbe(model: model))
         }
         .background(KikiPalette.background.ignoresSafeArea())
     }

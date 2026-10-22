@@ -446,6 +446,7 @@ struct KikiMomentsView: View {
                     if feed.nextCursor != nil { Button(feed.isLoading ? "正在加载…" : "加载更多") { Task { await feed.loadMore() } }.disabled(feed.isLoading) }
                 }.padding(.vertical, 16).frame(maxWidth: 720).frame(maxWidth: .infinity)
             }.background(KikiPalette.background.ignoresSafeArea()).refreshable { await feed.reload() }
+                .kikiMainTabScrollInsets()
                 .kikiTransparentTopScrollEdge()
                 .navigationTitle("").navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)

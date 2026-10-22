@@ -249,39 +249,9 @@ private struct KikiAuthorizedRootView: View {
     }
 
     private var tabBar: some View {
-        HStack(spacing: 0) {
-            tab(icon: "waveform", title: "语聊", index: 0)
-            tab(icon: "square.text.square", title: "动态", index: 1)
-            tab(icon: "bubble.left.and.bubble.right", title: "消息", index: 2)
-            tab(icon: "person.crop.circle", title: "我", index: 3)
-        }
-            .frame(maxWidth: 720)
-            .padding(.top, 11).padding(.bottom, 5)
-            .frame(maxWidth: .infinity)
-            .background(KikiPalette.background)
-            .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.07)).frame(height: 0.5) }
+        KikiMainTabBar(selection: $selectedTab, unreadCount: store.unreadMessageCount)
     }
 
-    private func tab(icon: String, title: String, index: Int) -> some View {
-        Button {
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            withAnimation(.easeInOut(duration: 0.16)) { selectedTab = index }
-        } label: {
-            VStack(spacing: 5) {
-                Image(systemName: icon).font(.system(size: 22, weight: selectedTab == index ? .semibold : .regular))
-                    .overlay(alignment: .topTrailing) {
-                        if index == 2, store.unreadMessageCount > 0 {
-                            Circle().fill(.red).frame(width: 8, height: 8)
-                                .offset(x: 5, y: -3).accessibilityHidden(true)
-                        }
-                    }
-                Text(title).font(.system(size: 10, weight: .medium))
-            }.foregroundStyle(selectedTab == index ? KikiPalette.lavender : KikiPalette.muted)
-                .frame(maxWidth: .infinity).frame(height: 43).contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityIdentifier(index == 0 ? "discoverTab" : (index == 1 ? "momentsTab" : (index == 2 ? "messagesTab" : "profileTab")))
-            .accessibilityAddTraits(selectedTab == index ? .isSelected : [])
-            .accessibilityValue(index == 2 && store.unreadMessageCount > 0 ? "\(store.unreadMessageCount) 条未读消息" : "")
-    }
 }
 
 /// Finish dismissing the current scene's entire presentation chain before the
@@ -424,6 +394,121 @@ struct KikiDirectConversationPresenter: UIViewControllerRepresentable {
     }
 }
 
+/// The four main destinations share one native glass surface. The 56-point
+/// capsule and 8-point bottom gap keep the existing room overlay clearance.
+struct KikiMainTabBar: View {
+    @Binding var selection: Int
+    let unreadCount: Int
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var selectionAnimation
+
+    var body: some View {
+        glassBar
+            .frame(maxWidth: 420)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+            .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder private var glassBar: some View {
+        if #available(iOS 26.0, *) {
+            items.padding(4).glassEffect(.regular, in: Capsule())
+        } else {
+            items.padding(4)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(.primary.opacity(0.08), lineWidth: 0.5))
+        }
+    }
+
+    private var items: some View {
+        HStack(spacing: 0) {
+            tab(icon: "waveform", title: "语聊", index: 0, identifier: "discoverTab")
+            tab(icon: "square.text.square", title: "动态", index: 1, identifier: "momentsTab")
+            tab(icon: "bubble.left.and.bubble.right", title: "消息", index: 2, identifier: "messagesTab")
+            tab(icon: "person.crop.circle", title: "我", index: 3, identifier: "profileTab")
+        }
+        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: selection)
+    }
+
+    private func tab(icon: String, title: String, index: Int, identifier: String) -> some View {
+        Button {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            selection = index
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 22, weight: selection == index ? .semibold : .regular))
+                    .overlay(alignment: .topTrailing) {
+                        if index == 2, unreadCount > 0 {
+                            Circle().fill(.red).frame(width: 8, height: 8)
+                                .offset(x: 5, y: -2).accessibilityHidden(true)
+                        }
+                    }
+                Text(title).font(.caption2.weight(.medium)).lineLimit(1)
+            }
+            .foregroundStyle(selection == index ? KikiPalette.purple : KikiPalette.text.opacity(0.85))
+            .frame(maxWidth: .infinity).frame(height: 48)
+            .background {
+                if selection == index {
+                    Capsule().fill(colorScheme == .dark ? Color.black.opacity(0.28) : Color.white.opacity(0.72))
+                        .matchedGeometryEffect(id: "selected-tab", in: selectionAnimation)
+                }
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        .accessibilityLabel(title)
+        .accessibilityIdentifier(identifier)
+        .accessibilityAddTraits(selection == index ? .isSelected : [])
+        .accessibilityValue(index == 2 && unreadCount > 0 ? "\(unreadCount) 条未读消息" : "")
+    }
+}
+
+/// A bounded system blur samples the app beneath the status area. Its frame
+/// supplies the hard boundary; there is no extra fade, tint layer or animation.
+struct KikiStatusBarBackdrop: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+        view.backgroundColor = .clear
+        view.isOpaque = false
+        view.isUserInteractionEnabled = false
+        view.accessibilityElementsHidden = true
+        view.accessibilityIdentifier = "main.statusBackdrop"
+        view.clipsToBounds = true
+        return view
+    }
+    func updateUIView(_ uiView: UIVisualEffectView, context: Context) { }
+}
+
+private struct KikiMainTabBarHeightKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
+}
+
+extension EnvironmentValues {
+    var kikiMainTabBarHeight: CGFloat {
+        get { self[KikiMainTabBarHeightKey.self] }
+        set { self[KikiMainTabBarHeightKey.self] = newValue }
+    }
+}
+
+private struct KikiMainTabBarHeightPreference: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct KikiMainTabScrollInsets: ViewModifier {
+    @Environment(\.kikiMainTabBarHeight) private var tabBarHeight
+    func body(content: Content) -> some View {
+        content
+            .contentMargins(.bottom, tabBarHeight, for: .scrollContent)
+            .contentMargins(.bottom, tabBarHeight, for: .scrollIndicators)
+    }
+}
+
 /// Preserve normal keyboard avoidance for inputs while keeping the main tabs
 /// out of a room-search editing session, including the keyboard hide animation.
 struct KikiMainTabLayout<Content: View, TabBar: View>: View {
@@ -431,19 +516,30 @@ struct KikiMainTabLayout<Content: View, TabBar: View>: View {
     @ViewBuilder var content: () -> Content
     @ViewBuilder var tabBar: () -> TabBar
     @State private var searchKeyboardVisible = false
+    @State private var tabBarHeight: CGFloat = 0
 
     var body: some View {
-        VStack(spacing: 0) {
-            content().frame(maxWidth: .infinity, maxHeight: .infinity)
-            if !isRoomSearchFocused && !searchKeyboardVisible { tabBar() }
+        content().frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.kikiMainTabBarHeight, tabBarHeight)
+        .overlay(alignment: .bottom) {
+            if !isRoomSearchFocused && !searchKeyboardVisible {
+                tabBar().background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(key: KikiMainTabBarHeightPreference.self, value: geometry.size.height)
+                            .allowsHitTesting(false)
+                    }
+                }
+            }
         }
+        .onPreferenceChange(KikiMainTabBarHeightPreference.self) { tabBarHeight = $0 }
         .overlay(alignment: .top) {
             GeometryReader { geometry in
                 // Only the system status area gets a backdrop. The navigation
                 // controls below it float over the scrolling page content.
-                Rectangle().fill(.regularMaterial)
+                KikiStatusBarBackdrop()
                     .frame(height: geometry.safeAreaInsets.top)
                     .offset(y: -geometry.safeAreaInsets.top)
+                    .transaction { $0.animation = nil }
             }
             .allowsHitTesting(false).accessibilityHidden(true)
         }
@@ -460,6 +556,10 @@ struct KikiMainTabLayout<Content: View, TabBar: View>: View {
 }
 
 extension View {
+    /// Apply inside each page's actual scrolling container: NavigationStack
+    /// does not forward an outer safe-area inset to its UIKit scroll host.
+    func kikiMainTabScrollInsets() -> some View { modifier(KikiMainTabScrollInsets()) }
+
     /// The shared status backdrop supplies the top protection. Disable the
     /// additional iOS 26 scroll fade below it so content stays clear there.
     @ViewBuilder func kikiTransparentTopScrollEdge() -> some View {

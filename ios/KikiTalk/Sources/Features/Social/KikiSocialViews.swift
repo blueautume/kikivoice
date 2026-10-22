@@ -495,6 +495,7 @@ struct KikiRelationshipsView: View {
 
 struct KikiMessagesView: View {
     @ObservedObject var store: KikiAppStore
+    @Environment(\.kikiMainTabBarHeight) private var tabBarHeight
     @Environment(\.scenePhase) private var scenePhase
     var isActive: Bool
     @ObservedObject private var push: KikiPushController
@@ -645,6 +646,7 @@ struct KikiMessagesView: View {
                     .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
             }
         }.listStyle(.plain).scrollContentBackground(.hidden)
+            .kikiMainTabScrollInsets()
             .kikiTransparentTopScrollEdge()
             .frame(maxWidth: 760).frame(maxWidth: .infinity)
             .background(KikiPalette.background.ignoresSafeArea())
@@ -652,6 +654,7 @@ struct KikiMessagesView: View {
                 if hasLoaded && entries.isEmpty && !isLoading && error == nil && nextCursor == nil {
                     KikiEmptyState(symbol: "bubble.left.and.bubble.right", title: "这里什么都没有", message: "")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.bottom, tabBarHeight)
                         .allowsHitTesting(false)
                         .accessibilityIdentifier("messages.empty")
                 }

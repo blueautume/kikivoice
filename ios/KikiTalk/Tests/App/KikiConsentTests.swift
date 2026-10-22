@@ -2167,7 +2167,8 @@ extension KikiConsentTests {
             ("rooms", AnyView(KikiDiscoverView().environmentObject(store))),
             ("moments", AnyView(KikiMomentsView(store: store).environment(\.scenePhase, .active))),
             ("messages", AnyView(KikiMessagesView(store: store).environment(\.scenePhase, .active))),
-            ("profile", AnyView(KikiProfileView().environmentObject(store)))
+            ("profile", AnyView(KikiProfileView().environmentObject(store))),
+            ("color-scroll", AnyView(KikiMainChromeColorScrollFixture()))
         ]
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -2191,7 +2192,8 @@ extension KikiConsentTests {
                 !$0.isHidden && $0.alpha > 0.9 && $0.bounds.height > 20
             }, "The real page must retain its native navigation toolbar")
         }
-        func capture(_ name: String, topInset: CGFloat) throws {
+        @discardableResult
+        func capture(_ name: String, topInset: CGFloat) throws -> UIImage {
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                 XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
             }
@@ -2204,6 +2206,24 @@ extension KikiConsentTests {
             }
             let cropped = XCTAttachment(image: top); cropped.name = name + "-top"; cropped.lifetime = .keepAlways; add(cropped)
             try XCTUnwrap(top.pngData()).write(to: folder.appendingPathComponent(name + "-top.png"))
+            return image
+        }
+        func clipAncestry(_ view: UIView) -> [[String: Any]] {
+            var result: [[String: Any]] = [], ancestor: UIView? = view
+            while let current = ancestor {
+                result.append(["type": String(describing: type(of: current)), "clips": current.clipsToBounds,
+                               "frame": NSCoder.string(for: current.convert(current.bounds, to: window))])
+                ancestor = current.superview
+            }
+            return result
+        }
+        func effectiveVisibleFrame(_ view: UIView) -> CGRect {
+            var result = view.convert(view.bounds, to: window), ancestor = view.superview
+            while let current = ancestor {
+                if current.clipsToBounds { result = result.intersection(current.convert(current.bounds, to: window)) }
+                ancestor = current.superview
+            }
+            return result.intersection(window.bounds)
         }
 
         for (schemeName, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
@@ -2220,6 +2240,21 @@ extension KikiConsentTests {
                 window.layoutIfNeeded()
                 let topInset = host.view.safeAreaInsets.top
                 XCTAssertGreaterThan(topInset, 0, "The fixture must preserve the scene's real status safe area")
+                let backdrop = try XCTUnwrap(descendants(host.view).compactMap { $0 as? UIVisualEffectView }
+                    .first { $0.accessibilityIdentifier == "main.statusBackdrop" })
+                let backdropFrame = backdrop.convert(backdrop.bounds, to: window)
+                XCTAssertEqual(backdropFrame.minY, window.bounds.minY, accuracy: 1)
+                XCTAssertEqual(backdropFrame.height, topInset, accuracy: 1, "The native blur must end exactly at the status safe-area edge")
+                XCTAssertEqual(backdropFrame.width, window.bounds.width, accuracy: 1)
+                XCTAssertNotNil(backdrop.effect)
+                XCTAssertTrue(backdrop.clipsToBounds)
+                XCTAssertFalse(backdrop.isOpaque)
+                XCTAssertFalse(backdrop.isUserInteractionEnabled)
+                XCTAssertNil(backdrop.layer.mask, "The status blur must not acquire a gradient/fade mask")
+                let tabProbe = try XCTUnwrap(descendants(host.view).first { $0.accessibilityIdentifier == "fixture.mainTabs" })
+                let tabFrame = tabProbe.convert(tabProbe.bounds, to: window)
+                XCTAssertEqual(tabFrame.height, 64, accuracy: 1, "The real bar owns its 56-point capsule and 8-point gap")
+                XCTAssertEqual(tabFrame.midX, window.bounds.midX, accuracy: 1)
                 let prefix = device + "-" + name + "-" + schemeName
                 try capture(prefix + "-initial", topInset: topInset)
                 do {
@@ -2248,10 +2283,78 @@ extension KikiConsentTests {
                     // siblings outside UINavigationBar. The bar assertions do
                     // not verify those buttons' frames: compare each initial /
                     // scrolled screenshot pair, including profile.settings.
-                    try capture(prefix + "-scrolled", topInset: topInset)
+                    let scrolledImage = try capture(prefix + "-scrolled", topInset: topInset)
+                    var sampling: [String: Any] = [:]
+                    if name == "color-scroll" {
+                        let colorContent = try XCTUnwrap(descendants(host.view).first { $0.accessibilityIdentifier == "fixture.mainColorContent" })
+                        let visible = effectiveVisibleFrame(colorContent)
+                        let overlap = visible.intersection(backdropFrame)
+                        sampling["coloredContentFrame"] = NSCoder.string(for: colorContent.convert(colorContent.bounds, to: window))
+                        sampling["effectiveColoredContentFrame"] = NSCoder.string(for: visible)
+                        sampling["coloredContentClipAncestry"] = clipAncestry(colorContent)
+                        sampling["statusContentOverlap"] = NSCoder.string(for: overlap)
+                        XCTAssertFalse(overlap.isNull, "The blur must overlap actual scroll content, rather than a flat page background")
+                        XCTAssertGreaterThan(overlap.height, topInset * 0.5)
+                        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: min(end, scroll.contentOffset.y + 240)), animated: false)
+                        try await Task.sleep(nanoseconds: 250_000_000)
+                        let secondImage = try capture(prefix + "-next-color", topInset: topInset)
+                        let patches = [CGRect(x: window.bounds.width * 0.15, y: topInset * 0.68,
+                                              width: window.bounds.width * 0.13, height: max(3, topInset * 0.22)),
+                                       CGRect(x: window.bounds.width * 0.72, y: topInset * 0.68,
+                                              width: window.bounds.width * 0.13, height: max(3, topInset * 0.22))]
+                        let firstColors = try patches.map { try KikiChromePixelSample.mean(scrolledImage, rect: $0) }
+                        let secondColors = try patches.map { try KikiChromePixelSample.mean(secondImage, rect: $0) }
+                        let firstChannels: [Double] = firstColors.flatMap { $0 }
+                        let secondChannels: [Double] = secondColors.flatMap { $0 }
+                        var totalDifference: Double = 0
+                        for index in firstChannels.indices {
+                            totalDifference += abs(firstChannels[index] - secondChannels[index])
+                        }
+                        let difference: Double = totalDifference / Double(firstChannels.count)
+                        sampling["firstStatusRGB"] = firstColors; sampling["nextStatusRGB"] = secondColors
+                        sampling["statusColorDifference"] = difference
+                        XCTAssertGreaterThan(difference, 0.025, "Scrolling a different saturated band behind the actual blur must change its sampled color")
+                    }
+                    for _ in 0..<3 {
+                        let bottom = scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+                        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: bottom), animated: false)
+                        try await Task.sleep(nanoseconds: 80_000_000)
+                        window.layoutIfNeeded()
+                    }
+                    let rawContentBottom = scroll.convert(CGPoint(x: 0, y: scroll.contentSize.height), to: window).y
+                    let lastRowFrame: CGRect?
+                    if let collection = scroll as? UICollectionView {
+                        let section = try XCTUnwrap((0..<collection.numberOfSections).reversed().first {
+                            collection.numberOfItems(inSection: $0) > 0
+                        }, "The real List must expose its final populated section")
+                        let indexPath = IndexPath(item: collection.numberOfItems(inSection: section) - 1, section: section)
+                        let attributes = try XCTUnwrap(collection.collectionViewLayout.layoutAttributesForItem(at: indexPath),
+                            "The final real List row must have public layout attributes")
+                        lastRowFrame = collection.convert(attributes.frame, to: window)
+                    } else if let table = scroll as? UITableView {
+                        let section = try XCTUnwrap((0..<table.numberOfSections).reversed().first {
+                            table.numberOfRows(inSection: $0) > 0
+                        }, "The real List must expose its final populated section")
+                        let indexPath = IndexPath(row: table.numberOfRows(inSection: section) - 1, section: section)
+                        lastRowFrame = table.convert(table.rectForRow(at: indexPath), to: window)
+                    } else {
+                        lastRowFrame = nil
+                        if name == "messages" { XCTFail("The native messages List must expose public collection/table row geometry") }
+                    }
+                    let contentBottom = lastRowFrame?.maxY ?? rawContentBottom
+                    XCTAssertLessThanOrEqual(contentBottom, tabFrame.minY + 2, "The final real content must remain reachable above the floating tab bar")
+                    try capture(prefix + "-last-content", topInset: topInset)
                     manifest.append(["page": name, "scheme": schemeName, "statusHeight": topInset,
                                      "window": NSCoder.string(for: window.bounds), "scrollBefore": beforeOffset,
                                      "scrollAfter": scroll.contentOffset.y, "navigationBar": beforeBar.map { NSCoder.string(for: $0) } ?? "none",
+                                     "scrollWindowFrame": NSCoder.string(for: scroll.convert(scroll.bounds, to: window)),
+                                     "scrollClipAncestry": clipAncestry(scroll),
+                                     "scrollContentInset": String(describing: scroll.adjustedContentInset),
+                                     "statusBackdrop": NSCoder.string(for: backdropFrame),
+                                     "tabContainer": NSCoder.string(for: tabFrame), "contentBottomAtEnd": contentBottom,
+                                     "rawContentBottomAtEnd": rawContentBottom,
+                                     "actualLastRowFrame": lastRowFrame.map { NSCoder.string(for: $0) } ?? "non-List ScrollView",
+                                     "sampling": sampling,
                                      "trailingActionVerification": "Manual comparison of initial and scrolled screenshots; native bar frame is not the button frame"])
                 } catch {
                     let hierarchy = descendants(host.view).map {
@@ -2269,10 +2372,80 @@ extension KikiConsentTests {
 @MainActor
 private func mainTabVisualScreen(_ page: AnyView) -> AnyView {
     AnyView(KikiMainTabLayout(isRoomSearchFocused: false) { page } tabBar: {
-        // The footer's controls are outside this fixture's scope; retain their
-        // normal footprint while exercising the production top-area layout.
-        KikiPalette.background.frame(height: 60)
+        KikiMainTabBar(selection: .constant(1), unreadCount: 3)
+            .background(KikiMainChromeFrameProbe(identifier: "fixture.mainTabs"))
     }.background(KikiPalette.background.ignoresSafeArea()))
+}
+
+private struct KikiMainChromeFrameProbe: UIViewRepresentable {
+    let identifier: String
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(); view.backgroundColor = .clear; view.isOpaque = false
+        view.isUserInteractionEnabled = false; view.accessibilityElementsHidden = true
+        view.accessibilityIdentifier = identifier
+        return view
+    }
+    func updateUIView(_ uiView: UIView, context: Context) { }
+}
+
+private struct KikiMainChromeColorScrollFixture: View {
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                KikiMainChromeColorContent().frame(height: 2_880)
+            }
+            .kikiMainTabScrollInsets()
+            .background(KikiPalette.background.ignoresSafeArea())
+            .kikiTransparentTopScrollEdge()
+            .navigationTitle("").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Image(systemName: "paintpalette").frame(width: 24, height: 24) } }
+        }
+    }
+}
+
+private struct KikiMainChromeColorContent: UIViewRepresentable {
+    func makeUIView(context: Context) -> ColorBands { ColorBands() }
+    func updateUIView(_ uiView: ColorBands, context: Context) { }
+
+    final class ColorBands: UIView {
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            accessibilityIdentifier = "fixture.mainColorContent"
+            isOpaque = true; contentMode = .redraw
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+        override func draw(_ rect: CGRect) {
+            let colors: [UIColor] = [.systemRed, .systemBlue, .systemGreen, .systemOrange]
+            for index in 0..<12 {
+                colors[index % colors.count].setFill()
+                UIBezierPath(rect: CGRect(x: 0, y: CGFloat(index) * 240, width: bounds.width, height: 240)).fill()
+                ("真实滚动色块 \(index + 1)" as NSString).draw(at: CGPoint(x: 24, y: CGFloat(index) * 240 + 100),
+                    withAttributes: [.font: UIFont.systemFont(ofSize: 24, weight: .semibold), .foregroundColor: UIColor.white])
+            }
+        }
+    }
+}
+
+@MainActor
+private enum KikiChromePixelSample {
+    static func mean(_ image: UIImage, rect: CGRect) throws -> [Double] {
+        let source = try XCTUnwrap(image.cgImage)
+        let pixelRect = CGRect(x: rect.minX * image.scale, y: rect.minY * image.scale,
+                               width: rect.width * image.scale, height: rect.height * image.scale).integral
+        let sample = try XCTUnwrap(source.cropping(to: pixelRect))
+        let width = sample.width, height = sample.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let context = try XCTUnwrap(CGContext(data: &bytes, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(sample, in: CGRect(x: 0, y: 0, width: width, height: height))
+        var sums = [Double](repeating: 0, count: 3)
+        for offset in stride(from: 0, to: bytes.count, by: 4) {
+            for channel in 0..<3 { sums[channel] += Double(bytes[offset + channel]) }
+        }
+        return sums.map { $0 / Double(width * height) / 255 }
+    }
 }
 
 extension KikiConsentTests {
