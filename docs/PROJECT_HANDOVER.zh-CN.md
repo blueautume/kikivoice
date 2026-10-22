@@ -2,6 +2,10 @@
 
 更新日期：2026-10-22（iOS 清理、工程更名与职责分组）。面向准备逐步接手开发和运维的项目所有者。
 
+> 2026-10-22 服务端补齐发布：语聊 API 已同步当前 `main.py` 与新增 `room_catalog.py`，上线房主修改房间名称、默认房间名称及房间目录变更等待接口。账号业务源码、两端 r12 协议与官网 68 个文件均与本地一致；账号 HTTP/2 依赖声明已同步，已安装包版本一致，无需升级依赖或重启账号服务。主 App 当前为 `1.0.16 (13)`，iOS 界面变更仍需安装新版 App。
+>
+> 发布前本地账号 423 项、语聊 453 项测试通过。发布后语聊源码、两端公网健康、目录接口匿名 401、数据库完整性与外键、目录表及触发器均通过；Nginx 配置与环境凭据保持原值。语聊回滚源码位于服务器私有目录 `/root/kiki-p0-releases/20261022T082603720297Z/previous`；账号依赖声明备份位于 `/root/kiki-source-sync/20261022T082603720297Z/previous`。未回灌数据库或用真实账号发送测试消息。
+
 当前 KikiTalk 由 **iOS 用户客户端、iOS 管理客户端、账号与社交服务、语聊业务服务、LiveKit 媒体服务、静态官网** 组成。两个 Python 后端分别运行在两台主机上；语聊业务 API 与 LiveKit 媒体进程运行在同一台语聊主机上。
 
 项目最初基于腾讯 TUIKit，当前主 App 使用 **Apple 登录、自建业务 API、开源 LiveKit 语音**。2026-10-22 已移除腾讯组件/示例、旧 target 与 Pods、LegacyTencent、独立实验 iOS 副本及 vendor 快照；清理前版本可从 Git 快照追溯。两个当前 App 已统一迁入 `ios/KikiTalk`、`ios/KikiVoiceOps`，用户工程由 RTCube 更名为 KikiTalk。当前代码结构见[架构说明](ARCHITECTURE.zh-CN.md)和[iOS 导航](../ios/README.md)。
