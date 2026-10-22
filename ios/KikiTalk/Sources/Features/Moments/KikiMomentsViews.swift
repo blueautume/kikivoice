@@ -656,7 +656,7 @@ struct KikiMomentCommentsView: View {
                                     .frame(minHeight: 44)
                             }
                         }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                            .background { KikiPalette.background.onTapGesture { isCommentFocused = false } }
+                            .background { KikiPalette.surface.onTapGesture { isCommentFocused = false } }
                     }.frame(maxWidth: 720).frame(maxWidth: .infinity)
                         .frame(maxWidth: .infinity, minHeight: 1, alignment: .topLeading)
                 }.scrollDismissesKeyboard(.interactively)
