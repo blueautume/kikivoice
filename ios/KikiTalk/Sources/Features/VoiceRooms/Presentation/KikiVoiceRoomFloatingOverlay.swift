@@ -4,6 +4,7 @@ import UIKit
 /// A scene-local, non-key window keeps the current voice room reachable above app sheets.
 @MainActor
 final class KikiVoiceRoomFloatingOverlay: NSObject {
+    private static let navigationLayoutNotification = Notification.Name("KikiVoiceRoomMainNavigationDidLayout")
     private let window: KikiVoiceRoomOverlayWindow
     private let controller = KikiVoiceRoomOverlayController()
     private let onResume: () -> Void
@@ -11,8 +12,14 @@ final class KikiVoiceRoomFloatingOverlay: NSObject {
     private var isOnRight = true
     private var dragStart = CGPoint.zero
     private var keyboardFrameInScreen: CGRect?
+    private var isDragging = false
+    private var navigationRefreshScheduled = false
 
     var isVisible: Bool { !window.isHidden }
+
+    static func mainNavigationDidLayout(in window: UIWindow) {
+        NotificationCenter.default.post(name: navigationLayoutNotification, object: window)
+    }
 
     init(windowScene: UIWindowScene, roomTitle: String, avatarURL: String?, avatarIndex: Int = 0, hostName: String = "", onResume: @escaping () -> Void) {
         window = KikiVoiceRoomOverlayWindow(windowScene: windowScene)
@@ -41,6 +48,8 @@ final class KikiVoiceRoomFloatingOverlay: NSObject {
                                                name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide(_:)),
                                                name: UIResponder.keyboardWillHideNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(navigationDidLayout(_:)),
+                                               name: Self.navigationLayoutNotification, object: nil)
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
@@ -60,6 +69,7 @@ final class KikiVoiceRoomFloatingOverlay: NSObject {
     }
 
     func hide() {
+        isDragging = false
         controller.bubble.setPresentationVisible(false)
         controller.bubble.layer.removeAllAnimations()
         controller.bubble.alpha = 1
@@ -71,9 +81,24 @@ final class KikiVoiceRoomFloatingOverlay: NSObject {
         controller.bubble.setAvatar(url: avatarURL, index: avatarIndex)
         controller.bubble.setMetadata(roomTitle: roomTitle, status: status, hostName: hostName, isOnline: isOnline)
         controller.bubble.setSpeaking(isSpeaking)
+        if isVisible && !isDragging { positionBubble() }
     }
 
     @objc private func resumeRoom() { onResume() }
+
+    @objc private func navigationDidLayout(_ notification: Notification) {
+        guard isVisible, !isDragging, !navigationRefreshScheduled,
+              let mainWindow = notification.object as? UIWindow, mainWindow !== window,
+              mainWindow.windowScene === window.windowScene, mainWindow.windowLevel == .normal else { return }
+        navigationRefreshScheduled = true
+        DispatchQueue.main.async { [weak self, weak mainWindow] in
+            guard let self else { return }
+            self.navigationRefreshScheduled = false
+            guard self.isVisible, !self.isDragging, let mainWindow, !mainWindow.isHidden,
+                  mainWindow.windowScene === self.window.windowScene else { return }
+            self.positionBubble()
+        }
+    }
 
     @objc private func moveToLeft() -> Bool {
         isOnRight = false
@@ -87,15 +112,49 @@ final class KikiVoiceRoomFloatingOverlay: NSObject {
         return true
     }
 
-    /// The bottom reserve keeps the floating control clear of the app's two-tab navigation.
+    /// The overlay has its own window, so its safe area does not include the
+    /// main window's native tab bar. Reserve only the visible bar at this dock.
     private var restingArea: CGRect {
         let safe = controller.view.bounds.inset(by: controller.view.safeAreaInsets)
         let size = KikiVoiceRoomBubbleButton.size
         let minX = safe.minX + 8 + size.width / 2
         let maxX = max(minX, safe.maxX - 8 - size.width / 2)
         let minY = safe.minY + 12 + size.height / 2
-        let maxY = max(minY, safe.maxY - 64 - 12 - size.height / 2)
+        let dockX = isOnRight ? maxX : minX
+        let bottom = visibleTabBarTop(in: safe, dockX: dockX) ?? safe.maxY
+        let maxY = max(minY, bottom - 12 - size.height / 2)
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    private func visibleTabBarTop(in safeArea: CGRect, dockX: CGFloat) -> CGFloat? {
+        let candidates = window.windowScene?.windows.filter {
+            $0 !== window && !$0.isHidden && $0.alpha > 0.01 && $0.windowLevel == .normal
+                && $0.rootViewController != nil
+        } ?? []
+        guard let mainWindow = candidates.first(where: \.isKeyWindow) ?? candidates.first else { return nil }
+        let dock = CGRect(x: dockX - KikiVoiceRoomBubbleButton.size.width / 2, y: safeArea.minY,
+                          width: KikiVoiceRoomBubbleButton.size.width, height: safeArea.height)
+        var top: CGFloat?
+        func visit(_ view: UIView, clippedTo clip: CGRect, opacity: CGFloat) {
+            let opacity = opacity * view.alpha
+            guard !view.isHidden, opacity > 0.01 else { return }
+            let frame = view.convert(view.bounds, to: mainWindow)
+            let clip = view.clipsToBounds ? clip.intersection(frame) : clip
+            guard !clip.isNull, !clip.isEmpty else { return }
+            if view is UITabBar {
+                let visible = frame.intersection(clip)
+                if !visible.isNull, !visible.isEmpty {
+                    let inOverlay = controller.view.convert(window.convert(visible, from: mainWindow), from: window)
+                    if !inOverlay.isNull, !inOverlay.isEmpty, inOverlay.minY >= safeArea.midY,
+                       inOverlay.intersects(dock) {
+                        top = min(top ?? safeArea.maxY, inOverlay.minY)
+                    }
+                }
+            }
+            for child in view.subviews { visit(child, clippedTo: clip, opacity: opacity) }
+        }
+        visit(mainWindow, clippedTo: mainWindow.bounds, opacity: 1)
+        return top
     }
 
     private func avoidingKeyboard(_ center: CGPoint, in area: CGRect) -> CGPoint {
@@ -135,6 +194,7 @@ final class KikiVoiceRoomFloatingOverlay: NSObject {
         let bubble = controller.bubble
         switch gesture.state {
         case .began:
+            isDragging = true
             bubble.layer.removeAllAnimations()
             dragStart = bubble.center
         case .changed:
@@ -144,8 +204,9 @@ final class KikiVoiceRoomFloatingOverlay: NSObject {
                                     y: min(max(dragStart.y + translation.y, area.minY), area.maxY))
             bubble.center = avoidingKeyboard(preferred, in: area)
         case .ended, .cancelled, .failed:
-            let resting = restingArea
+            isDragging = false
             isOnRight = bubble.center.x >= controller.view.bounds.midX
+            let resting = restingArea
             verticalFraction = resting.height > 0 ? min(max((bubble.center.y - resting.minY) / resting.height, 0), 1) : 0.5
             positionBubble(animated: true)
         default: break

@@ -26,7 +26,6 @@ struct KikiProfileView: View {
                 .frame(maxWidth: 720).frame(maxWidth: .infinity)
             }
             .background(KikiPalette.background.ignoresSafeArea())
-            .kikiMainTabScrollInsets()
             .kikiTransparentTopScrollEdge()
             .navigationTitle("").navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)

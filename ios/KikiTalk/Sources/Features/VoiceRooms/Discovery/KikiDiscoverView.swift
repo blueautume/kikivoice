@@ -88,7 +88,6 @@ struct KikiDiscoverView: View {
                     }
                 }.padding(.horizontal, 20).padding(.vertical, 12)
             }.scrollDismissesKeyboard(.interactively)
-                .kikiMainTabScrollInsets()
                 .kikiTransparentTopScrollEdge()
                 .refreshable { await store.refreshRooms(); await store.refreshSocialSummary() }
         }

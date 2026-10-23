@@ -1444,7 +1444,15 @@ extension KikiConsentTests {
                     .environment(\.scenePhase, .active).preferredColorScheme(.light))
                 window.rootViewController = presenter; window.makeKeyAndVisible()
                 store.setAppForeground(true)
-                try await self.waitUntil { !navigationControllers(presenter).isEmpty }
+                try await self.waitUntil {
+                    guard let controller = nativeMainTabController(in: presenter) else { return false }
+                    return !navigationControllers(presenter).isEmpty && !nativeMainTabIsHidden(controller)
+                }
+                let tabController = try XCTUnwrap(nativeMainTabController(in: presenter))
+                let initialTabs = nativeMainTabState(tabController)
+                XCTAssertEqual(initialTabs.titles, ["语聊", "动态", "消息", "我"])
+                XCTAssertEqual(initialTabs.selectedIndex, 1)
+                let initialTabFrame = nativeMainTabVisibleFrame(tabController, in: window)
                 let profile: UIViewController
                 if name == "375" {
                     // Exercise SwiftUI's real presentation binding too: the
@@ -1538,7 +1546,7 @@ extension KikiConsentTests {
                     try capture("route-failure")
                     throw error
                 }
-                let navigation = try XCTUnwrap(navigationControllers(presenter).first {
+                var navigation = try XCTUnwrap(navigationControllers(presenter).first {
                     $0.viewControllers.count == 2 && $0.topViewController?.navigationItem.title == person.name
                 }, "The real messages NavigationStack must push a conversation above its root")
                 XCTAssertNil(presenter.presentedViewController, "A private conversation must not remain in a sheet")
@@ -1550,6 +1558,8 @@ extension KikiConsentTests {
                 }
                 try await self.waitUntil { store.foregroundNotificationContext.conversationPersonID == peer }
                 try await self.waitUntil { navigation.transitionCoordinator == nil && navigation.topViewController?.viewIfLoaded?.window === window }
+                try await self.waitUntil { nativeMainTabIsHidden(tabController) }
+                let tabBarHiddenForConversation = nativeMainTabIsHidden(tabController)
                 try capture("direct-pushed")
 
                 store.requestDirectConversation(person)
@@ -1557,22 +1567,35 @@ extension KikiConsentTests {
                 XCTAssertEqual(store.directConversationPath.map(\.person.id), [peer])
                 XCTAssertEqual(navigation.viewControllers.count, 2, "Opening the same conversation cannot append a second chat")
                 XCTAssertNil(presenter.presentedViewController)
+                XCTAssertTrue(nativeMainTabIsHidden(tabController))
 
                 // A preserved navigation path in another resident tab must not
                 // suppress foreground notices for this conversation.
                 tabs.selectedTab = 1
-                try await self.waitUntil { store.foregroundNotificationContext.conversationPersonID == nil }
+                try await self.waitUntil {
+                    store.foregroundNotificationContext.conversationPersonID == nil && !nativeMainTabIsHidden(tabController)
+                }
                 XCTAssertEqual(store.directConversationPath.map(\.person.id), [peer])
                 tabs.selectedTab = 2
-                try await self.waitUntil { store.foregroundNotificationContext.conversationPersonID == peer }
+                try await self.waitUntil {
+                    store.foregroundNotificationContext.conversationPersonID == peer && nativeMainTabIsHidden(tabController)
+                }
+                navigation = try XCTUnwrap(navigationControllers(presenter).first {
+                    $0.viewControllers.count == 2 && $0.topViewController?.navigationItem.title == person.name
+                        && $0.topViewController?.viewIfLoaded?.window === window
+                }, "The reselected native messages tab must show one pushed conversation")
 
                 XCTAssertNotNil(navigation.popViewController(animated: false), "Use the real navigation controller's system back path")
                 try await self.waitUntil {
                     store.directConversationPath.isEmpty && navigation.viewControllers.count == 1
                         && store.foregroundNotificationContext.conversationPersonID == nil
                         && navigation.transitionCoordinator == nil
+                        && !nativeMainTabIsHidden(tabController)
                 }
                 XCTAssertEqual(tabs.selectedTab, 2, "Back returns to the messages list")
+                let restoredTabs = nativeMainTabState(tabController)
+                XCTAssertEqual(restoredTabs.titles, ["语聊", "动态", "消息", "我"])
+                XCTAssertEqual(restoredTabs.selectedIndex, 2)
                 XCTAssertNil(presenter.presentedViewController, "The old profile sheet must not revive after navigation and tab updates")
                 if name == "375" { XCTAssertEqual(tabs.profileDismissals, 1) }
                 try capture("messages-after-back")
@@ -1581,6 +1604,13 @@ extension KikiConsentTests {
                                  "rootRemovedFromWindowBeforeRouting": name == "ipad-width",
                                  "swiftUISheetBindingExercised": name == "375", "swiftUISheetDismissals": tabs.profileDismissals,
                                  "messagesTabSelected": true, "nativeConversationPushed": true,
+                                 "nativeTabBarHiddenForConversation": tabBarHiddenForConversation,
+                                 "nativeTabBarRestoredAfterBack": true,
+                                 "initialNativeTabFrame": initialTabFrame.map { NSCoder.string(for: $0) } ?? "System representation outside UITabBar",
+                                 "restoredNativeTabFrame": nativeMainTabVisibleFrame(tabController, in: window).map { NSCoder.string(for: $0) } ?? "System representation outside UITabBar",
+                                 "nativeTabItemIdentifiers": restoredTabs.identifiers,
+                                 "nativeTabItemAccessibilityValues": restoredTabs.accessibilityValues,
+                                 "nativeUnobscuredContentFrame": NSCoder.string(for: nativeMainTabContentFrame(tabController, in: window)),
                                  "inactiveTabClearedVisibility": true, "nativeBackReturnedToMessages": true,
                                  "confirmedFollowUpdatedButton": true])
                 window.frame = original
@@ -1649,12 +1679,15 @@ private struct KikiDirectNavigationFixture: View {
     @ObservedObject var tabs: KikiDirectNavigationFixtureTabs
 
     var body: some View {
-        ZStack {
-            KikiPalette.background.ignoresSafeArea()
+        KikiMainTabs(selection: $tabs.selectedTab, unreadCount: store.unreadMessageCount,
+                     hidesTabBar: tabs.selectedTab == 2 && !store.directConversationPath.isEmpty) {
+            Color.clear
+        } moments: {
+            NavigationStack { KikiPalette.background.ignoresSafeArea() }
+        } messages: {
             KikiMessagesView(store: store, isActive: tabs.selectedTab == 2)
-                .opacity(tabs.selectedTab == 2 ? 1 : 0)
-                .allowsHitTesting(tabs.selectedTab == 2)
-                .accessibilityHidden(tabs.selectedTab != 2)
+        } profile: {
+            Color.clear
         }
         .sheet(item: $tabs.profile, onDismiss: { tabs.profileDismissals += 1 }) { person in
             KikiPublicProfileView(userID: person.id, store: store).kikiRoomSheet()
@@ -2117,7 +2150,7 @@ extension KikiConsentTests {
         await store.logout()
     }
 
-    func testMainTabsKeepNativeToolbarFixedAndBlurStatusAreaWhileScrolling() async throws {
+    func testMainTabsUseNativeTabBarAndKeepLastContentReachableWhileScrolling() async throws {
         let identity = TestIdentity(values: ["sessionToken": "fixture-session", "appleSubject": "apple-subject", "appleSessionVersion": "2"])
         let docs = try XCTUnwrap(KikiLegalBundle.bundled)
         let mock = KikiAPIMockServer { request in
@@ -2167,8 +2200,7 @@ extension KikiConsentTests {
             ("rooms", AnyView(KikiDiscoverView().environmentObject(store))),
             ("moments", AnyView(KikiMomentsView(store: store).environment(\.scenePhase, .active))),
             ("messages", AnyView(KikiMessagesView(store: store).environment(\.scenePhase, .active))),
-            ("profile", AnyView(KikiProfileView().environmentObject(store))),
-            ("color-scroll", AnyView(KikiMainChromeColorScrollFixture()))
+            ("profile", AnyView(KikiProfileView().environmentObject(store)))
         ]
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })
@@ -2176,7 +2208,7 @@ extension KikiConsentTests {
         let window = UIWindow(windowScene: scene)
         let originalFrame = window.frame
         defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
-        let folder = URL(fileURLWithPath: "/tmp/kiki-main-top-screenshots", isDirectory: true)
+        let folder = URL(fileURLWithPath: "/tmp/kiki-native-tabs-screenshots", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
         var manifest: [[String: Any]] = []
@@ -2192,6 +2224,14 @@ extension KikiConsentTests {
                 !$0.isHidden && $0.alpha > 0.9 && $0.bounds.height > 20
             }, "The real page must retain its native navigation toolbar")
         }
+        func checkTabItems(_ controller: UITabBarController) {
+            let state = nativeMainTabState(controller)
+            XCTAssertEqual(state.titles, ["语聊", "动态", "消息", "我"])
+            XCTAssertEqual(state.selectedIndex, 1)
+            guard state.badges.count == 4 else { XCTFail("The native tabs must expose all four badge values"); return }
+            XCTAssertEqual(state.badges[2], "", "Unread messages use the native empty-string red badge")
+            XCTAssertFalse(nativeMainTabIsHidden(controller), "Scrolling the main pages must retain the system tab interface")
+        }
         @discardableResult
         func capture(_ name: String, topInset: CGFloat) throws -> UIImage {
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
@@ -2199,8 +2239,7 @@ extension KikiConsentTests {
             }
             let attachment = XCTAttachment(image: image); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
             try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(name + ".png"))
-            // Include the actual status region and the transparent toolbar below
-            // it, so a misplaced material extending below the safe area is visible.
+            // Retain a crop of the system status region and native toolbar.
             let top = UIGraphicsImageRenderer(size: CGSize(width: image.size.width, height: topInset + 44)).image { _ in
                 image.draw(at: .zero)
             }
@@ -2217,15 +2256,6 @@ extension KikiConsentTests {
             }
             return result
         }
-        func effectiveVisibleFrame(_ view: UIView) -> CGRect {
-            var result = view.convert(view.bounds, to: window), ancestor = view.superview
-            while let current = ancestor {
-                if current.clipsToBounds { result = result.intersection(current.convert(current.bounds, to: window)) }
-                ancestor = current.superview
-            }
-            return result.intersection(window.bounds)
-        }
-
         for (schemeName, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
             for (name, page) in pages {
                 let host = UIHostingController(rootView: mainTabVisualScreen(page).preferredColorScheme(scheme))
@@ -2240,21 +2270,12 @@ extension KikiConsentTests {
                 window.layoutIfNeeded()
                 let topInset = host.view.safeAreaInsets.top
                 XCTAssertGreaterThan(topInset, 0, "The fixture must preserve the scene's real status safe area")
-                let backdrop = try XCTUnwrap(descendants(host.view).compactMap { $0 as? UIVisualEffectView }
-                    .first { $0.accessibilityIdentifier == "main.statusBackdrop" })
-                let backdropFrame = backdrop.convert(backdrop.bounds, to: window)
-                XCTAssertEqual(backdropFrame.minY, window.bounds.minY, accuracy: 1)
-                XCTAssertEqual(backdropFrame.height, topInset, accuracy: 1, "The native blur must end exactly at the status safe-area edge")
-                XCTAssertEqual(backdropFrame.width, window.bounds.width, accuracy: 1)
-                XCTAssertNotNil(backdrop.effect)
-                XCTAssertTrue(backdrop.clipsToBounds)
-                XCTAssertFalse(backdrop.isOpaque)
-                XCTAssertFalse(backdrop.isUserInteractionEnabled)
-                XCTAssertNil(backdrop.layer.mask, "The status blur must not acquire a gradient/fade mask")
-                let tabProbe = try XCTUnwrap(descendants(host.view).first { $0.accessibilityIdentifier == "fixture.mainTabs" })
-                let tabFrame = tabProbe.convert(tabProbe.bounds, to: window)
-                XCTAssertEqual(tabFrame.height, 64, accuracy: 1, "The real bar owns its 56-point capsule and 8-point gap")
-                XCTAssertEqual(tabFrame.midX, window.bounds.midX, accuracy: 1)
+                XCTAssertFalse(descendants(host.view).contains { $0.accessibilityIdentifier == "main.statusBackdrop" },
+                               "The native tab container must not restore a custom status-area blur")
+                let tabController = try XCTUnwrap(nativeMainTabController(in: host), "The four destinations must use the system UITabBarController")
+                checkTabItems(tabController)
+                let tabFrame = nativeMainTabVisibleFrame(tabController, in: window)
+                if let tabFrame { XCTAssertTrue(window.bounds.insetBy(dx: -1, dy: -1).contains(tabFrame)) }
                 let prefix = device + "-" + name + "-" + schemeName
                 try capture(prefix + "-initial", topInset: topInset)
                 do {
@@ -2283,38 +2304,9 @@ extension KikiConsentTests {
                     // siblings outside UINavigationBar. The bar assertions do
                     // not verify those buttons' frames: compare each initial /
                     // scrolled screenshot pair, including profile.settings.
-                    let scrolledImage = try capture(prefix + "-scrolled", topInset: topInset)
-                    var sampling: [String: Any] = [:]
-                    if name == "color-scroll" {
-                        let colorContent = try XCTUnwrap(descendants(host.view).first { $0.accessibilityIdentifier == "fixture.mainColorContent" })
-                        let visible = effectiveVisibleFrame(colorContent)
-                        let overlap = visible.intersection(backdropFrame)
-                        sampling["coloredContentFrame"] = NSCoder.string(for: colorContent.convert(colorContent.bounds, to: window))
-                        sampling["effectiveColoredContentFrame"] = NSCoder.string(for: visible)
-                        sampling["coloredContentClipAncestry"] = clipAncestry(colorContent)
-                        sampling["statusContentOverlap"] = NSCoder.string(for: overlap)
-                        XCTAssertFalse(overlap.isNull, "The blur must overlap actual scroll content, rather than a flat page background")
-                        XCTAssertGreaterThan(overlap.height, topInset * 0.5)
-                        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: min(end, scroll.contentOffset.y + 240)), animated: false)
-                        try await Task.sleep(nanoseconds: 250_000_000)
-                        let secondImage = try capture(prefix + "-next-color", topInset: topInset)
-                        let patches = [CGRect(x: window.bounds.width * 0.15, y: topInset * 0.68,
-                                              width: window.bounds.width * 0.13, height: max(3, topInset * 0.22)),
-                                       CGRect(x: window.bounds.width * 0.72, y: topInset * 0.68,
-                                              width: window.bounds.width * 0.13, height: max(3, topInset * 0.22))]
-                        let firstColors = try patches.map { try KikiChromePixelSample.mean(scrolledImage, rect: $0) }
-                        let secondColors = try patches.map { try KikiChromePixelSample.mean(secondImage, rect: $0) }
-                        let firstChannels: [Double] = firstColors.flatMap { $0 }
-                        let secondChannels: [Double] = secondColors.flatMap { $0 }
-                        var totalDifference: Double = 0
-                        for index in firstChannels.indices {
-                            totalDifference += abs(firstChannels[index] - secondChannels[index])
-                        }
-                        let difference: Double = totalDifference / Double(firstChannels.count)
-                        sampling["firstStatusRGB"] = firstColors; sampling["nextStatusRGB"] = secondColors
-                        sampling["statusColorDifference"] = difference
-                        XCTAssertGreaterThan(difference, 0.025, "Scrolling a different saturated band behind the actual blur must change its sampled color")
-                    }
+                    XCTAssertTrue(nativeMainTabController(in: host) === tabController)
+                    checkTabItems(tabController)
+                    try capture(prefix + "-scrolled", topInset: topInset)
                     for _ in 0..<3 {
                         let bottom = scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
                         scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: bottom), animated: false)
@@ -2342,7 +2334,20 @@ extension KikiConsentTests {
                         if name == "messages" { XCTFail("The native messages List must expose public collection/table row geometry") }
                     }
                     let contentBottom = lastRowFrame?.maxY ?? rawContentBottom
-                    XCTAssertLessThanOrEqual(contentBottom, tabFrame.minY + 2, "The final real content must remain reachable above the floating tab bar")
+                    let finalTabFrame = nativeMainTabVisibleFrame(tabController, in: window)
+                    let nativeContentFrame = nativeMainTabContentFrame(tabController, in: window)
+                    let scrollFrame = scroll.convert(scroll.bounds, to: window)
+                    XCTAssertGreaterThan(nativeContentFrame.height, 100, "The system must expose its unobscured content area")
+                    XCTAssertLessThanOrEqual(contentBottom, min(nativeContentFrame.maxY, scrollFrame.maxY) + 2,
+                                             "The final real content must remain reachable inside the system's unobscured content area")
+                    if let finalTabFrame {
+                        if finalTabFrame.midY >= window.bounds.midY {
+                            XCTAssertLessThanOrEqual(contentBottom, finalTabFrame.minY + 2,
+                                                     "The final real content must remain reachable above the native bottom tab bar")
+                        } else {
+                            XCTAssertGreaterThanOrEqual(scrollFrame.minY + scroll.adjustedContentInset.top, finalTabFrame.maxY - 2)
+                        }
+                    }
                     try capture(prefix + "-last-content", topInset: topInset)
                     manifest.append(["page": name, "scheme": schemeName, "statusHeight": topInset,
                                      "window": NSCoder.string(for: window.bounds), "scrollBefore": beforeOffset,
@@ -2350,11 +2355,15 @@ extension KikiConsentTests {
                                      "scrollWindowFrame": NSCoder.string(for: scroll.convert(scroll.bounds, to: window)),
                                      "scrollClipAncestry": clipAncestry(scroll),
                                      "scrollContentInset": String(describing: scroll.adjustedContentInset),
-                                     "statusBackdrop": NSCoder.string(for: backdropFrame),
-                                     "tabContainer": NSCoder.string(for: tabFrame), "contentBottomAtEnd": contentBottom,
+                                     "tabContainer": tabFrame.map { NSCoder.string(for: $0) } ?? "System representation outside UITabBar", "contentBottomAtEnd": contentBottom,
+                                     "nativeTabFrameAtEnd": finalTabFrame.map { NSCoder.string(for: $0) } ?? "System representation outside UITabBar",
+                                     "nativeUnobscuredContentFrame": NSCoder.string(for: nativeContentFrame),
+                                     "nativeTabBarHidden": nativeMainTabIsHidden(tabController),
+                                     "nativeTabItemIdentifiers": nativeMainTabState(tabController).identifiers,
+                                     "nativeTabItemAccessibilityValues": nativeMainTabState(tabController).accessibilityValues,
+                                     "customStatusBackdropPresent": false,
                                      "rawContentBottomAtEnd": rawContentBottom,
                                      "actualLastRowFrame": lastRowFrame.map { NSCoder.string(for: $0) } ?? "non-List ScrollView",
-                                     "sampling": sampling,
                                      "trailingActionVerification": "Manual comparison of initial and scrolled screenshots; native bar frame is not the button frame"])
                 } catch {
                     let hierarchy = descendants(host.view).map {
@@ -2370,82 +2379,78 @@ extension KikiConsentTests {
 }
 
 @MainActor
-private func mainTabVisualScreen(_ page: AnyView) -> AnyView {
-    AnyView(KikiMainTabLayout(isRoomSearchFocused: false) { page } tabBar: {
-        KikiMainTabBar(selection: .constant(1), unreadCount: 3)
-            .background(KikiMainChromeFrameProbe(identifier: "fixture.mainTabs"))
-    }.background(KikiPalette.background.ignoresSafeArea()))
+private func nativeMainTabController(in root: UIViewController) -> UITabBarController? {
+    if let controller = root as? UITabBarController { return controller }
+    for child in root.children {
+        if let controller = nativeMainTabController(in: child) { return controller }
+    }
+    return nil
 }
 
-private struct KikiMainChromeFrameProbe: UIViewRepresentable {
-    let identifier: String
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView(); view.backgroundColor = .clear; view.isOpaque = false
-        view.isUserInteractionEnabled = false; view.accessibilityElementsHidden = true
-        view.accessibilityIdentifier = identifier
-        return view
-    }
-    func updateUIView(_ uiView: UIView, context: Context) { }
-}
-
-private struct KikiMainChromeColorScrollFixture: View {
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                KikiMainChromeColorContent().frame(height: 2_880)
-            }
-            .kikiMainTabScrollInsets()
-            .background(KikiPalette.background.ignoresSafeArea())
-            .kikiTransparentTopScrollEdge()
-            .navigationTitle("").navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Image(systemName: "paintpalette").frame(width: 24, height: 24) } }
-        }
-    }
-}
-
-private struct KikiMainChromeColorContent: UIViewRepresentable {
-    func makeUIView(context: Context) -> ColorBands { ColorBands() }
-    func updateUIView(_ uiView: ColorBands, context: Context) { }
-
-    final class ColorBands: UIView {
-        override init(frame: CGRect) {
-            super.init(frame: frame)
-            accessibilityIdentifier = "fixture.mainColorContent"
-            isOpaque = true; contentMode = .redraw
-        }
-        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-        override func draw(_ rect: CGRect) {
-            let colors: [UIColor] = [.systemRed, .systemBlue, .systemGreen, .systemOrange]
-            for index in 0..<12 {
-                colors[index % colors.count].setFill()
-                UIBezierPath(rect: CGRect(x: 0, y: CGFloat(index) * 240, width: bounds.width, height: 240)).fill()
-                ("真实滚动色块 \(index + 1)" as NSString).draw(at: CGPoint(x: 24, y: CGFloat(index) * 240 + 100),
-                    withAttributes: [.font: UIFont.systemFont(ofSize: 24, weight: .semibold), .foregroundColor: UIColor.white])
-            }
-        }
-    }
+private struct KikiNativeMainTabState {
+    let titles: [String]
+    let selectedIndex: Int?
+    let badges: [String?]
+    let identifiers: [String]
+    let accessibilityValues: [String]
 }
 
 @MainActor
-private enum KikiChromePixelSample {
-    static func mean(_ image: UIImage, rect: CGRect) throws -> [Double] {
-        let source = try XCTUnwrap(image.cgImage)
-        let pixelRect = CGRect(x: rect.minX * image.scale, y: rect.minY * image.scale,
-                               width: rect.width * image.scale, height: rect.height * image.scale).integral
-        let sample = try XCTUnwrap(source.cropping(to: pixelRect))
-        let width = sample.width, height = sample.height
-        var bytes = [UInt8](repeating: 0, count: width * height * 4)
-        let context = try XCTUnwrap(CGContext(data: &bytes, width: width, height: height, bitsPerComponent: 8,
-            bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
-        context.draw(sample, in: CGRect(x: 0, y: 0, width: width, height: height))
-        var sums = [Double](repeating: 0, count: 3)
-        for offset in stride(from: 0, to: bytes.count, by: 4) {
-            for channel in 0..<3 { sums[channel] += Double(bytes[offset + channel]) }
-        }
-        return sums.map { $0 / Double(width * height) / 255 }
+private func nativeMainTabState(_ controller: UITabBarController) -> KikiNativeMainTabState {
+    // iPad's native top representation need not attach the legacy UITabBar.
+    // Inspect the public controller models rather than a private rendered view.
+    if #available(iOS 18.0, *), !controller.tabs.isEmpty {
+        let tabs = controller.tabs
+        return KikiNativeMainTabState(titles: tabs.map(\.title),
+            selectedIndex: tabs.firstIndex { $0 === controller.selectedTab }, badges: tabs.map(\.badgeValue),
+            identifiers: tabs.map { $0.accessibilityIdentifier ?? "nil" },
+            accessibilityValues: tabs.map { $0.accessibilityValue ?? "nil" })
     }
+    let items = controller.tabBar.items ?? []
+    return KikiNativeMainTabState(titles: items.map { $0.title ?? "" },
+        selectedIndex: items.firstIndex { $0 === controller.tabBar.selectedItem }, badges: items.map(\.badgeValue),
+        identifiers: items.map { $0.accessibilityIdentifier ?? "nil" },
+        accessibilityValues: items.map { $0.accessibilityValue ?? "nil" })
+}
+
+@MainActor
+private func nativeMainTabIsHidden(_ controller: UITabBarController) -> Bool {
+    if #available(iOS 18.0, *) { return controller.isTabBarHidden }
+    return controller.tabBar.isHidden
+}
+
+@MainActor
+private func nativeMainTabVisibleFrame(_ controller: UITabBarController, in window: UIWindow) -> CGRect? {
+    let bar = controller.tabBar
+    guard bar.window === window else { return nil }
+    var ancestor: UIView? = bar
+    while let current = ancestor {
+        if current.isHidden || current.alpha < 0.01 { return nil }
+        ancestor = current.superview
+    }
+    let frame = bar.convert(bar.bounds, to: window)
+    return frame.intersection(window.bounds).height > 10 ? frame : nil
+}
+
+@MainActor
+private func nativeMainTabContentFrame(_ controller: UITabBarController, in window: UIWindow) -> CGRect {
+    let frame: CGRect
+    if #available(iOS 26.0, *) { frame = controller.contentLayoutGuide.layoutFrame }
+    else { frame = controller.view.safeAreaLayoutGuide.layoutFrame }
+    return controller.view.convert(frame, to: window).intersection(window.bounds)
+}
+
+@MainActor
+private func mainTabVisualScreen(_ page: AnyView) -> AnyView {
+    AnyView(KikiMainTabs(selection: .constant(1), unreadCount: 3) {
+        Color.clear
+    } moments: {
+        page
+    } messages: {
+        Color.clear
+    } profile: {
+        Color.clear
+    })
 }
 
 extension KikiConsentTests {

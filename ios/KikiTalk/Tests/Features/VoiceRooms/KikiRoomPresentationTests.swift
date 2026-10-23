@@ -249,22 +249,23 @@ final class KikiRoomPresentationTests: XCTestCase {
         defer { window.endEditing(true); window.isHidden = true; previous?.makeKeyAndVisible() }
         try await Task.sleep(nanoseconds: 150_000_000)
         window.layoutIfNeeded()
-        let field = try XCTUnwrap(descendants(of: host.view).compactMap { $0 as? UITextField }.first)
-        let initialBar = try XCTUnwrap(model.barProbe)
-        let initialBarFrame = initialBar.convert(initialBar.bounds, to: window)
-        XCTAssertEqual(initialBar.window, window)
-        XCTAssertGreaterThan(initialBarFrame.width, 100)
-        XCTAssertGreaterThanOrEqual(initialBarFrame.height, 44)
+        try await waitForSearch { self.mainTabsAreVisible(in: host) }
+        window.layoutIfNeeded()
+        let field = try XCTUnwrap(visibleSearchField(in: window))
+        let tabController = try XCTUnwrap(mainTabController(in: host))
+        let initialContentFrame = mainTabContentFrame(tabController, in: window)
+        XCTAssertGreaterThan(initialContentFrame.width, 100)
+        XCTAssertGreaterThan(initialContentFrame.height, 100)
 
         XCTAssertTrue(field.becomeFirstResponder())
-        try await waitForSearch { field.isFirstResponder && model.searchFocused && model.barProbe?.window == nil }
+        try await waitForSearch { field.isFirstResponder && model.searchFocused && self.mainTabsAreHidden(tabController) }
         field.text = "音乐和晚风"
         field.sendActions(for: .editingChanged)
         try await Task.sleep(nanoseconds: 150_000_000)
         window.layoutIfNeeded()
         let fieldFrame = field.convert(field.bounds, to: host.view)
         XCTAssertTrue(host.view.bounds.contains(fieldFrame), "Search must retain normal keyboard-safe layout")
-        XCTAssertNil(model.barProbe?.window, "The main tabs must not float above a focused search keyboard")
+        XCTAssertTrue(mainTabsAreHidden(tabController), "The active native tab interface must hide while searching, including the iPad top representation")
         let inputIdentity = ObjectIdentifier(field)
         let probe = try XCTUnwrap(descendants(of: host.view).compactMap { $0 as? KikiRoomKeyboardDismissal.Probe }.first)
         let dismissal = try XCTUnwrap(probe.coordinator)
@@ -290,7 +291,7 @@ final class KikiRoomPresentationTests: XCTestCase {
             let keyboard = host.view.keyboardLayoutGuide.layoutFrame
             XCTAssertGreaterThan(keyboard.height, 100, "The opt-in requires a visible native software keyboard")
             XCTAssertLessThanOrEqual(field.convert(field.bounds, to: host.view).maxY, keyboard.minY + 1)
-            XCTAssertNil(model.barProbe?.window)
+            XCTAssertTrue(mainTabsAreHidden(tabController))
         }
         try capture(name: "discover-search-focused", windows: [window], bounds: window.bounds)
         if ProcessInfo.processInfo.environment["KIKI_DISCOVER_SEARCH_SOFTWARE_KEYBOARD"] == "1" {
@@ -299,24 +300,70 @@ final class KikiRoomPresentationTests: XCTestCase {
         // Deliver the same public callback used by the accepted window tap,
         // without creating synthetic touches or depending on SwiftUI AX nodes.
         dismissal.dismissAfterRecognizedTap()
-        try await waitForSearch { !field.isFirstResponder && !model.searchFocused && model.barProbe?.window === window }
+        try await waitForSearch { !field.isFirstResponder && !model.searchFocused && self.mainTabsAreVisible(in: host) }
+        window.layoutIfNeeded()
         XCTAssertEqual(field.text, "音乐和晚风")
-        let restoredBar = try XCTUnwrap(model.barProbe)
-        let restoredFrame = restoredBar.convert(restoredBar.bounds, to: window)
-        XCTAssertEqual(restoredFrame.minX, initialBarFrame.minX, accuracy: 1)
-        XCTAssertEqual(restoredFrame.maxY, initialBarFrame.maxY, accuracy: 1,
-                       "Tabs return to the bottom after the keyboard has closed")
-        XCTAssertEqual(restoredFrame.width, initialBarFrame.width, accuracy: 1)
+        let restoredFrame = mainTabContentFrame(tabController, in: window)
+        XCTAssertEqual(restoredFrame.minX, initialContentFrame.minX, accuracy: 1)
+        XCTAssertEqual(restoredFrame.minY, initialContentFrame.minY, accuracy: 1)
+        XCTAssertEqual(restoredFrame.maxY, initialContentFrame.maxY, accuracy: 1,
+                       "The native content area must return after the keyboard and active tab interface settle")
+        XCTAssertEqual(restoredFrame.width, initialContentFrame.width, accuracy: 1)
         try capture(name: "discover-search-dismissed", windows: [window], bounds: window.bounds)
 
         XCTAssertTrue(field.becomeFirstResponder())
         try await waitForSearch { model.searchFocused && field.isFirstResponder }
         model.selectedTab = 1
-        try await waitForSearch { !field.isFirstResponder && !model.searchFocused }
+        try await waitForSearch { !field.isFirstResponder && !model.searchFocused && self.mainTabsAreVisible(in: host) }
         model.selectedTab = 0
-        try await waitForSearch { model.barProbe?.window === window }
-        XCTAssertEqual(field.text, "音乐和晚风")
-        XCTAssertEqual(ObjectIdentifier(field), inputIdentity, "Switching tabs must preserve the actual search field and query")
+        try await waitForSearch { self.mainTabsAreVisible(in: host) && self.visibleSearchField(in: window) != nil }
+        let returnedField = try XCTUnwrap(visibleSearchField(in: window))
+        XCTAssertEqual(returnedField.text, "音乐和晚风")
+        XCTAssertEqual(ObjectIdentifier(returnedField), inputIdentity, "Switching tabs must preserve the actual search field and query")
+    }
+
+    private func mainTabController(in root: UIViewController) -> UITabBarController? {
+        if let tabs = root as? UITabBarController { return tabs }
+        return root.children.compactMap { mainTabController(in: $0) }.first
+    }
+
+    private func mainTabsAreHidden(_ controller: UITabBarController) -> Bool {
+        if #available(iOS 18.0, *) { return controller.isTabBarHidden }
+        return controller.tabBar.isHidden
+    }
+
+    private func mainTabsAreVisible(in root: UIViewController) -> Bool {
+        guard let tabs = mainTabController(in: root), tabs.viewIfLoaded?.window != nil else { return false }
+        return !mainTabsAreHidden(tabs)
+    }
+
+    private func mainTabContentFrame(_ controller: UITabBarController, in window: UIWindow) -> CGRect {
+        let frame: CGRect
+        if #available(iOS 26.0, *) { frame = controller.contentLayoutGuide.layoutFrame }
+        else { frame = controller.view.safeAreaLayoutGuide.layoutFrame }
+        return controller.view.convert(frame, to: window).intersection(window.bounds)
+    }
+
+    private func visibleMainTabBar(in window: UIWindow) -> UITabBar? {
+        descendants(of: window).compactMap { $0 as? UITabBar }.first {
+            nativeViewIsVisible($0, in: window) && $0.convert($0.bounds, to: window).intersection(window.bounds).height >= 44
+        }
+    }
+
+    private func visibleSearchField(in window: UIWindow) -> UITextField? {
+        descendants(of: window).compactMap { $0 as? UITextField }.first { nativeViewIsVisible($0, in: window) }
+    }
+
+    private func nativeViewIsVisible(_ view: UIView, in window: UIWindow) -> Bool {
+        guard view.window === window, !view.bounds.isEmpty else { return false }
+        var visibleFrame = view.convert(view.bounds, to: window).intersection(window.bounds)
+        var ancestor: UIView? = view
+        while let current = ancestor {
+            if current.isHidden || current.alpha <= 0.01 { return false }
+            if current.clipsToBounds { visibleFrame = visibleFrame.intersection(current.convert(current.bounds, to: window)) }
+            ancestor = current.superview
+        }
+        return !visibleFrame.isNull && !visibleFrame.isEmpty
     }
 
     private func waitForSearch(file: StaticString = #filePath, line: UInt = #line,
@@ -487,6 +534,103 @@ final class KikiRoomPresentationTests: XCTestCase {
         XCTAssertTrue(base.isKeyWindow)
     }
 
+    func testFloatingAvatarTracksTheRealNativeTabBarWithoutTakingInputFocusOrTabTouches() async throws {
+        let scene = try foregroundScene()
+        let previous = scene.windows.first { $0.isKeyWindow }
+        let base = UIWindow(windowScene: scene)
+        let tabs = UITabBarController()
+        let rooms = UIViewController(), messages = UIViewController()
+        rooms.tabBarItem = UITabBarItem(title: "语聊", image: UIImage(systemName: "waveform"), tag: 0)
+        messages.tabBarItem = UITabBarItem(title: "消息", image: UIImage(systemName: "bubble.left"), tag: 1)
+        tabs.viewControllers = [rooms, messages]
+        base.rootViewController = tabs
+        base.makeKeyAndVisible()
+        let field = UITextField(frame: CGRect(x: 24, y: 100, width: 200, height: 44))
+        field.placeholder = "保留输入焦点"
+        // Keep a genuine first responder without a docked software keyboard
+        // obscuring the native tab bar whose geometry this case verifies.
+        field.inputView = UIView(frame: .zero)
+        rooms.view.addSubview(field)
+        XCTAssertTrue(field.becomeFirstResponder())
+        let overlay = KikiVoiceRoomFloatingOverlay(windowScene: scene, roomTitle: "原生底栏验收", avatarURL: nil) { }
+        defer { overlay.hide(); base.endEditing(true); base.isHidden = true; previous?.makeKeyAndVisible() }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        base.layoutIfNeeded()
+        overlay.show()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        let floating = try XCTUnwrap(scene.windows.first {
+            !$0.isHidden && $0.accessibilityIdentifier == "voiceRoomFloatingWindow"
+        })
+        let bubble = try XCTUnwrap(descendants(of: floating).first { $0.accessibilityIdentifier == "voiceRoomFloatingBubble" })
+        XCTAssertFalse(mainTabsAreHidden(tabs), "The fixture must show the controller's active native tab interface")
+        let tabTitles = ["语聊", "消息"]
+        // UIKit may expose an iPad tab as a UIAccessibilityElement rather
+        // than a labelled UIControl. Use its public screen-space hit region.
+        let nodes = headerAccessibilityNodes(in: base)
+        let tabFrames = nodes.compactMap { node -> CGRect? in
+            guard let label = node.accessibilityLabel, tabTitles.contains(where: { label.contains($0) }) else { return nil }
+            let screenFrame = node.accessibilityFrame
+            guard !screenFrame.isNull, !screenFrame.isEmpty, screenFrame.minX.isFinite, screenFrame.minY.isFinite else { return nil }
+            let frame = base.convert(screenFrame, from: base.screen.coordinateSpace).intersection(base.bounds)
+            guard frame.width >= 20, frame.height >= 20, frame.height <= 100 else { return nil }
+            return frame
+        }
+        if tabFrames.isEmpty {
+            let summary = nodes.map { node in
+                "label=\(node.accessibilityLabel ?? "nil") value=\(node.accessibilityValue ?? "nil") element=\(node.isAccessibilityElement) traits=\(node.accessibilityTraits.rawValue) frame=\(NSCoder.string(for: node.accessibilityFrame))"
+            }.joined(separator: "\n")
+            let diagnostic = XCTAttachment(string: "content=\(NSCoder.string(for: mainTabContentFrame(tabs, in: base)))\n" + summary)
+            diagnostic.name = "native-floating-tabs-public-accessibility"; diagnostic.lifetime = .keepAlways; add(diagnostic)
+            try capture(name: "native-floating-tabs-missing-accessible-frame", windows: [base, floating], bounds: base.bounds)
+        }
+        let tabTarget = try XCTUnwrap(tabFrames.min { $0.width * $0.height < $1.width * $1.height },
+                                     "The active tab interface must expose a visible accessibility hit frame for 语聊 or 消息")
+        let barFrame = visibleMainTabBar(in: base).map { $0.convert($0.bounds, to: floating) }
+            ?? tabFrames.map { floating.convert($0, from: base) }.reduce(CGRect.null) { $0.union($1) }
+        let shown = bubble.convert(bubble.bounds, to: floating)
+        XCTAssertFalse(shown.intersects(barFrame), "The floating room must leave native tab controls reachable")
+        XCTAssertTrue(base.isKeyWindow)
+        XCTAssertFalse(floating.canBecomeKey)
+        XCTAssertTrue(field.isFirstResponder)
+        let tabPoint = CGPoint(x: tabTarget.midX, y: tabTarget.midY)
+        XCTAssertNil(floating.hitTest(floating.convert(tabPoint, from: base), with: nil), "Touches on a real tab item must pass through the overlay window")
+        let tabHit = try XCTUnwrap(base.hitTest(tabPoint, with: nil))
+        XCTAssertTrue(tabHit === tabs.view || tabHit.isDescendant(of: tabs.view), "The actual accessible tab location must hit the native tab controller's view hierarchy")
+
+        if #available(iOS 18.0, *) { tabs.setTabBarHidden(true, animated: false) }
+        else { tabs.tabBar.isHidden = true }
+        base.layoutIfNeeded()
+        XCTAssertTrue(mainTabsAreHidden(tabs))
+        KikiVoiceRoomFloatingOverlay.mainNavigationDidLayout(in: base)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        let hidden = bubble.convert(bubble.bounds, to: floating)
+        let safe = floating.bounds.inset(by: floating.safeAreaInsets)
+        if barFrame.minY >= safe.midY, barFrame.maxX > shown.minX, barFrame.minX < shown.maxX {
+            XCTAssertGreaterThan(hidden.midY, shown.midY + 10, "Hiding a bottom tab bar must release its reserved area instead of retaining the old fixed 64-point gap")
+        } else {
+            XCTAssertEqual(hidden.midY, shown.midY, accuracy: 1, "An iPad tab bar above the room bubble must not reserve space at the bottom")
+        }
+        XCTAssertTrue(safe.contains(hidden))
+        XCTAssertTrue(base.isKeyWindow)
+        XCTAssertTrue(field.isFirstResponder)
+        if #available(iOS 18.0, *) { tabs.setTabBarHidden(false, animated: false) }
+        else { tabs.tabBar.isHidden = false }
+        base.layoutIfNeeded()
+        XCTAssertFalse(mainTabsAreHidden(tabs))
+        KikiVoiceRoomFloatingOverlay.mainNavigationDidLayout(in: base)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        let restored = bubble.convert(bubble.bounds, to: floating)
+        XCTAssertEqual(restored.minX, shown.minX, accuracy: 1)
+        XCTAssertEqual(restored.minY, shown.minY, accuracy: 1)
+        XCTAssertFalse(restored.intersects(barFrame))
+        XCTAssertTrue(base.isKeyWindow)
+        XCTAssertTrue(field.isFirstResponder)
+    }
+
     func testFloatingAvatarAvoidsAnIntersectingKeyboardAndReturnsAfterItHides() async throws {
         let scene = try foregroundScene()
         let previous = scene.windows.first { $0.isKeyWindow }
@@ -647,36 +791,20 @@ private struct KikiDiscoverToolbarFixture: View {
 private final class KikiSearchPresentationModel: ObservableObject {
     @Published var selectedTab = 0
     @Published var searchFocused = false
-    var barProbe: UIView?
-}
-
-private struct KikiSearchBarProbe: UIViewRepresentable {
-    let model: KikiSearchPresentationModel
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.isUserInteractionEnabled = false
-        model.barProbe = view
-        return view
-    }
-    func updateUIView(_ view: UIView, context: Context) { model.barProbe = view }
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
-    }
 }
 
 private struct KikiDiscoverSearchFixture: View {
     @ObservedObject var model: KikiSearchPresentationModel
     var body: some View {
-        KikiMainTabLayout(isRoomSearchFocused: model.selectedTab == 0 && model.searchFocused) {
-            ZStack {
-                KikiDiscoverView(isActive: model.selectedTab == 0, onSearchFocusChange: { model.searchFocused = $0 })
-                    .opacity(model.selectedTab == 0 ? 1 : 0)
-                    .allowsHitTesting(model.selectedTab == 0)
-                if model.selectedTab != 0 { Text("动态") }
-            }
-        } tabBar: {
-            KikiMainTabBar(selection: $model.selectedTab, unreadCount: 0)
-                .background(KikiSearchBarProbe(model: model))
+        KikiMainTabs(selection: $model.selectedTab, unreadCount: 0,
+                     isRoomSearchFocused: model.selectedTab == 0 && model.searchFocused) {
+            KikiDiscoverView(isActive: model.selectedTab == 0, onSearchFocusChange: { model.searchFocused = $0 })
+        } moments: {
+            Text("动态")
+        } messages: {
+            Text("消息")
+        } profile: {
+            Text("我")
         }
         .background(KikiPalette.background.ignoresSafeArea())
     }
