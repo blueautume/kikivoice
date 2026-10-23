@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "service": "account",
   "baseURL": "https://kiki.group",
-  "scope": "P1 confirmed: follows, public profiles, in-app notifications, reply-gated text direct messages (five introductions before recipient replies), static-image moments, likes/comments, social reports and independent community moderation. Native APNs provides generic system alerts for current social events. No payments, gifts, VIP or realtime voice changes.",
+  "scope": "P1 confirmed: follows, public profiles, in-app notifications, reply-gated text direct messages (five introductions before recipient replies), static-image moments, likes/comments, social reports and independent community moderation. Native APNs provides authorized, preference-aware alerts for social events and followed hosts starting voice rooms. No payments, gifts, VIP or realtime voice changes.",
   "authentication": "Ordinary account bearer, current adult legal consent and completed nickname. Operations endpoints require independent community Passkey permission.",
   "privacy": "Every ordinary social request fetches one signed, uncached voice policy snapshot; unavailable/malformed policy fails closed with 503. Bilateral blocked people are absent with 404 for direct lookup and omitted from lists/notifications. Login and account deletion never depend on social policy availability.",
   "person": {
@@ -407,6 +407,18 @@
         "ok": true
       },
       "behavior": "Advances only viewer notification clear/read watermark through the owned visible retained notification, cancels aggregate pin, hides old notices and aggregate until a new visible notice appears. Fixed monotonic cutoff and UUID receipt preserve newer concurrent notices and prevent a retry clearing them. Invalid/cross-account/blocked cutoff404."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/social/notifications/{notificationID}/destination",
+      "response": {
+        "type": "notification",
+        "notificationID": "owned UUID",
+        "roomID": "optional active room ID",
+        "momentID": "optional visible moment UUID",
+        "personID": "optional visible public person ID"
+      },
+      "behavior": "Current ordinary session and consent, owner-only, retained, not deleted or viewer-cleared. Read notices remain clickable here. room_started additionally requires current eligible follow, host consent epoch, bilateral block policy and signed active-room status. Network/policy unavailable503; invisible/ended404."
     }
   ],
   "internalVoicePolicy": {
@@ -474,12 +486,12 @@
   },
   "notification": {
     "id": "UUID",
-    "kind": "follow|system|safety",
+    "kind": "follow|like|comment|system|safety|room_started",
     "actor": "Person|null",
     "text": "server-authored text",
     "createdAt": "Unix seconds",
     "readAt": "Unix seconds|null",
-    "roomID": "null; room-invite/push not implemented",
+    "roomID": "lk_<32 lowercase hex>|null; room_started links to the authoritative active room, never grants admission",
     "momentID": "UUID|null; referenced moment may have been removed",
     "seq": "monotonic integer insertion sequence; defaults0 only for legacy clients"
   },
@@ -966,7 +978,7 @@
     "restrictions": "60sec..30days; survives consent withdrawal to prevent bypass, deleted on account deletion",
     "mediaCleanup": "unreferenced file cleanup every60sec, only after committed row deletion; files younger60sec protected from in-flight upload race"
   },
-  "delivery": "Only authenticated foreground/app polling in-app notifications. No APNs remote/offline push is configured or claimed.",
+  "delivery": "Authenticated in-app notification lists plus native APNs with current notification and content-hiding preferences; APNs acceptance is not proof of device receipt or read state.",
   "accountReadOnlyMetrics": {
     "path": "GET /admin/v2/services/account/dashboard",
     "field": "operations.social",
@@ -1029,15 +1041,16 @@
           "type": "direct_message|notification",
           "personID": "optional current public kiki_ ID",
           "momentID": "optional UUID",
-          "notificationID": "optional UUID"
+          "notificationID": "optional UUID",
+          "roomID": "optional active room ID for room_started"
         }
       }
     ],
     "payload": {
       "aps": {
         "alert": {
-          "title": "Kiki语聊",
-          "body": "你有新的消息，请打开应用查看。"
+          "title": "current authorized sender nickname, or Kiki语聊 when content hidden",
+          "body": "authorized current text/interaction summary; room_started uses fixed server text without room name; generic reminder when content hidden"
         },
         "sound": "default",
         "badge": "visible unread count"
@@ -1046,7 +1059,7 @@
       "accountTag": "opaque recipient account tag"
     },
     "ownership": "No client accountID. Authenticated current consented ordinary account session; no stale or invalid bearer. Same installation revision equal only identical source-session/body is idempotent, lower or changed equal409. Newer revision replaces old account/session; late old DELETE/logout/APNs410 cannot remove a newer generation. Device token encrypted Fernet at rest, installation UUID and token HMAC indexed. Per-account device cap10.",
-    "preferences": "Registration permission does not overwrite account notificationsEnabled. Disabling account pref immediately cancels pending sends; reenabling does not revive old sends. In-app records remain.",
+    "preferences": "Registration permission does not overwrite account notificationsEnabled. Disabling account pref immediately cancels pending sends; reenabling does not revive old sends. In-app records remain. hideNotificationContent defaults false; current nickname/text/interaction summary allowed unless hidden. Evaluated again immediately before payload generation; no preview stored in outbox.",
     "delivery": "Business event and outbox same SQLite transaction. Stable apns-id/collapse-id; durable claimed lease committed before network. APNs200 means accepted only, not delivered/read. 429/5xx/network retry with bounded exponential delay; permanent4xx terminates. Invalid token removal conditional on original binding generation. Fresh bilateral block, current consent/session, sender eligibility, existing content, unread and committed DM checks before send; policy failure retries without sending. Muting/logout/deletion never sends stale content.",
     "retention": {
       "bindingInactiveDays": 30,
@@ -1055,7 +1068,7 @@
       "receiptsAndOpaqueDestinationDays": 7,
       "installationRevisionWatermarkDays": 30
     },
-    "destinationPrivacy": "Requires current account session+consent; cross-account, deleted, read, blocked, ineligible DM404. No sender name/body/other account ID in system payload. Client validates accountTag against current GETstatus before navigating. Viewer-cleared message/notification sequences always404, even if another participant still retains the message; cleared sequences never contribute badge counts.",
+    "destinationPrivacy": "Requires current account session+consent; cross-account, deleted, read, blocked, ineligible or viewer-cleared content404. Only opaque deliveryID/accountTag provide routing in the system payload; preview text is not an access credential. room_started additionally rechecks the eligible follow, host consent epoch and signed active-room status outside transactions; outage503/retry, inactive404/cancel.",
     "operations": "Top-level account dashboard push summary only: schemaVersion1,configured,enabled,activeDevices(valid consent/session binding, not online),pending(current),accepted(APNs200 last24h),failed(final failures last24h),recentFailures<=10(code,occurredAt). Never token/keyID/installation/account IDs or content.",
     "settings": [
       "APNS_ENABLED",
@@ -1066,7 +1079,7 @@
       "APNS_PRODUCTION_PRIVATE_KEY_PATH",
       "APPLE_TOKEN_ENCRYPTION_KEY"
     ],
-    "omissions": "No rich content, notification extensions, lockscreen text, Android push or guaranteed exactly-once delivery."
+    "omissions": "No photos, room names, rich-content extensions, Android push or guaranteed exactly-once delivery."
   },
   "notificationInboxState": {
     "isPinned": "boolean, per viewer; defaults false",
@@ -1082,5 +1095,58 @@
     "migration": "On startup before the normal30-day message purge, retained legacy conversation directions backfill with monotonic MAX counts; repeated initialization never restores consumed allowance. Historical messages already erased before this upgrade cannot be reconstructed.",
     "cleanup": "Minimal handshake state survives logout, local clear and30-day message expiry to prevent quota resets; consent withdrawal or deletion erases both directions and account foreign keys cascade. No message bodies are retained beyond the normal30-day window.",
     "push": "Committed introductions have the same generic notification, unread, account/consent, bilateral block, sequence-clear and read safeguards as established messages. Follow/unfollow does not cancel DM outbox or destination/badge eligibility."
+  },
+  "roomStarted": {
+    "event": {
+      "method": "POST",
+      "path": "/internal/v1/voice/room-started",
+      "body": {
+        "schemaVersion": 1,
+        "eventID": "canonical UUID",
+        "roomID": "lk_<32 lowercase hex>",
+        "hostID": "public kiki_ ID",
+        "startedAt": "strict positive Unix seconds",
+        "startedAtNs": "strict positive int64 Unix nanoseconds; integer division by 1e9 equals startedAt",
+        "hostConsentEpoch": "strict positive int64 latest host acceptance event"
+      },
+      "response": {
+        "ok": true
+      },
+      "signature": "X-Kiki-Timestamp/Nonce/Signature; HMAC-SHA256 with existing account-voice secret; newline join(voice-account-room-started-v1,POST,exact path,timestamp,nonce,SHA256(exact body)); timestamp within30s, independent nonce table61s; no client bearer, audience, name, title or arbitrary text"
+    },
+    "fanout": "Voice durably records first confirmed real host/SFU presence once. Account freezes audience at f.created_at<=startedAtNs, checks current follow/account/consent/host epoch/bilateral blocks, commits event receipt+notices+push atomically. Repeated identical event returns original result without recreating deleted notices; changed payload under eventID or a new eventID for same room+host409. Receipt survives recipient withdrawal, but host withdrawal/deletion erases host-linked data.",
+    "notification": {
+      "kind": "room_started",
+      "text": "开始语聊了，点击进入房间",
+      "actor": "current authorized host Person",
+      "roomID": "authoritative voice room ID",
+      "apns": "Existing total switch, latest hideNotificationContent, no room title/photo; expires startedAt+300sec"
+    },
+    "status": {
+      "method": "POST",
+      "path": "/internal/v1/account/room-started-status",
+      "signature": "existing account-voice-v1 exact-body/path HMAC and nonce rules",
+      "body": {
+        "eventID": "UUID",
+        "roomID": "lk_ ID",
+        "hostID": "public host ID",
+        "hostConsentEpoch": "positive int64"
+      },
+      "response": {
+        "schemaVersion": 1,
+        "eventID": "echo",
+        "roomID": "echo",
+        "hostID": "echo",
+        "hostConsentEpoch": "echo",
+        "active": "strict boolean"
+      },
+      "behavior": "Voice durable confirmed event, active room and effective host source session/consent; temporary reconnect grace remains active, closed/withdrawn invalid. No admin snapshot dependency. Query outside DB transactions at receive/send/click; malformed/unavailable503 and retry, inactive is terminal. Local session/follow/epoch/privacy rechecked after network."
+    },
+    "retention": {
+      "eventDeliverySeconds": 300,
+      "receiptsDays": 7,
+      "nonceSeconds": 61
+    },
+    "legal": "Uses r13 followed/social interaction notification purpose; no room names or new formal legal revision."
   }
 }

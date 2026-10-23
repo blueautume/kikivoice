@@ -11,6 +11,10 @@ final class KikiForegroundNotificationTests: XCTestCase {
         .init(id: id, kind: .direct(personID: peer))
     }
 
+    private func room(_ id: String, roomID: String = "lk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") -> KikiForegroundNotificationCandidate {
+        .init(id: id, kind: .room(roomID: roomID))
+    }
+
     func testFirstSnapshotSeedsWithoutAlertingAndAcceptedMessagesAlertOnlyOnce() {
         var gate = KikiForegroundNotificationGate()
         let old = direct("old")
@@ -40,6 +44,51 @@ final class KikiForegroundNotificationTests: XCTestCase {
                        "Covering the conversation cannot replay a message already consumed while reading")
         XCTAssertTrue(gate.accepts(direct("other", peer: "someone-else"), scope: account, currentScope: account,
                                    context: reading, notificationsEnabled: true, baseline: false))
+    }
+
+    func testCurrentRoomSuppressesItsAlertAndLeavingDoesNotReplayTheConsumedEvent() {
+        var gate = KikiForegroundNotificationGate()
+        let roomID = "lk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let inRoom = KikiForegroundNotificationContext(isActive: true, hasConversationOverlay: true, currentRoomID: roomID)
+        XCTAssertFalse(gate.accepts(room("already-in-room"), scope: account, currentScope: account, context: inRoom,
+                                    notificationsEnabled: true, baseline: false),
+                       "A room/profile overlay does not make an alert for the current RTC room useful")
+        XCTAssertFalse(gate.accepts(room("already-in-room"), scope: account, currentScope: account, context: foreground,
+                                    notificationsEnabled: true, baseline: false),
+                       "Leaving the room cannot replay an event consumed while inside")
+        XCTAssertTrue(gate.accepts(room("another-room", roomID: "lk_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+                                   scope: account, currentScope: account, context: inRoom,
+                                   notificationsEnabled: true, baseline: false))
+        XCTAssertTrue(gate.accepts(.init(id: "ordinary-interaction", kind: .notifications),
+                                   scope: account, currentScope: account, context: inRoom,
+                                   notificationsEnabled: true, baseline: false),
+                      "A current room only suppresses notifications targeting that room")
+        XCTAssertTrue(gate.accepts(room("after-leaving"), scope: account, currentScope: account, context: foreground,
+                                   notificationsEnabled: true, baseline: false))
+    }
+
+    func testRoomCandidatesRetainBaselineBackgroundOptOutAndScopeGates() {
+        var gate = KikiForegroundNotificationGate()
+        for (id, context, enabled, baseline) in [
+            ("room-baseline", foreground, true, true),
+            ("room-background", KikiForegroundNotificationContext(isActive: false), true, false),
+            ("room-disabled", foreground, false, false)
+        ] {
+            XCTAssertFalse(gate.accepts(room(id), scope: account, currentScope: account, context: context,
+                                        notificationsEnabled: enabled, baseline: baseline))
+            XCTAssertFalse(gate.accepts(room(id), scope: account, currentScope: account, context: foreground,
+                                        notificationsEnabled: true, baseline: false),
+                           "Returning to the foreground or enabling alerts cannot replay a consumed room event")
+        }
+        for current in [KikiForegroundNotificationScope(sessionKey: "2:other-account", privacyRevision: 0),
+                        KikiForegroundNotificationScope(sessionKey: account.sessionKey, privacyRevision: 1)] {
+            var scopedGate = KikiForegroundNotificationGate()
+            XCTAssertFalse(scopedGate.accepts(room("late-room"), scope: account, currentScope: current,
+                                              context: foreground, notificationsEnabled: true, baseline: false))
+            XCTAssertTrue(scopedGate.accepts(room("late-room"), scope: current, currentScope: current,
+                                             context: foreground, notificationsEnabled: true, baseline: false),
+                          "A rejected old-scope room response must not consume the current scope's event")
+        }
     }
 
     func testBackgroundEventsDoNotAlertOrReplayWhenTheAppBecomesActive() {
@@ -138,6 +187,20 @@ final class KikiForegroundNotificationTests: XCTestCase {
         let bounded = try XCTUnwrap(KikiForegroundNotificationPreview(title: "好友\n昵称", message: String(repeating: emoji, count: 300)))
         XCTAssertEqual(bounded.title, "好友 昵称")
         XCTAssertEqual(bounded.message, String(repeating: emoji, count: 240), "Preview bounds must preserve whole extended grapheme clusters")
+    }
+
+    func testRoomPreviewUsesAuthenticatedActorAndTextAndHidesBothWithTheExistingPreference() {
+        let candidate = KikiForegroundNotificationCandidate(id: "verified-room-start", kind: .room(roomID: "lk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            preview: .init(title: "开房好友", message: "开始语聊了，点击进入房间"))
+        let visible = KikiForegroundNotice(scope: account, candidate: candidate)
+        XCTAssertEqual(visible.title, "开房好友")
+        XCTAssertEqual(visible.message, "开始语聊了，点击进入房间")
+        let hidden = KikiForegroundNotice(scope: account, candidate: candidate, hideContent: true)
+        XCTAssertEqual(hidden.title, "收到新消息")
+        XCTAssertEqual(hidden.message, "有新的互动消息，可在消息页查看。")
+        XCTAssertFalse((hidden.title + hidden.message).contains("开房好友"))
+        XCTAssertFalse((hidden.title + hidden.message).contains("开始语聊"))
+        XCTAssertFalse((hidden.title + hidden.message).contains("lk_"))
     }
 
     @MainActor

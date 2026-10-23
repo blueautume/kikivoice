@@ -45,6 +45,137 @@ final class KikiInboxRefreshTests: XCTestCase {
         await store.logout()
     }
 
+    func testAuthenticatedRoomStartedNotificationBuildsRoomCandidateAndPreservesOrdinaryPreviews() async throws {
+        let fixture = try await fixture(), store = fixture.store, push = fixture.push
+        _ = try await store.socialNotifications()
+        let requestStart = fixture.responses.requests.count
+        let roomID = "lk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        fixture.responses.roomNotifications([.init(id: "new-room-start", roomID: roomID)])
+        let page = try await store.socialNotifications()
+        let notice = try XCTUnwrap(page.notifications.first)
+        XCTAssertEqual(notice.kind, "room_started")
+        XCTAssertEqual(notice.roomID, roomID)
+        XCTAssertEqual(notice.actor?.id, InboxRefreshResponses.peer)
+        XCTAssertEqual(notice.text, "开始语聊了，点击进入房间")
+        XCTAssertNil(notice.momentID)
+        XCTAssertEqual(push.foregroundNotice?.candidate.id, notice.id)
+        XCTAssertEqual(push.foregroundNotice?.candidate.kind, .room(roomID: roomID))
+        XCTAssertEqual(push.foregroundNotice?.title, "消息好友")
+        XCTAssertEqual(push.foregroundNotice?.message, notice.text)
+        XCTAssertEqual(store.unreadNotificationCount, 1)
+        XCTAssertEqual(Array(fixture.responses.requests.dropFirst(requestStart)), ["/v1/social/notifications"],
+                       "Constructing an authenticated room preview must not fetch a room or an actor profile")
+        push.dismissForegroundNotice()
+        _ = try await store.socialNotifications()
+        XCTAssertNil(push.foregroundNotice, "Repeated HTTP polls cannot replay an opening alert")
+
+        fixture.responses.notifications(["ordinary-after-room"], unread: 2)
+        _ = try await store.socialNotifications()
+        XCTAssertEqual(push.foregroundNotice?.candidate.kind, .notifications)
+        XCTAssertEqual(push.foregroundNotice?.title, "消息好友")
+        XCTAssertEqual(push.foregroundNotice?.message, "收到一条互动消息")
+        await store.logout()
+    }
+
+    func testRoomStartedNotificationBaselineAndHistoricalPagesDoNotAlert() async throws {
+        let fixture = try await fixture(), store = fixture.store, push = fixture.push
+        let roomID = "lk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        fixture.responses.roomNotifications([.init(id: "old-room-start", roomID: roomID)])
+        _ = try await store.socialNotifications()
+        XCTAssertNil(push.foregroundNotice, "An old opening in the first successful snapshot only seeds the baseline")
+        fixture.responses.roomNotifications([.init(id: "historical-room-start", roomID: roomID)], isPage: true)
+        _ = try await store.socialNotifications(cursor: "older-room-notifications")
+        XCTAssertNil(push.foregroundNotice)
+        fixture.responses.roomNotifications([.init(id: "new-room-start", roomID: roomID),
+                                             .init(id: "old-room-start", roomID: roomID)])
+        _ = try await store.socialNotifications()
+        XCTAssertEqual(push.foregroundNotice?.candidate.id, "new-room-start")
+        XCTAssertEqual(push.foregroundNotice?.candidate.kind, .room(roomID: roomID))
+        await store.logout()
+    }
+
+    func testCurrentRTCRoomConsumesItsOpeningAlertWithoutLosingUnreadOrReplayingAfterLeaving() async throws {
+        let fixture = try await fixture(), store = fixture.store, push = fixture.push
+        _ = try await store.socialNotifications()
+        let roomID = "lk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        fixture.rtc.currentSDKRoomID = roomID
+        fixture.rtc.isPresentingRoom = false
+        XCTAssertEqual(store.foregroundNotificationContext.currentRoomID, roomID,
+                       "A minimized active RTC room still suppresses an opening alert for itself")
+        fixture.responses.roomNotifications([.init(id: "current-room-start", roomID: roomID)])
+        _ = try await store.socialNotifications()
+        XCTAssertNil(push.foregroundNotice)
+        XCTAssertEqual(store.unreadNotificationCount, 1, "Presentation suppression must retain the authoritative unread count")
+        fixture.rtc.currentSDKRoomID = nil
+        push.foregroundContextDidChange()
+        _ = try await store.socialNotifications()
+        XCTAssertNil(push.foregroundNotice, "Leaving a room cannot replay its already consumed opening")
+
+        fixture.rtc.currentSDKRoomID = roomID
+        let otherRoomID = "lk_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        fixture.responses.roomNotifications([.init(id: "other-room-start", roomID: otherRoomID)])
+        _ = try await store.socialNotifications()
+        XCTAssertEqual(push.foregroundNotice?.candidate.kind, .room(roomID: otherRoomID))
+        await store.logout()
+    }
+
+    func testRoomStartedPreviewUsesExistingContentAndAccountNotificationPreferencesWithoutReplay() async throws {
+        let fixture = try await fixture(), store = fixture.store, push = fixture.push
+        _ = try await store.socialNotifications()
+        let roomID = "lk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        try await store.setHideNotificationContent(true)
+        fixture.responses.roomNotifications([.init(id: "hidden-room-start", roomID: roomID)])
+        _ = try await store.socialNotifications()
+        XCTAssertEqual(push.foregroundNotice?.candidate.kind, .room(roomID: roomID))
+        XCTAssertEqual(push.foregroundNotice?.title, "收到新消息")
+        XCTAssertEqual(push.foregroundNotice?.message, "有新的互动消息，可在消息页查看。")
+        try await store.setHideNotificationContent(false)
+        XCTAssertNil(push.foregroundNotice)
+        _ = try await store.socialNotifications()
+        XCTAssertNil(push.foregroundNotice, "Showing details again must not replay a hidden room alert")
+
+        try await store.setNotificationsEnabled(false)
+        fixture.responses.roomNotifications([.init(id: "disabled-room-start", roomID: roomID)])
+        _ = try await store.socialNotifications()
+        XCTAssertNil(push.foregroundNotice)
+        XCTAssertEqual(store.unreadNotificationCount, 1)
+        try await store.setNotificationsEnabled(true)
+        _ = try await store.socialNotifications()
+        XCTAssertNil(push.foregroundNotice, "Restoring the account opt-in must not replay an event received while disabled")
+        fixture.responses.roomNotifications([.init(id: "enabled-room-start", roomID: roomID)])
+        _ = try await store.socialNotifications()
+        XCTAssertEqual(push.foregroundNotice?.title, "消息好友")
+        XCTAssertEqual(push.foregroundNotice?.message, "开始语聊了，点击进入房间")
+        await store.logout()
+    }
+
+    func testLateRoomStartedSnapshotCannotAlertOrConsumeEventsAcrossPrivacyOrAccountBoundaries() async throws {
+        for switchSession in [false, true] {
+            let fixture = try await fixture(), store = fixture.store, push = fixture.push
+            _ = try await store.socialNotifications()
+            let roomID = "lk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            fixture.responses.roomNotifications([.init(id: "late-room-start", roomID: roomID)])
+            let arrived = expectation(description: "old room notification response is held")
+            let gate = fixture.responses.holdNextResponse(path: "/v1/social/notifications") { arrived.fulfill() }
+            defer { gate.signal() }
+            let old = Task { try await store.socialNotifications() }
+            await fulfillment(of: [arrived], timeout: 2)
+            if switchSession { await store.logout(); try await store.loginWithApple(); store.setAppForeground(true) }
+            else { store.socialPolicyChanged(userID: InboxRefreshResponses.peer, blocked: true) }
+            fixture.responses.roomNotifications([])
+            _ = try await store.socialNotifications()
+            gate.signal()
+            if case .success = await old.result { XCTFail("An old-scope room snapshot must fail its account/privacy gate") }
+            XCTAssertNil(push.foregroundNotice)
+            fixture.responses.roomNotifications([.init(id: "late-room-start", roomID: roomID)])
+            _ = try await store.socialNotifications()
+            XCTAssertEqual(push.foregroundNotice?.candidate.id, "late-room-start",
+                           "A rejected old response must not consume the current scope's authenticated event")
+            XCTAssertEqual(push.foregroundNotice?.candidate.kind, .room(roomID: roomID))
+            await store.logout()
+        }
+    }
+
     func testMomentNotificationsSeedThenInvalidateReadInteractionsWithoutPushOrAccountAlerts() async throws {
         let fixture = try await fixture(), store = fixture.store
         try await store.setNotificationsEnabled(false)
@@ -634,6 +765,7 @@ private final class InboxRefreshFixture {
     let server: InboxRefreshMockServer
     let store: KikiAppStore
     let push: KikiPushController
+    let rtc = InboxRefreshRTC()
 
     init(defaults: UserDefaults) async throws {
         let documents = try XCTUnwrap(KikiLegalBundle.bundled)
@@ -644,8 +776,9 @@ private final class InboxRefreshFixture {
         let consent = KikiConsentStore(documents: documents, defaults: defaults, identity: identity,
                                       apiProvider: { server.client }, requiresRemoteDocuments: false)
         try consent.accept()
+        let rtc = self.rtc
         let createdStore = KikiAppStore(consent: consent, identity: identity, apiProvider: { server.client },
-                                       voiceAPIProvider: { server.voiceClient }, rtcProvider: { InboxRefreshRTC() },
+                                       voiceAPIProvider: { server.voiceClient }, rtcProvider: { rtc },
                                        appleProvider: { InboxRefreshApple() })
         store = createdStore
         push = KikiPushController(system: InboxRefreshPushSystem(), identity: identity, environment: { nil })
@@ -751,6 +884,11 @@ private final class InboxRefreshResponses: @unchecked Sendable {
         var momentID: String? = InboxRefreshResponses.momentID
         var read = false
     }
+    struct RoomNotice {
+        let id: String
+        let roomID: String
+        var read = false
+    }
     func holdNextResponse(path: String, arrived: @escaping () -> Void) -> DispatchSemaphore {
         let gate = DispatchSemaphore(value: 0)
         lock.lock(); defer { lock.unlock() }
@@ -768,6 +906,18 @@ private final class InboxRefreshResponses: @unchecked Sendable {
         let data = try! JSONSerialization.data(withJSONObject: ["notifications": notices, "unreadCount": values.filter { !$0.read }.count, "nextCursor": NSNull()])
         lock.lock(); defer { lock.unlock() }
         if isPage { notificationPage = data } else { notificationBody = data; notificationStatus = status }
+    }
+    func roomNotifications(_ values: [RoomNotice], isPage: Bool = false) {
+        let notices = values.enumerated().map { offset, value -> [String: Any] in
+            ["id": value.id, "kind": "room_started", "actor": Self.person, "text": "开始语聊了，点击进入房间",
+             "createdAt": Date().timeIntervalSince1970 - Double(offset),
+             "readAt": value.read ? 1_792_260_001 as Any : NSNull(), "roomID": value.roomID,
+             "momentID": NSNull(), "seq": values.count - offset]
+        }
+        let data = try! JSONSerialization.data(withJSONObject: ["notifications": notices, "unreadCount": values.filter { !$0.read }.count,
+                                                                "nextCursor": NSNull(), "retentionDays": 30])
+        lock.lock(); defer { lock.unlock() }
+        if isPage { notificationPage = data } else { notificationBody = data; notificationStatus = 200 }
     }
     var preferenceBodies: [[String: Any]] { lock.lock(); defer { lock.unlock() }; return profileBodies }
     func setHiddenContent(_ value: Bool) { lock.lock(); defer { lock.unlock() }; hideContent = value }

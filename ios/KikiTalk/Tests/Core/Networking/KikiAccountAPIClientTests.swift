@@ -62,6 +62,41 @@ final class KikiAccountAPIClientTests: XCTestCase {
         }
     }
 
+    func testRoomNotificationDestinationUsesTheAccountRouteAndDecodesOlderPushRoutes() async throws {
+        let noticeID = UUID().uuidString.lowercased(), roomID = "lk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let server = KikiAPIMockServer { request in
+            XCTAssertEqual(request.url?.scheme, "https")
+            XCTAssertFalse(request.url?.host?.hasPrefix("voice-") == true)
+            XCTAssertEqual(request.url?.path, "/v1/social/notifications/" + noticeID + "/destination")
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer account-only")
+            XCTAssertNil(request.httpBody)
+            return (200, try jsonData(["type": "notification", "notificationID": noticeID, "roomID": roomID]))
+        }
+        let route = try await server.client.socialNotificationDestination(noticeID, token: "account-only")
+        XCTAssertEqual(route.type, "notification")
+        XCTAssertEqual(route.notificationID, noticeID)
+        XCTAssertEqual(route.roomID, roomID)
+        let older = try JSONDecoder().decode(KikiPushRoute.self, from: jsonData(["type": "notification", "notificationID": noticeID]))
+        XCTAssertNil(older.roomID, "Older servers and ordinary interactions do not carry a room target")
+    }
+
+    func testRoomNotificationDestinationRejectsInvalidIDsAndKeepsDeniedOrCancelledRoutesAsFailures() async throws {
+        let noNetwork = KikiAPIMockServer { _ in XCTFail("Invalid notification IDs must never attach the account bearer"); return (500, Data()) }
+        for invalid in ["", "../rooms", "not-a-uuid", UUID().uuidString + "?all=true"] {
+            do { _ = try await noNetwork.client.socialNotificationDestination(invalid, token: "private"); XCTFail("Invalid destination ID accepted") }
+            catch let error as KikiAPIError { guard case .security = error else { return XCTFail("Expected local UUID validation") } }
+        }
+        for status in [401, 403, 404] {
+            let denied = KikiAPIMockServer { _ in (status, try jsonData(["detail": "这条开播提醒已失效。 "])) }
+            do { _ = try await denied.client.socialNotificationDestination(UUID().uuidString, token: "account-only"); XCTFail("Denied room destination accepted") }
+            catch let error as KikiAPIError { guard case .server(let received, _) = error else { return XCTFail("Expected server denial") }; XCTAssertEqual(received, status) }
+        }
+        let cancelled = KikiAPIMockServer { _ in throw URLError(.cancelled) }
+        do { _ = try await cancelled.client.socialNotificationDestination(UUID().uuidString, token: "account-only"); XCTFail("Cancelled destination accepted") }
+        catch is CancellationError { }
+    }
+
     func testDecodesFirstNicknameRequirementAndCustomAvatar() async throws {
         let server = KikiAPIMockServer { _ in
             var user = userFixture

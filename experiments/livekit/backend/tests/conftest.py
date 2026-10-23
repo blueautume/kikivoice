@@ -10,6 +10,18 @@ from app.main import Settings, create_app
 from app.rtc import LiveKitGateway
 
 
+@pytest.fixture(autouse=True)
+def offline_room_notification_delivery(monkeypatch):
+    from app.room_started import RoomStarted
+
+    async def delivered(sender, payload):
+        if not hasattr(sender, "synthetic_deliveries"):
+            sender.synthetic_deliveries = []
+        sender.synthetic_deliveries.append(dict(payload))
+
+    monkeypatch.setattr(RoomStarted, "post", delivered)
+
+
 class FakeLiveKit:
     def __init__(self, settings):
         self.settings = settings

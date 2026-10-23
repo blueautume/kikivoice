@@ -41,6 +41,9 @@ import Combine
     @Published private(set) var pendingDirectMessages: [String: KikiPendingDirectMessage] = [:]
     @Published private(set) var directMessageAccess: [String: KikiDirectMessageAccess] = [:]
     @Published private(set) var pendingDirectConversation: KikiDirectConversationRequest?
+    @Published private(set) var pendingRoomNotification: KikiRoomNotificationRequest?
+    private var resolvedRoomNotification: (requestID: UUID, room: KikiRoom)?
+    private(set) var socialNavigationRevision = 0
     @Published var directConversationPath: [KikiDirectConversationRoute] = []
     @Published private(set) var directContentRevision = 0
     private var directAccessRevision: [String: Int] = [:]
@@ -77,7 +80,8 @@ import Combine
         // Prefer the conversation the user can actually read in either order.
         let conversation = visibleDirectConversations.last(where: { !$0.hasOverlay }) ?? visibleDirectConversations.last
         return .init(isActive: appIsForeground, conversationPersonID: conversation?.personID,
-                     hasConversationOverlay: conversation?.hasOverlay == true || isPresentingRoom)
+                     hasConversationOverlay: conversation?.hasOverlay == true || isPresentingRoom,
+                     currentRoomID: rtcStorage?.currentSDKRoomID)
     }
 
     func setAppForeground(_ isActive: Bool) {
@@ -714,6 +718,7 @@ import Combine
     }
 
     func startRoom(_ room: KikiRoom) async throws {
+        cancelPendingSocialNavigation()
         let attempt = reservedRoomAttempts.removeValue(forKey: room.id) ?? KikiRoomAttempt(operation: .createRoom, roomID: room.id, identityEpoch: incidents.identityEpoch)
         try await KikiIncidentContext.$attempt.withValue(attempt) {
             let generation = sessionGeneration
@@ -743,10 +748,16 @@ import Combine
     }
 
     func openRoom(_ room: KikiRoom) async throws {
+        cancelPendingSocialNavigation()
+        try await openRoom(room, notificationRequestID: nil)
+    }
+
+    private func openRoom(_ room: KikiRoom, notificationRequestID: UUID?) async throws {
         let attempt = KikiRoomAttempt(operation: .joinRoom, roomID: room.id, identityEpoch: incidents.identityEpoch)
         try await KikiIncidentContext.$attempt.withValue(attempt) {
             do {
                 try requireAccess()
+                if let notificationRequestID { try requireRoomNotificationRequest(notificationRequestID) }
                 let generation = sessionGeneration
                 guard !isJoiningRoom, !needsNickname, let token else { return }
                 isJoiningRoom = true
@@ -755,8 +766,10 @@ import Combine
                 try await ensureSDKSession()
                 let session = try currentVoiceToken()
                 try requireAccess(generation: generation, token: token)
+                if let notificationRequestID { try requireRoomNotificationRequest(notificationRequestID) }
                 try await rtc.presentRoom(roomID: room.id, isLive: room.isLive, isOwner: room.isCreatedByMe)
                 try requireAccess(generation: generation, token: token)
+                if let notificationRequestID { try requireRoomNotificationRequest(notificationRequestID) }
                 attempt.complete()
                 incidents.retry()
                 await syncVisit(room.id, session: session, created: false)
@@ -908,6 +921,7 @@ import Combine
               !person.id.isEmpty, person.id != userID else { return }
         if let pending = pendingDirectConversation, pending.person.id == person.id,
            pending.sessionKey == key, pending.privacyRevision == socialPrivacyRevision { return }
+        cancelPendingSocialNavigation()
         pendingDirectConversation = .init(person: person, sessionKey: key, privacyRevision: socialPrivacyRevision)
     }
 
@@ -917,7 +931,82 @@ import Combine
             && request.privacyRevision == socialPrivacyRevision && permitsBusiness && isAuthenticated && !isEndingSession
     }
 
-    func cancelPendingDirectConversation() { pendingDirectConversation = nil }
+    func cancelPendingDirectConversation() {
+        if pendingDirectConversation != nil { socialNavigationRevision &+= 1 }
+        pendingDirectConversation = nil
+    }
+
+    func cancelPendingSocialNavigation() {
+        socialNavigationRevision &+= 1
+        pendingDirectConversation = nil; pendingRoomNotification = nil
+        resolvedRoomNotification = nil
+    }
+
+    func requestRoomNotification(roomID: String, notificationID: String) {
+        guard permitsBusiness, isAuthenticated, !needsNickname, !isEndingSession, let key = pushSessionKey,
+              KikiRoomNotificationRequest.isValidRoomID(roomID), UUID(uuidString: notificationID) != nil else { return }
+        if let current = pendingRoomNotification, current.roomID == roomID, current.notificationID == notificationID,
+           current.sessionKey == key, current.privacyRevision == socialPrivacyRevision { return }
+        cancelPendingSocialNavigation()
+        pendingRoomNotification = .init(roomID: roomID, notificationID: notificationID,
+                                        sessionKey: key, privacyRevision: socialPrivacyRevision)
+    }
+
+    func isCurrentRoomNotificationRequest(_ id: UUID) -> Bool {
+        guard let request = pendingRoomNotification else { return false }
+        return request.id == id && request.sessionKey == pushSessionKey && request.privacyRevision == socialPrivacyRevision
+            && permitsBusiness && isAuthenticated && !needsNickname && !isEndingSession
+    }
+
+    private func requireRoomNotificationRequest(_ id: UUID) throws {
+        try Task.checkCancellation()
+        guard isCurrentRoomNotificationRequest(id) else { throw CancellationError() }
+    }
+
+    func cancelRoomNotificationRequest(_ id: UUID) {
+        guard pendingRoomNotification?.id == id else { return }
+        pendingRoomNotification = nil
+        resolvedRoomNotification = nil
+    }
+
+    /// Both inbox taps and resolved APNs use the same permission-checked route.
+    /// Resolve again here so a cached row cannot bypass unfollow/block/deletion.
+    func roomForNotificationNavigation(_ id: UUID) async throws -> KikiRoom {
+        try requireRoomNotificationRequest(id)
+        resolvedRoomNotification = nil
+        let request = pendingRoomNotification!
+        let route = try await socialRequest { try await self.api.socialNotificationDestination(request.notificationID, token: $0) }
+        try requireRoomNotificationRequest(id)
+        guard route.type == "notification", route.notificationID == request.notificationID,
+              route.roomID == request.roomID else { throw KikiAPIError.invalidResponse }
+        try await ensureSDKSession()
+        try requireRoomNotificationRequest(id)
+        let session = try currentVoiceToken()
+        let records = try await performAPI { try await voiceAPI.rtcRooms(token: session) }
+        try requireRoomNotificationRequest(id)
+        guard let room = records.first(where: { $0.id == request.roomID }), room.status == "live", !room.isLive else {
+            throw KikiAPIError.server(404, "语聊已结束，或暂时无法进入这个房间。")
+        }
+        resolvedRoomNotification = (id, room)
+        return room
+    }
+
+    @discardableResult
+    func completeRoomNotificationNavigation(_ id: UUID, room: KikiRoom) async throws -> Bool {
+        try requireRoomNotificationRequest(id)
+        guard resolvedRoomNotification?.requestID == id, resolvedRoomNotification?.room == room,
+              room.id == pendingRoomNotification?.roomID, room.status == "live", !room.isLive else { throw KikiAPIError.invalidResponse }
+        guard !isJoiningRoom else { throw CancellationError() }
+        // A currently presented room already has its native controller. Only
+        // minimized rooms need presentRoom's existing same-room resume path.
+        if !(rtcStorage?.isCurrentRoom(room.id) == true && isPresentingRoom) {
+            try await openRoom(room, notificationRequestID: id)
+        }
+        try requireRoomNotificationRequest(id)
+        pendingRoomNotification = nil
+        resolvedRoomNotification = nil
+        return true
+    }
 
     @discardableResult
     func completeDirectConversationNavigation(_ id: UUID) -> Bool {
@@ -1315,8 +1404,14 @@ import Combine
                 notificationForegroundScope = scope
                 let candidates = result.notifications.filter(\.isUnread)
                     .sorted { $0.createdAt < $1.createdAt }
-                    .map { KikiForegroundNotificationCandidate(id: $0.id, kind: .notifications,
-                        preview: .init(title: $0.actor?.name ?? $0.title, message: $0.text)) }
+                    .map { notice in
+                        let kind: KikiForegroundNotificationCandidate.Kind
+                        if notice.kind == "room_started", let roomID = notice.roomID,
+                           KikiRoomNotificationRequest.isValidRoomID(roomID) { kind = .room(roomID: roomID) }
+                        else { kind = .notifications }
+                        return KikiForegroundNotificationCandidate(id: notice.id, kind: kind,
+                            preview: .init(title: notice.actor?.name ?? notice.title, message: notice.text))
+                    }
                 push.receiveForegroundCandidates(candidates, scope: scope, baseline: baseline)
             }
         }
@@ -1730,6 +1825,7 @@ import Combine
         socialPrivacyRevision += 1
         resetMomentNotificationTracking()
         pendingDirectConversation = nil; directConversationPath = []
+        pendingRoomNotification = nil; resolvedRoomNotification = nil; socialNavigationRevision &+= 1
         socialRefreshID = UUID()
         socialMutationRefreshTask?.cancel(); socialMutationRefreshTask = nil
         notificationUnreadGate = KikiUnreadRequestGate(); directUnreadGate = KikiUnreadRequestGate()
@@ -1784,6 +1880,7 @@ import Combine
         socialPrivacyRevision += 1
         resetMomentNotificationTracking()
         pendingDirectConversation = nil; directConversationPath = []
+        pendingRoomNotification = nil; resolvedRoomNotification = nil; socialNavigationRevision &+= 1
         notificationUnreadGate = KikiUnreadRequestGate(); directUnreadGate = KikiUnreadRequestGate()
         notificationForegroundScope = nil; directForegroundScope = nil
         visibleDirectConversations = []

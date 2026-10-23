@@ -29,6 +29,18 @@ struct KikiDirectConversationRequest: Identifiable {
     let privacyRevision: Int
 }
 
+struct KikiRoomNotificationRequest: Identifiable {
+    let id = UUID()
+    let roomID: String
+    let notificationID: String
+    let sessionKey: String
+    let privacyRevision: Int
+
+    static func isValidRoomID(_ value: String) -> Bool {
+        value.range(of: "^lk_[A-Za-z0-9_-]{1,125}$", options: .regularExpression) != nil
+    }
+}
+
 struct KikiPeoplePage: Decodable {
     let people: [KikiPerson]
     let nextCursor: String?
@@ -69,6 +81,7 @@ struct KikiSocialNotification: Decodable, Identifiable, Equatable {
         case "follow": return "新的关注"
         case "mutual_follow": return "你们互相关注了"
         case "room_invite": return "房间邀请"
+        case "room_started": return "开播提醒"
         case "like": return "新的点赞"
         case "comment": return "新的评论"
         default: return "社区通知"

@@ -38,7 +38,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .usersig import generate_user_sig
 from .apple_auth import (AppleAuth, AppleGrantRevoked, CHALLENGE_SECONDS, VALIDATION_SECONDS,
                          NOTIFICATION_SECONDS, REVOCATION_SECONDS)
-from . import gifts, voice_bridge, voice_incidents, admin, ops_auth, activity, social, push
+from . import gifts, voice_bridge, voice_incidents, admin, ops_auth, activity, social, push, room_started
 from .community_content import PublicTextPolicy
 
 LOGGER = logging.getLogger("kikitalk")
@@ -655,6 +655,8 @@ def create_app(settings: Settings | None = None):
 
     @app.middleware("http")
     async def limit_request(request, call_next):
+        if request.url.path.startswith(room_started.PATH) and (request.url.path!=room_started.PATH or request.url.query):
+            return JSONResponse({"detail":"接口不存在"},status_code=404)
         if request.url.path in ("/v1/voice/session", "/v1/voice/incidents"):
             request.state.voice_request_id = str(uuid.uuid4())
         if settings.admin_auth_mode == "passkey" and request.url.path.startswith("/admin/v1"):
@@ -1436,6 +1438,8 @@ def create_app(settings: Settings | None = None):
     app.state.social.ops = app.state.ops if hasattr(app.state,"ops") else None
     app.state.push = push.PushService(settings,database,app.state.social,limits)
     app.state.social.push = app.state.push
+    app.state.room_started = room_started.RoomStartedService(settings,database,app.state.social)
+    app.include_router(room_started.build_router(app))
     app.include_router(push.build_router(app,consented_user=consented_user,authenticated=authenticated))
     app.include_router(social.build_router(app, consented_user=consented_user))
     app.include_router(admin.build_admin_router(app))

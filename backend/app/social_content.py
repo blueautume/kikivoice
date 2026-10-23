@@ -392,7 +392,7 @@ class ContentMethods:
                     actor=self.person(db,user,self.account(db,row["target_public"]),policy) if row["target_public"] else None
                     value={"id":notice["id"],"seq":notice["seq"],"kind":notice["kind"],"actor":actor,
                            "text":notice["text"],"createdAt":notice["created_at"],"readAt":notice["read_at"],
-                           "roomID":None,"momentID":notice["moment_id"]}
+                           "roomID":notice["room_id"],"momentID":notice["moment_id"]}
                     entries.append({"kind":"notification","notification":value})
                 else:
                     target=self.account(db,row["target_public"])

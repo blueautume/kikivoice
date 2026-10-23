@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException
 import httpx
 import jwt
 from pydantic import BaseModel, ConfigDict, Field
+from . import room_started
 
 class TokenRedaction(logging.Filter):
     def filter(self, record):
@@ -232,14 +233,14 @@ class PushService:
     def cancel_pair(self,db,first,second,dm_only=False):
         db.execute("UPDATE push_outbox SET state='cancelled',completed_at=?,lease_id=NULL,lease_until=NULL WHERE state IN ('pending','sending') AND ((recipient_id=? AND actor_id=?) OR (recipient_id=? AND actor_id=?))"+(" AND event_kind='direct_message'" if dm_only else ""),(int(self.clock()),first,second,second,first))
 
-    def enqueue(self,db,recipient,kind,source_id,actor=None):
+    def enqueue(self,db,recipient,kind,source_id,actor=None,*,expires_at=None):
         if not self.settings.apns_enabled:
             return
         now=int(self.clock())
         target=db.execute("SELECT notifications FROM accounts WHERE account_id=?",(recipient,)).fetchone()
         if target is None or not target[0]:return
         for binding in db.execute("SELECT d.* FROM push_devices d JOIN sessions s ON s.token_hash=d.session_hash WHERE d.account_id=? AND d.last_seen>? AND s.expires_at>? AND d.permission IN ('authorized','provisional')",(recipient,now-BINDING_TTL,now)).fetchall():
-            db.execute("INSERT OR IGNORE INTO push_outbox(id,event_id,event_kind,recipient_id,actor_id,binding_id,binding_generation,source_id,created_at,expires_at,state,next_attempt_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(str(uuid.uuid4()),source_id,kind,recipient,actor,binding["id"],binding["generation"],source_id,now,now+PENDING_TTL,"pending",now))
+            db.execute("INSERT OR IGNORE INTO push_outbox(id,event_id,event_kind,recipient_id,actor_id,binding_id,binding_generation,source_id,created_at,expires_at,state,next_attempt_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(str(uuid.uuid4()),source_id,kind,recipient,actor,binding["id"],binding["generation"],source_id,now,min(now+PENDING_TTL,expires_at) if expires_at is not None else now+PENDING_TTL,"pending",now))
 
     def binding(self,db,row):
         return db.execute("SELECT d.*,a.*,s.expires_at,s.token_hash AS source_session_hash FROM push_devices d JOIN sessions s ON s.token_hash=d.session_hash JOIN accounts a ON a.account_id=d.account_id WHERE d.id=? AND d.generation=? AND d.account_id=? AND d.last_seen>? AND s.expires_at>? AND a.notifications=1 AND d.permission IN ('authorized','provisional') AND "+self.social.valid_account_sql(),(row["binding_id"],row["binding_generation"],row["recipient_id"],int(self.clock())-BINDING_TTL,int(self.clock()),*self.social.legal_args)).fetchone()
@@ -263,6 +264,11 @@ class PushService:
         sequence=db.execute("SELECT seq FROM social_notification_sequence WHERE notification_id=?",(notice["id"],)).fetchone()
         if sequence is None or sequence["seq"]<=self.social.notification_state(db,user)["cleared_through_seq"]:return None
         result={"type":"notification","notificationID":notice["id"]}
+        if notice["kind"]=="room_started":
+            event=room_started.delivery_event(db,row)
+            if event is None or actor is None or not room_started.still_following(db,user["account_id"],event):return None
+            result["roomID"]=event["room_id"]
+            return result
         if notice["moment_id"]:
             moment=db.execute("SELECT p.*,a.login_id FROM social_moments p JOIN accounts a ON a.account_id=p.author_id WHERE p.id=? AND "+self.social.valid_account_sql(),(notice["moment_id"],*self.social.legal_args)).fetchone()
             if moment is None or moment["login_id"] in policy.blockedUserIDs:return None
@@ -324,7 +330,38 @@ class PushService:
             row=db.execute("SELECT * FROM push_outbox WHERE id=? AND recipient_id=? AND created_at>? AND state IN ('sending','accepted','pending')",(delivery_id,user["account_id"],int(self.clock())-RECEIPT_TTL)).fetchone()
             result=self.destination(db,user,row,policy) if row else None
             if not result:raise HTTPException(404,"通知已失效或暂不可见")
-            return result
+            event=room_started.delivery_event(db,row)
+        if event is not None:
+            if not self.social.room_started_status(room_started.status_payload(event)):
+                raise HTTPException(404,"房间已结束或暂不可进入")
+            policy=self.social.policy(user)
+            with self.database(self.settings) as db:
+                self.social.check(db,user)
+                row=db.execute("SELECT * FROM push_outbox WHERE id=? AND recipient_id=? AND created_at>? AND state IN ('sending','accepted','pending')",(delivery_id,user["account_id"],int(self.clock())-RECEIPT_TTL)).fetchone()
+                result=self.destination(db,user,row,policy) if row else None
+                if not result:raise HTTPException(404,"通知已失效或暂不可见")
+        return result
+
+    def resolve_notification(self,user,notification_id):
+        notification_id=identifier(notification_id)
+        policy=self.social.policy(user)
+        with self.database(self.settings) as db:
+            self.social.check(db,user)
+            notice=db.execute("SELECT * FROM social_notifications WHERE id=? AND recipient_id=?",(notification_id,user["account_id"])).fetchone()
+            if notice is None:raise HTTPException(404,"通知已失效或暂不可见")
+            source={"recipient_id":user["account_id"],"actor_id":notice["actor_id"],"event_kind":"notification","source_id":notification_id}
+            result=self.destination(db,user,source,policy,must_unread=False)
+            if not result:raise HTTPException(404,"通知已失效或暂不可见")
+            event=room_started.delivery_event(db,source)
+        if event is not None:
+            if not self.social.room_started_status(room_started.status_payload(event)):
+                raise HTTPException(404,"房间已结束或暂不可进入")
+            policy=self.social.policy(user)
+            with self.database(self.settings) as db:
+                self.social.check(db,user)
+                result=self.destination(db,user,source,policy,must_unread=False)
+                if not result:raise HTTPException(404,"通知已失效或暂不可见")
+        return result
 
     def provider_token(self,environment):
         now=int(self.clock())
@@ -382,6 +419,16 @@ class PushService:
             self.finish(row,"pending","provider_auth");return
         except Exception:
             self.finish(row,"pending","transport_error");return
+        with self.database(self.settings) as db:
+            room_event=room_started.delivery_event(db,row)
+        if room_event is not None:
+            try:
+                active=self.social.room_started_status(room_started.status_payload(room_event))
+                if active:policy=self.social.policy(user)
+            except Exception:
+                self.finish(row,"pending","room_status_unavailable");return
+            if not active:
+                self.finish(row,"cancelled");return
         with self.database(self.settings) as db:
             now=int(self.clock())
             purge(db,now)

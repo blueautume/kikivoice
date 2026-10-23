@@ -1692,7 +1692,8 @@ private struct KikiDirectNavigationFixture: View {
         .sheet(item: $tabs.profile, onDismiss: { tabs.profileDismissals += 1 }) { person in
             KikiPublicProfileView(userID: person.id, store: store).kikiRoomSheet()
         }
-        .background(KikiDirectConversationPresenter(store: store, onOpen: { tabs.selectedTab = 2 }))
+        .background(KikiDirectConversationPresenter(store: store, onOpen: { tabs.selectedTab = 2 },
+                                                    onOpenRoom: { tabs.selectedTab = 0 }))
         .environmentObject(store)
     }
 }
@@ -1829,6 +1830,8 @@ private final class TestRTC: KikiRTCServicing {
     var deferLogin = false
     var roomConnectError: Error?
     var lastRoomAttemptID: String?
+    var presentedRoomIDs: [String] = []
+    var onPresentRoom: ((String) -> Void)?
     var loginContinuation: CheckedContinuation<Void, Error>?
     func isCurrentRoom(_ roomID: String) -> Bool { currentSDKRoomID == roomID }
     func requireNoActiveRoom() throws { }
@@ -1851,6 +1854,8 @@ private final class TestRTC: KikiRTCServicing {
         lastRoomAttemptID = KikiIncidentContext.attempt?.id
         KikiIncidentContext.attempt?.enter(.mediaConnect)
         if let roomConnectError { throw roomConnectError }
+        presentedRoomIDs.append(roomID)
+        onPresentRoom?(roomID)
     }
 }
 
@@ -5140,5 +5145,258 @@ private final class InboxDeleteUIFixture {
             body = ["notifications": deleted ? [] : [notice], "unreadCount": deleted ? 0 : 1, "nextCursor": NSNull()]
         }
         return (200, try JSONSerialization.data(withJSONObject: body))
+    }
+}
+
+extension KikiConsentTests {
+    func testRoomNotificationNavigationResolvesTheAccountNoticeThenUsesFreshVoiceRoomAndConsumesOnce() async throws {
+        let fixture = try await RoomNotificationNavigationFixture(defaults: defaults())
+        let store = fixture.store, state = fixture.state
+        let boundary = state.requests.count
+        store.requestRoomNotification(roomID: state.roomID, notificationID: state.notificationID)
+        let request = try XCTUnwrap(store.pendingRoomNotification)
+        store.requestRoomNotification(roomID: state.roomID, notificationID: state.notificationID)
+        XCTAssertEqual(store.pendingRoomNotification?.id, request.id, "Repeated taps share the current intent")
+        let room = try await store.roomForNotificationNavigation(request.id)
+        XCTAssertTrue(fixture.rtc.presentedRoomIDs.isEmpty, "Resolving permission and a fresh room must not present media yet")
+        let reads = Array(state.requests.dropFirst(boundary))
+        XCTAssertEqual(reads.map { $0.url!.path }, [state.destinationPath, "/v1/rooms"])
+        XCTAssertEqual(reads.map(\.httpMethod), ["GET", "GET"])
+        XCTAssertFalse(try XCTUnwrap(reads.first?.url?.host).hasPrefix("voice-"))
+        XCTAssertEqual(reads.first?.value(forHTTPHeaderField: "Authorization"), "Bearer room-notification-session")
+        XCTAssertTrue(try XCTUnwrap(reads.last?.url?.host).hasPrefix("voice-"))
+        XCTAssertEqual(reads.last?.value(forHTTPHeaderField: "Authorization"), "Bearer voice-session")
+        let completed = try await store.completeRoomNotificationNavigation(request.id, room: room)
+        XCTAssertTrue(completed)
+        XCTAssertEqual(fixture.rtc.presentedRoomIDs, [state.roomID])
+        XCTAssertNil(store.pendingRoomNotification)
+        do { _ = try await store.completeRoomNotificationNavigation(request.id, room: room); XCTFail("A consumed intent cannot present twice") }
+        catch is CancellationError { }
+        XCTAssertEqual(fixture.rtc.presentedRoomIDs, [state.roomID])
+        store.requestRoomNotification(roomID: state.roomID, notificationID: state.notificationID)
+        let unresolved = try XCTUnwrap(store.pendingRoomNotification)
+        do { _ = try await store.completeRoomNotificationNavigation(unresolved.id, room: room); XCTFail("A previously resolved room cannot bypass this intent's account authorization and fresh lookup") }
+        catch {
+            guard case KikiAPIError.invalidResponse = error else { XCTFail("Expected rejection of an unresolved intent, received \(error)"); throw error }
+        }
+        XCTAssertEqual(fixture.rtc.presentedRoomIDs, [state.roomID])
+        let beforeInvalid = state.requests.count
+        do { _ = try await fixture.server.client.socialNotificationDestination("not-a-uuid", token: "room-notification-session"); XCTFail("Invalid notification UUID must be rejected locally") }
+        catch { XCTAssertTrue(error is KikiAPIError) }
+        XCTAssertEqual(state.requests.count, beforeInvalid)
+        await store.logout()
+    }
+
+    func testRoomNotificationNavigationRejectsDeniedMismatchedEndedAndLiveStreamDestinationsBeforeRTC() async throws {
+        for failure in RoomNotificationNavigationState.Failure.allCases {
+            let fixture = try await RoomNotificationNavigationFixture(defaults: defaults())
+            fixture.state.setFailure(failure)
+            let state = fixture.state, store = fixture.store
+            let boundary = state.requests.count
+            store.requestRoomNotification(roomID: state.roomID, notificationID: state.notificationID)
+            let request = try XCTUnwrap(store.pendingRoomNotification)
+            do {
+                let room = try await store.roomForNotificationNavigation(request.id)
+                _ = try await store.completeRoomNotificationNavigation(request.id, room: room)
+                XCTFail("An unavailable or unauthorized room must not open: \(failure)")
+            } catch { }
+            XCTAssertTrue(fixture.rtc.presentedRoomIDs.isEmpty)
+            if failure == .denied || failure == .mismatchedNotice {
+                XCTAssertFalse(state.requests.dropFirst(boundary).contains { $0.url?.path == "/v1/rooms" },
+                               "A rejected account destination cannot proceed to voice lookup")
+            }
+            await store.logout()
+        }
+    }
+
+    func testLateRoomNotificationResolutionCannotPresentAfterPrivacySessionOrNewDirectIntent() async throws {
+        for boundary in ["privacy-during-destination", "session-during-rooms", "direct-during-rooms"] {
+            let fixture = try await RoomNotificationNavigationFixture(defaults: defaults())
+            let store = fixture.store, state = fixture.state
+            store.requestRoomNotification(roomID: state.roomID, notificationID: state.notificationID)
+            let request = try XCTUnwrap(store.pendingRoomNotification)
+            let arrived = expectation(description: boundary)
+            let gate = state.holdNext(path: boundary == "privacy-during-destination" ? state.destinationPath : "/v1/rooms") { arrived.fulfill() }
+            defer { gate.signal() }
+            let old = Task {
+                let room = try await store.roomForNotificationNavigation(request.id)
+                return try await store.completeRoomNotificationNavigation(request.id, room: room)
+            }
+            await fulfillment(of: [arrived], timeout: 3)
+            if boundary == "privacy-during-destination" { store.socialPolicyChanged(userID: "kiki_fixture0002", blocked: true) }
+            else if boundary == "session-during-rooms" { await store.logout(); try await store.loginWithApple() }
+            else { store.requestDirectConversation(momentFixturePerson(following: true)) }
+            let replacement = store.pendingDirectConversation?.id
+            gate.signal()
+            if case .success = await old.result { XCTFail("A superseded response must not finish the old room intent") }
+            XCTAssertTrue(fixture.rtc.presentedRoomIDs.isEmpty)
+            XCTAssertNil(store.pendingRoomNotification)
+            XCTAssertEqual(store.pendingDirectConversation?.id, replacement, "A late room response cannot replace the newer direct intent")
+            await store.logout()
+        }
+    }
+
+    func testRoomNotificationReusesPresentedRoomAndResumesMinimizedRoomThroughExistingRTCPath() async throws {
+        let fixture = try await RoomNotificationNavigationFixture(defaults: defaults())
+        let store = fixture.store, state = fixture.state
+        fixture.rtc.currentSDKRoomID = state.roomID
+        fixture.rtc.isPresentingRoom = true
+        store.requestRoomNotification(roomID: state.roomID, notificationID: state.notificationID)
+        let first = try XCTUnwrap(store.pendingRoomNotification)
+        let room = try await store.roomForNotificationNavigation(first.id)
+        let reused = try await store.completeRoomNotificationNavigation(first.id, room: room)
+        XCTAssertTrue(reused)
+        XCTAssertTrue(fixture.rtc.presentedRoomIDs.isEmpty, "The already presented room must retain its native controller")
+        fixture.rtc.isPresentingRoom = false
+        store.requestRoomNotification(roomID: state.roomID, notificationID: state.notificationID)
+        let resumed = try XCTUnwrap(store.pendingRoomNotification)
+        let refreshedRoom = try await store.roomForNotificationNavigation(resumed.id)
+        let completed = try await store.completeRoomNotificationNavigation(resumed.id, room: refreshedRoom)
+        XCTAssertTrue(completed)
+        XCTAssertEqual(fixture.rtc.presentedRoomIDs, [state.roomID], "A minimized same-room intent uses presentRoom's existing resume path once")
+        await store.logout()
+    }
+
+    func testRoomNotificationColdPushResolvesOnlyTheMatchingAccountAndIgnoresInjectedRoomPayload() async throws {
+        let deliveryID = UUID().uuidString
+        let tap = try XCTUnwrap(KikiPushTap(payload: ["deliveryID": deliveryID, "accountTag": "room-fixture-account",
+            "roomID": "lk_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "notificationID": UUID().uuidString, "body": "forged opening"]))
+        XCTAssertEqual(tap, KikiPushTap(payload: ["deliveryID": deliveryID, "accountTag": "room-fixture-account"]))
+        let fixture = try await RoomNotificationNavigationFixture(defaults: defaults(), coldTap: tap)
+        let push = try XCTUnwrap(fixture.push)
+        await push.refresh()
+        try await waitForPush { push.navigation != nil }
+        let navigation = try XCTUnwrap(push.navigation)
+        guard case .room(let roomID, let notificationID) = navigation.content else {
+            XCTFail("The authenticated destination must produce a room navigation intent"); await fixture.store.logout(); return
+        }
+        XCTAssertEqual(roomID, fixture.state.roomID)
+        XCTAssertEqual(notificationID, fixture.state.notificationID)
+        XCTAssertEqual(fixture.store.pendingRoomNotification?.roomID, roomID,
+                       "A cold tap must publish the intent even if a full-screen room prevents Root from redrawing")
+        XCTAssertEqual(fixture.store.pendingRoomNotification?.notificationID, notificationID)
+        XCTAssertTrue(fixture.rtc.presentedRoomIDs.isEmpty, "APNs resolution publishes an intent; the native presenter owns media presentation")
+        let resolves = fixture.state.requests.filter { $0.url?.path.hasPrefix("/v1/push/destinations/") == true }
+        XCTAssertEqual(resolves.count, 1)
+        XCTAssertEqual(resolves.first?.url?.lastPathComponent, deliveryID)
+        XCTAssertEqual(resolves.first?.value(forHTTPHeaderField: "Authorization"), "Bearer room-notification-session")
+        push.receiveTap(try XCTUnwrap(KikiPushTap(payload: ["deliveryID": UUID().uuidString, "accountTag": "another-account",
+                                                         "roomID": fixture.state.roomID])))
+        await push.refresh()
+        XCTAssertEqual(fixture.state.requests.filter { $0.url?.path.hasPrefix("/v1/push/destinations/") == true }.count, 1,
+                       "A different account tag must be rejected before resolving its destination")
+        XCTAssertEqual(fixture.store.pendingRoomNotification?.notificationID, notificationID,
+                       "An unrelated account's push cannot cancel the current account's room intent")
+        await fixture.store.logout()
+    }
+
+    func testRoomNotificationNativePresenterDismissesProfileThenSelectsVoiceTabBeforeRTC() async throws {
+        let fixture = try await RoomNotificationNavigationFixture(defaults: defaults())
+        let store = fixture.store, state = fixture.state
+        try await withMomentWindow { window in
+            let tabs = KikiDirectNavigationFixtureTabs()
+            let root = UIHostingController(rootView: KikiDirectNavigationFixture(store: store, tabs: tabs)
+                .environment(\.scenePhase, .active))
+            window.rootViewController = root; window.makeKeyAndVisible()
+            try await self.waitUntil { nativeMainTabController(in: root) != nil }
+            tabs.profile = self.momentFixturePerson(following: true)
+            try await self.waitUntil { root.presentedViewController != nil }
+            let profile = try XCTUnwrap(root.presentedViewController)
+            try await self.waitUntil { !profile.isBeingPresented && profile.transitionCoordinator == nil }
+            XCTAssertEqual(tabs.selectedTab, 1)
+            var verifiedPresentation = false
+            fixture.rtc.onPresentRoom = { roomID in
+                XCTAssertEqual(roomID, state.roomID)
+                XCTAssertNil(root.presentedViewController, "The actual profile sheet must finish dismissing before RTC opens")
+                XCTAssertEqual(tabs.selectedTab, 0, "The native routing bridge selects the voice tab before opening media")
+                verifiedPresentation = true
+            }
+            defer { fixture.rtc.onPresentRoom = nil }
+            store.requestRoomNotification(roomID: state.roomID, notificationID: state.notificationID)
+            try await self.waitUntil { verifiedPresentation && store.pendingRoomNotification == nil && tabs.profile == nil }
+            XCTAssertEqual(fixture.rtc.presentedRoomIDs, [state.roomID])
+            XCTAssertEqual(tabs.profileDismissals, 1, "Native dismissal must reconcile the real SwiftUI sheet binding once")
+            XCTAssertNil(root.presentedViewController)
+            XCTAssertTrue(store.directConversationPath.isEmpty)
+        }
+        await store.logout()
+    }
+}
+
+@MainActor
+private final class RoomNotificationNavigationFixture {
+    let state = RoomNotificationNavigationState()
+    let server: KikiConcurrentConsentServer
+    let store: KikiAppStore
+    let rtc = TestRTC()
+    let push: KikiPushController?
+
+    init(defaults: UserDefaults, coldTap: KikiPushTap? = nil) async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled), state = self.state
+        server = KikiConcurrentConsentServer { try state.response($0, documents: docs) }
+        let server = self.server, rtc = self.rtc
+        let identity = TestIdentity(values: ["sessionToken": "room-notification-session", "appleSubject": "apple-subject", "appleSessionVersion": "2"])
+        let consent = KikiConsentStore(documents: docs, defaults: defaults, identity: identity, apiProvider: { server.client }, requiresRemoteDocuments: false)
+        try consent.accept()
+        let store = KikiAppStore(consent: consent, identity: identity, apiProvider: { server.client }, voiceAPIProvider: { server.voiceClient },
+                                 rtcProvider: { rtc }, appleProvider: { TestApple() })
+        self.store = store
+        if let coldTap {
+            let system = TestPushSystem(); system.status = .denied
+            let push = KikiPushController(system: system, identity: identity, environment: { nil })
+            push.receiveTap(coldTap)
+            push.attach(store)
+            self.push = push
+        } else { push = nil }
+        await store.start()
+        XCTAssertTrue(store.isAuthenticated)
+    }
+}
+
+private final class RoomNotificationNavigationState: @unchecked Sendable {
+    enum Failure: CaseIterable { case denied, mismatchedNotice, ended, liveStream }
+    let roomID = "lk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    let notificationID = "66666666-6666-4666-8666-666666666666"
+    var destinationPath: String { "/v1/social/notifications/" + notificationID + "/destination" }
+    private let lock = NSLock()
+    private var capturedRequests: [URLRequest] = []
+    private var failure: Failure?
+    private var held: (path: String, gate: DispatchSemaphore, arrived: () -> Void)?
+    var requests: [URLRequest] { lock.lock(); defer { lock.unlock() }; return capturedRequests }
+    func setFailure(_ value: Failure) { lock.lock(); defer { lock.unlock() }; failure = value }
+    func holdNext(path: String, arrived: @escaping () -> Void) -> DispatchSemaphore {
+        let gate = DispatchSemaphore(value: 0)
+        lock.lock(); defer { lock.unlock() }; held = (path, gate, arrived)
+        return gate
+    }
+    func response(_ request: URLRequest, documents: KikiLegalBundle) throws -> (Int, Data) {
+        let path = try XCTUnwrap(request.url?.path)
+        lock.lock()
+        capturedRequests.append(request)
+        let failure = self.failure
+        let waiting = held?.path == path ? held : nil
+        if waiting != nil { held = nil }
+        lock.unlock()
+        waiting?.arrived(); _ = waiting?.gate.wait(timeout: .now() + 5)
+        if path == destinationPath || path.hasPrefix("/v1/push/destinations/") {
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertFalse(request.url!.host!.hasPrefix("voice-"))
+            if failure == .denied { return (403, Data(#"{"detail":"当前账号无法查看这条提醒"}"#.utf8)) }
+            let body: [String: Any] = ["type": "notification", "roomID": roomID,
+                                      "notificationID": failure == .mismatchedNotice ? "77777777-7777-4777-8777-777777777777" : notificationID]
+            return (200, try JSONSerialization.data(withJSONObject: body))
+        }
+        if path == "/v1/rooms", request.httpMethod == "GET" {
+            let room: [String: Any] = ["id": roomID, "title": "开房提醒测试", "host": "小岛", "hostID": "kiki_fixture0002",
+                "category": "生活", "audience": 3, "isLive": failure == .liveStream, "theme": 0, "isCreatedByMe": false,
+                "status": failure == .ended ? "ended" : "live", "createdAt": 1_800_000_000, "hostAvatarIndex": 4]
+            return (200, try JSONSerialization.data(withJSONObject: ["rooms": [room]]))
+        }
+        if path == "/v1/history/" + roomID { return (200, Data(#"{"ok":true}"#.utf8)) }
+        if path == "/v1/push/status" {
+            return (200, Data(#"{"enabled":true,"registered":false,"badgeCount":1,"accountTag":"room-fixture-account"}"#.utf8))
+        }
+        if path.hasPrefix("/v1/push/devices/") { return (200, Data(#"{"ok":true}"#.utf8)) }
+        return try p1VisualResponse(request, documents: documents)
     }
 }

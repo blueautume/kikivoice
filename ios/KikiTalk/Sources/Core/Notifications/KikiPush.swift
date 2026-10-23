@@ -39,6 +39,7 @@ struct KikiPushRoute: Decodable {
     let personID: String?
     let momentID: String?
     let notificationID: String?
+    let roomID: String?
 }
 struct KikiPushTap: Equatable {
     let deliveryID: String
@@ -59,11 +60,13 @@ struct KikiForegroundNotificationContext: Equatable {
     let isActive: Bool
     var conversationPersonID: String? = nil
     var hasConversationOverlay = false
+    var currentRoomID: String? = nil
 
     func isReading(_ candidate: KikiForegroundNotificationCandidate) -> Bool {
         if case .direct(let personID) = candidate.kind {
             return conversationPersonID == personID && !hasConversationOverlay
         }
+        if case .room(let roomID) = candidate.kind { return currentRoomID == roomID }
         return false
     }
 }
@@ -71,7 +74,7 @@ struct KikiForegroundNotificationContext: Equatable {
 /// Candidates come only from accepted authenticated inbox responses. Remote
 /// notification payloads can invalidate those responses, never supply a preview.
 struct KikiForegroundNotificationCandidate: Equatable {
-    enum Kind: Equatable { case direct(personID: String), notifications }
+    enum Kind: Equatable { case direct(personID: String), notifications, room(roomID: String) }
     let id: String
     let kind: Kind
     var preview: KikiForegroundNotificationPreview? = nil
@@ -80,11 +83,13 @@ struct KikiForegroundNotificationCandidate: Equatable {
         switch kind {
         case .direct(let personID): return "direct:\(personID):\(id)"
         case .notifications: return "notification:\(id)"
+        case .room: return "notification:\(id)"
         }
     }
     fileprivate var isValid: Bool {
         guard !id.isEmpty, id.utf8.count <= 256 else { return false }
         if case .direct(let personID) = kind { return !personID.isEmpty && personID.utf8.count <= 160 }
+        if case .room(let roomID) = kind { return KikiRoomNotificationRequest.isValidRoomID(roomID) }
         return true
     }
 }
@@ -148,7 +153,7 @@ struct KikiForegroundNotificationGate {
 }
 
 struct KikiPushNavigation: Identifiable {
-    enum Content { case direct(KikiPerson), moment(KikiMoment) }
+    enum Content { case direct(KikiPerson), moment(KikiMoment), room(roomID: String, notificationID: String) }
     let id = UUID()
     let content: Content
 }
@@ -223,6 +228,7 @@ enum KikiPushEnvironment {
     @Published private(set) var isRegistered = false
     @Published private(set) var message: String?
     @Published private(set) var inboxRequest = UUID()
+    private(set) var inboxNavigationRevision: Int?
     @Published private(set) var pendingInboxRequest: UUID?
     @Published private(set) var inboxPresentationReady = true
     @Published private(set) var foregroundNotice: KikiForegroundNotice?
@@ -248,6 +254,7 @@ enum KikiPushEnvironment {
     private var accountTag: String?
     private var pendingTap: KikiPushTap?
     private var tapAccount: String?
+    private var tapNavigationRevision: Int?
     private var resolving = false
     private var foregroundGate = KikiForegroundNotificationGate()
 
@@ -342,6 +349,10 @@ enum KikiPushEnvironment {
         if store?.pushSessionKey != nil { message = "系统通知注册未完成，可稍后重试。" }
     }
     func receiveTap(_ tap: KikiPushTap) {
+        if let store, store.pushSessionKey != nil {
+            if tap.accountTag == accountTag { store.cancelPendingSocialNavigation() }
+            tapNavigationRevision = store.socialNavigationRevision
+        } else { tapNavigationRevision = nil }
         foregroundNotice = nil
         pendingInboxRequest = nil
         pendingTap = tap; tapAccount = store?.pushSessionKey
@@ -499,31 +510,62 @@ enum KikiPushEnvironment {
         guard (tapAccount == nil || tapAccount == key), tap.accountTag == accountTag else {
             pendingTap = nil; tapAccount = nil; system.clearNotifications(); return
         }
-        resolving = true; defer { resolving = false }
+        if let expected = tapNavigationRevision, expected != store.socialNavigationRevision {
+            pendingTap = nil; tapAccount = nil; return
+        }
+        store.cancelPendingSocialNavigation()
+        resolving = true
+        defer {
+            resolving = false
+            // A newer tap may have refreshed while this lookup was in flight.
+            // Resolve it now rather than waiting for a later foreground poll.
+            if let pendingTap, pendingTap != tap { scheduleRefresh() }
+        }
+        let navigationRevision = store.socialNavigationRevision
+        tapNavigationRevision = navigationRevision
         do {
             let route = try await store.resolvePush(tap.deliveryID)
-            guard valid(id, key: key), pendingTap == tap else { return }
+            guard validTap(id, key: key, tap: tap, navigationRevision: navigationRevision) else { return }
             let content: KikiPushNavigation.Content?
             if route.type == "direct_message", let peer = route.personID { content = .direct(try await store.socialPerson(peer)) }
+            else if route.type == "notification", let roomID = route.roomID {
+                guard KikiRoomNotificationRequest.isValidRoomID(roomID), let notificationID = route.notificationID,
+                      UUID(uuidString: notificationID) != nil else { throw KikiAPIError.invalidResponse }
+                content = .room(roomID: roomID, notificationID: notificationID)
+            }
             else if route.type == "notification", let momentID = route.momentID { content = .moment(try await store.socialMoment(momentID)) }
             else if route.type == "notification" { content = nil }
             else { throw KikiAPIError.invalidResponse }
-            guard valid(id, key: key), pendingTap == tap else { return }
+            guard validTap(id, key: key, tap: tap, navigationRevision: navigationRevision) else { return }
             await store.prepareForMessageNavigation()
-            guard valid(id, key: key), pendingTap == tap else { return }
+            guard validTap(id, key: key, tap: tap, navigationRevision: navigationRevision) else { return }
             pendingTap = nil; tapAccount = nil
+            if let content, case .room(let roomID, let notificationID) = content {
+                // Root can be detached under a full-screen room. Publish the
+                // intent directly to the same subscribed scene presenter.
+                store.requestRoomNotification(roomID: roomID, notificationID: notificationID)
+            }
             commitNavigation(content)
             await store.refreshSocialSummary()
         } catch is CancellationError { }
         catch {
-            guard valid(id, key: key) else { return }
+            guard valid(id, key: key), navigationRevision == store.socialNavigationRevision else { return }
             pendingTap = nil; tapAccount = nil
             store.notify("这条提醒已失效或当前账号无法查看。")
         }
     }
 
+    private func validTap(_ id: UUID, key: String, tap: KikiPushTap, navigationRevision: Int) -> Bool {
+        guard valid(id, key: key), pendingTap == tap else { return false }
+        guard store?.socialNavigationRevision == navigationRevision else {
+            pendingTap = nil; tapAccount = nil; return false
+        }
+        return true
+    }
+
     private func commitNavigation(_ content: KikiPushNavigation.Content?) {
         let request = UUID()
+        inboxNavigationRevision = store?.socialNavigationRevision
         let waitsForDismissal = navigation != nil && content == nil
         inboxPresentationReady = !waitsForDismissal
         pendingInboxRequest = content == nil ? request : nil
@@ -567,7 +609,7 @@ struct KikiPushPreferencesView: View {
             List {
                 Section {
                     Label("消息提醒", systemImage: "bell.badge").font(.title3.weight(.semibold))
-                    Text("收到私信或新的社区互动时，及时提醒你。开启隐藏消息内容后，通知将不显示对方姓名和消息正文。")
+                    Text("收到私信、社区互动或关注的人开播时，及时提醒你。开启隐藏消息内容后，通知将不显示对方姓名和消息正文。")
                         .foregroundStyle(KikiPalette.secondary)
                 }
                 Section("提醒设置") {

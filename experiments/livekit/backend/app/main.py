@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import account_bridge, ops_gateway, safety, incidents, social_policy, experience, seating, room_catalog
+from . import account_bridge, ops_gateway, safety, incidents, social_policy, experience, seating, room_catalog, room_started
 from .rtc import LiveKitGateway
 from .signal_gateway import SignalAuthorization, SignalGateway
 from .chat import RoomChatStore, initialize_chat_database, validate_text
@@ -368,6 +368,7 @@ def initialize_database(path):
     experience.initialize_database(db)
     seating.initialize_database(db)
     room_catalog.initialize_database(db)
+    room_started.initialize_database(db)
     if "signal_disconnected" not in {row["name"] for row in db.execute("PRAGMA table_info(room_members)")}:
         db.execute("ALTER TABLE room_members ADD COLUMN signal_disconnected INTEGER NOT NULL DEFAULT 0")
         db.execute("""UPDATE room_members SET signal_disconnected=1 WHERE active=1 AND EXISTS(
@@ -413,6 +414,7 @@ def create_app(settings=None, gateway=None):
         app.state.safety = safety.SafetyStore.configured(app.state.db, Limiter(), settings.safety_terms_path)
         app.state.incidents = incidents.IncidentStore(app.state.db)
         app.state.rtc = gateway or LiveKitGateway(settings)
+        app.state.room_started = room_started.RoomStarted(app, settings, lock, valid_session)
         app.state.admin = AdminService(settings, app.state.db, app.state.rtc, observability,
                                        capacity, lock, Limiter(), client_ip)
         app.state.admin.safety = app.state.safety
@@ -420,6 +422,7 @@ def create_app(settings=None, gateway=None):
         maintenance = None
         diagnostics_maintenance = None
         catalog_monitor = None
+        notification_maintenance = None
         try:
             # A crash between database registration and CreateRoom must not leave joinable ghosts.
             async with lock:
@@ -439,14 +442,15 @@ def create_app(settings=None, gateway=None):
             maintenance = asyncio.create_task(maintain_rooms())
             diagnostics_maintenance = asyncio.create_task(maintain_observability())
             catalog_monitor = asyncio.create_task(app.state.room_catalog.monitor())
+            notification_maintenance = asyncio.create_task(app.state.room_started.maintain())
             app.state.admin.start()
             yield
         finally:
             await app.state.admin.close()
-            for task in (maintenance, diagnostics_maintenance, catalog_monitor):
+            for task in (maintenance, diagnostics_maintenance, catalog_monitor, notification_maintenance):
                 if task:
                     task.cancel()
-            for task in (maintenance, diagnostics_maintenance, catalog_monitor):
+            for task in (maintenance, diagnostics_maintenance, catalog_monitor, notification_maintenance):
                 if task:
                     with suppress(asyncio.CancelledError):
                         await task
@@ -482,6 +486,8 @@ def create_app(settings=None, gateway=None):
             if request.url.path.startswith("/internal/v1/account/incident") and request.url.path!="/internal/v1/account/incident":
                 raise HTTPException(404,"接口不存在")
             if request.url.path.startswith("/internal/v1/account/social-") and request.url.path not in social_policy.PATHS:
+                raise HTTPException(404,"接口不存在")
+            if request.url.path.startswith(room_started.STATUS_PATH) and request.url.path != room_started.STATUS_PATH:
                 raise HTTPException(404,"接口不存在")
             length = request.headers.get("content-length")
             if length and (not length.isdigit() or int(length) > MAX_BODY):
@@ -817,6 +823,12 @@ def create_app(settings=None, gateway=None):
             known_presence[room_id] = (time.monotonic(), len(result))
             with app.state.db:
                 app.state.safety.observe(room_id, result)
+            try:
+                app.state.room_started.observe_locked(get_room(room_id), result, connections)
+            except Exception as error:
+                # Reminder persistence must not break the room's media/state
+                # path. Its atomic insert can be retried on the next sample.
+                LOGGER.warning("Room start notification awaits persistence: %s",type(error).__name__)
             if presence is not None:
                 presence[room_id] = (result, presence_epochs[room_id])
             return result
@@ -1103,6 +1115,7 @@ def create_app(settings=None, gateway=None):
                 continue
             with db:
                 db.execute("UPDATE users SET name='已注销',bio='',avatar_index=0,notifications=0,avatar_url=NULL,deleted=1 WHERE id=?", (user_id,))
+                room_started.erase(db,user_id)
                 app.state.safety.clear_user(user_id)
                 app.state.experience.clear_user(user_id, deleted=True)
                 db.execute("DELETE FROM safety_restrictions WHERE user_id=?", (user_id,))
@@ -1373,6 +1386,7 @@ def create_app(settings=None, gateway=None):
                 if deleted:
                     db.execute("INSERT OR IGNORE INTO deletion_requests(user_id,requested_at) VALUES(?,?)", (row["user_id"], now))
                 if deleted or erase_withdrawal:
+                    room_started.erase(db,row["user_id"])
                     app.state.chat.clear_sender(row["user_id"])
                     app.state.experience.clear_user(row["user_id"], deleted=deleted)
                     social = db.execute("SELECT consent_epoch FROM account_social_privacy WHERE user_id=?",(row["user_id"],)).fetchone()
@@ -2022,6 +2036,7 @@ def create_app(settings=None, gateway=None):
     app.include_router(ops_gateway.build_router(app, settings, lock))
     app.include_router(account_bridge.build_router(app, settings, lock, user_json, sdk_json, revoke_account_authorizations))
     app.include_router(social_policy.build_router(app, settings, lock, valid_session))
+    app.include_router(room_started.build_router(app, settings, lock))
     app.include_router(incidents.build_router(app, settings, lock, authenticate))
     app.include_router(experience.build_router(app, lock, authenticate, chat_member,
                                              participant_ids, member_row, valid_session))

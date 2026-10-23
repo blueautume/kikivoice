@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .voice_bridge import signed_headers
 from .social_content import (ContentMethods, initialize_content, purge_content, erase_content, install_content_routes)
 from .community_content import PublicTextPolicy
+from . import room_started
 
 DAYS = 30 * 86400
 POLICY_PATH = "/internal/v1/account/social-policy"
@@ -164,6 +165,7 @@ def initialize(db):
         db.execute("ALTER TABLE social_notifications ADD COLUMN moment_id TEXT")
     db.execute("INSERT INTO social_notification_sequence(notification_id) SELECT n.id FROM social_notifications n WHERE NOT EXISTS(SELECT 1 FROM social_notification_sequence s WHERE s.notification_id=n.id) ORDER BY n.created_at,n.id")
     initialize_content(db)
+    room_started.initialize(db)
     purge(db)
 
 
@@ -177,12 +179,14 @@ def purge(db, now=None):
     db.execute("DELETE FROM social_actions WHERE created_at<=?", (now-90*86400,))
     db.execute("DELETE FROM social_restrictions WHERE muted_until<=?", (now,))
     purge_content(db,now)
+    room_started.purge(db,now)
 
 
 def erase(db, account_id):
     """Withdrawal clears social data even though the Apple account survives."""
     from . import push
     push.erase(db,account_id)
+    room_started.erase(db,account_id)
     for table, where in (("social_follows", "follower_id=? OR followed_id=?"),
                          ("social_notifications", "recipient_id=? OR actor_id=?"),
                          ("social_reports", "reporter_id=? OR target_id=?")):
@@ -288,6 +292,16 @@ class SocialService(ContentMethods):
             return policy
         except (ValueError, TypeError):
             raise HTTPException(503, "隐私设置暂时无法同步，请稍后重试") from None
+
+    def room_started_status(self, payload):
+        result=self.privacy_post(room_started.STATUS_PATH,payload)
+        expected={"schemaVersion":1,**payload}
+        if (set(result)!={*expected,"active"} or type(result.get("schemaVersion")) is not int
+                or type(result.get("hostConsentEpoch")) is not int
+                or any(result.get(key)!=value for key,value in expected.items())
+                or type(result.get("active")) is not bool):
+            raise HTTPException(503,"房间状态暂时无法核验，请稍后重试")
+        return result["active"]
 
     def cursor(self, user, scope, key=None, value=None):
         if key is not None:
@@ -421,13 +435,13 @@ class SocialService(ContentMethods):
             raise HTTPException(429, "操作较多，请稍后再试", headers={"Retry-After":"3600"})
         db.execute("INSERT INTO social_rate_events VALUES(?,?,?,?)", (str(uuid.uuid4()),user["account_id"],kind,now))
 
-    def notice(self, db, recipient, kind, text, actor=None, dedupe=None,moment_id=None):
+    def notice(self, db, recipient, kind, text, actor=None, dedupe=None,moment_id=None,*,room_id=None,push_expires_at=None):
         now = int(time.time())
         notice_id = str(uuid.uuid4())
-        inserted = db.execute("INSERT OR IGNORE INTO social_notifications(id,recipient_id,actor_id,kind,text,created_at,dedupe_key,moment_id) VALUES(?,?,?,?,?,?,?,?)",
-                   (notice_id,recipient,actor,kind,text,now,dedupe,moment_id))
+        inserted = db.execute("INSERT OR IGNORE INTO social_notifications(id,recipient_id,actor_id,kind,text,created_at,dedupe_key,moment_id,room_id) VALUES(?,?,?,?,?,?,?,?,?)",
+                   (notice_id,recipient,actor,kind,text,now,dedupe,moment_id,room_id))
         if inserted.rowcount and hasattr(self,"push"):
-            self.push.enqueue(db,recipient,"notification",notice_id,actor)
+            self.push.enqueue(db,recipient,"notification",notice_id,actor,expires_at=push_expires_at)
 
     def follow(self, user, target_id, mutation, enabled):
         policy = self.policy(user,[target_id] if re.fullmatch(ID_PATTERN,target_id) else [])
@@ -525,7 +539,7 @@ class SocialService(ContentMethods):
                         continue
                     actor = self.person(db,user,account,policy)
                 notices.append({"id":row["id"],"seq":row["seq"],"kind":row["kind"],"actor":actor,"text":row["text"],"createdAt":row["created_at"],
-                                "readAt":row["read_at"],"roomID":None,"momentID":row["moment_id"]})
+                                "readAt":row["read_at"],"roomID":row["room_id"],"momentID":row["moment_id"]})
             unread=self.unread(db,user,policy)
             state=self.notification_inbox_state(db,user,policy)
         return {"notifications":notices,"unreadCount":unread,"nextCursor":self.cursor(user,"notifications",key=[candidates[-1]["created_at"],candidates[-1]["id"]]) if len(rows)>limit and candidates else None,"retentionDays":30,"inboxState":state}
@@ -681,6 +695,10 @@ def build_router(app, *, consented_user):
         if app.state.settings.rate_limit_enabled:
             app.state.social.limits.check(("social-read",user["account_id"]),120,60)
         return user
+
+    @router.get("/notifications/{notification_id}/destination")
+    def notification_destination(notification_id:str,user=Depends(social_user)):
+        return app.state.push.resolve_notification(user,notification_id)
 
     @router.get("/people")
     def people(query:str=Query(default="",max_length=80),limit:int=Query(default=20,ge=1,le=50),cursor:str|None=Query(default=None,max_length=1024),user=Depends(social_user)):

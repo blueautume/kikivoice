@@ -181,6 +181,10 @@ final class KikiAccountAPIClient: @unchecked Sendable {
         guard UUID(uuidString: deliveryID) != nil else { throw KikiAPIError.invalidResponse }
         return try await request("/v1/push/destinations/\(deliveryID)", token: token)
     }
+    func socialNotificationDestination(_ notificationID: String, token: String) async throws -> KikiPushRoute {
+        try validateSocialUUID(notificationID)
+        return try await request("/v1/social/notifications/\(notificationID)/destination", token: token)
+    }
 
     func invalidateRevokedAppleSession(token: String) async throws {
         let _: Success = try await request("/v1/auth/apple/revoked", method: "POST", token: token)

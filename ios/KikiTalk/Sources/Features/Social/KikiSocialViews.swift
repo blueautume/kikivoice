@@ -681,7 +681,9 @@ struct KikiMessagesView: View {
             do {
                 if notice.isUnread { try await store.readNotifications(ids: [notice.id]) }
                 guard canNavigate(id, privacy: privacy, account: account) else { return }
-                if let momentID = notice.momentID {
+                if notice.kind == "room_started", let roomID = notice.roomID {
+                    store.requestRoomNotification(roomID: roomID, notificationID: notice.id)
+                } else if let momentID = notice.momentID {
                     let moment = try await store.socialMoment(momentID)
                     guard canNavigate(id, privacy: privacy, account: account) else { return }; selectedMoment = moment
                 } else if let actor = notice.actor { selectedPerson = .init(id: actor.id) }
