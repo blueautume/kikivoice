@@ -1,41 +1,10 @@
 import SwiftUI
 
+/// The primary discovery action retains its capsule and brief highlight.
 struct KikiCreateRoomButton: View {
-    static let capsuleHeight = KikiDiscoveryActionButton.capsuleHeight
-    static let touchHeight = KikiDiscoveryActionButton.touchHeight
-    static let symbolSize: CGFloat = 20
-    var widthToHeightRatio: CGFloat = 1.6
-    var isVisible: Bool = true
-    let action: () -> Void
-
-    var body: some View {
-        KikiDiscoveryActionButton(systemImage: "mic.fill", symbolSize: Self.symbolSize,
-                                  widthToHeightRatio: widthToHeightRatio, isVisible: isVisible, action: action)
-            .accessibilityLabel("创建语聊房")
-            .accessibilityHint("设置房间名称并开始语聊")
-            .accessibilityIdentifier("createRoom")
-    }
-}
-
-struct KikiFindPeopleButton: View {
-    var isVisible: Bool = true
-    let action: () -> Void
-
-    var body: some View {
-        KikiDiscoveryActionButton(systemImage: "person.badge.plus", symbolSize: 22,
-                                  isVisible: isVisible, action: action)
-            .accessibilityLabel("找朋友")
-            .accessibilityIdentifier("social.people")
-    }
-}
-
-/// Both discovery actions share their visual dimensions, touch area and brief
-/// highlight. There is no persistent timer or idle animation loop.
-private struct KikiDiscoveryActionButton: View {
     static let capsuleHeight: CGFloat = 36
     static let touchHeight: CGFloat = 44
-    let systemImage: String
-    let symbolSize: CGFloat
+    static let symbolSize: CGFloat = 20
     var widthToHeightRatio: CGFloat = 1.6
     var isVisible: Bool = true
     let action: () -> Void
@@ -48,8 +17,8 @@ private struct KikiDiscoveryActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: symbolSize, weight: .semibold))
+            Image(systemName: "mic.fill")
+                .font(.system(size: Self.symbolSize, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: Self.capsuleHeight * widthToHeightRatio, height: Self.capsuleHeight)
                 .background {
@@ -75,6 +44,9 @@ private struct KikiDiscoveryActionButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("创建语聊房")
+        .accessibilityHint("设置房间名称并开始语聊")
+        .accessibilityIdentifier("createRoom")
         .task(id: animatesHighlight) {
             resetHighlight()
             guard animatesHighlight else { return }
@@ -97,5 +69,23 @@ private struct KikiDiscoveryActionButton: View {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) { highlight = 0 }
+    }
+}
+
+/// A secondary action stays visually quiet, with a full native touch target.
+struct KikiFindPeopleButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "person.badge.plus")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(KikiPalette.secondary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("找朋友")
+        .accessibilityIdentifier("social.people")
     }
 }

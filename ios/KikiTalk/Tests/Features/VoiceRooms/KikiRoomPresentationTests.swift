@@ -122,26 +122,27 @@ final class KikiRoomPresentationTests: XCTestCase {
         }
     }
 
-    func testDiscoveryActionCapsulesKeepMatchingNativeTouchTargetsAtAnyTextSize() {
+    func testDiscoverySecondaryActionKeeps44PointTouchTargetBesideCreateCapsuleAtAnyTextSize() {
         for textSize in [DynamicTypeSize.large, .accessibility3] {
             let host = UIHostingController(rootView: KikiCreateRoomButton(isVisible: false, action: {})
                 .dynamicTypeSize(textSize))
             let size = host.sizeThatFits(in: CGSize(width: 375, height: 812))
-            let people = UIHostingController(rootView: KikiFindPeopleButton(isVisible: false, action: {})
+            let people = UIHostingController(rootView: KikiFindPeopleButton(action: {})
                 .dynamicTypeSize(textSize)).sizeThatFits(in: CGSize(width: 375, height: 812))
             XCTAssertGreaterThanOrEqual(size.height, 44)
             XCTAssertEqual(size.height, KikiCreateRoomButton.touchHeight, accuracy: 0.01)
             XCTAssertEqual(size.width, KikiCreateRoomButton.capsuleHeight * 1.6, accuracy: 0.5,
                            "Hosting may round the capsule to a logical pixel")
-            XCTAssertEqual(people.width, size.width, accuracy: 0.5)
-            XCTAssertEqual(people.height, size.height, accuracy: 0.01)
+            XCTAssertEqual(people.width, 44, accuracy: 0.5)
+            XCTAssertEqual(people.height, 44, accuracy: 0.01)
+            XCTAssertLessThan(people.width, size.width, "The secondary icon must remain narrower than the create-room capsule")
             XCTAssertLessThan(KikiCreateRoomButton.capsuleHeight, size.height,
                               "A smaller capsule keeps the toolbar light without shrinking its native touch target")
             XCTAssertLessThan(size.width, 90, "The microphone action must leave space for the title and other toolbar controls")
         }
     }
 
-    func testDiscoverToolbarKeepsSearchAndBothCapsulesOnOneRowAcrossViewportsAndTextSizes() async throws {
+    func testDiscoverToolbarKeepsSearchSecondaryActionAndCreateCapsuleOnOneRowAcrossViewportsAndTextSizes() async throws {
         let scene = try foregroundScene()
         let previous = scene.windows.first { $0.isKeyWindow }
         let window = UIWindow(windowScene: scene)
@@ -182,8 +183,9 @@ final class KikiRoomPresentationTests: XCTestCase {
             XCTAssertEqual(people.minX - search.maxX, 8, accuracy: 0.5, name)
             XCTAssertEqual(create.minX - people.maxX, 8, accuracy: 0.5, name)
             XCTAssertEqual(create.maxX, row.maxX, accuracy: 0.5, name)
-            XCTAssertEqual(people.width, create.width, accuracy: 0.5, name)
-            XCTAssertEqual(people.width, KikiCreateRoomButton.capsuleHeight * 1.6, accuracy: 0.5, name)
+            XCTAssertEqual(people.width, 44, accuracy: 0.5, name)
+            XCTAssertEqual(create.width, KikiCreateRoomButton.capsuleHeight * 1.6, accuracy: 0.5, name)
+            XCTAssertLessThan(people.width, create.width, name)
             for action in [people, create] {
                 XCTAssertEqual(action.height, 44, accuracy: 0.5, name)
                 XCTAssertEqual(action.midY, search.midY, accuracy: 0.5, name)
@@ -774,7 +776,7 @@ private struct KikiDiscoverToolbarFixture: View {
             KikiDiscoverSearchField(query: $query, isSearching: $isSearching, onSubmit: {})
                 .background(KikiDiscoverToolbarFixtureProbe(key: "search", state: state))
         } people: {
-            KikiFindPeopleButton(isVisible: false) { state.actions += 1 }
+            KikiFindPeopleButton { state.actions += 1 }
                 .background(KikiDiscoverToolbarFixtureProbe(key: "people", state: state))
         } create: {
             KikiCreateRoomButton(isVisible: false) { state.actions += 1 }

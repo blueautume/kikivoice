@@ -53,7 +53,7 @@ struct KikiDiscoverView: View {
             KikiDiscoverToolbar {
                 KikiDiscoverSearchField(query: $query, isSearching: $isSearching, onSubmit: endSearch)
             } people: {
-                KikiFindPeopleButton(isVisible: isActive) { endSearch(); showsPeople = true }
+                KikiFindPeopleButton { endSearch(); showsPeople = true }
             } create: {
                 KikiCreateRoomButton(isVisible: isActive, action: presentCreate)
                     .disabled(store.isJoiningRoom)
