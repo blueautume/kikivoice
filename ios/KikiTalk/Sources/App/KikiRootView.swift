@@ -12,12 +12,19 @@ struct KikiRootView: View {
 
     var body: some View {
         Group {
-            if consent.isWithdrawalPending { KikiWithdrawalPendingView() }
-            else if consent.hasCurrentConsent {
+            switch consent.presentation {
+            case .withdrawing:
+                KikiWithdrawalPendingView()
+            case .checking:
+                KikiStartupView(errorMessage: consent.documentError, showsOfflineDocuments: true) {
+                    Task { await consent.refreshDocuments() }
+                }
+            case .accepted:
                 if startupPermissions.isReady(for: consent) { KikiAuthorizedRootView(consent: consent) }
                 else { KikiStartupPermissionsView(permissions: startupPermissions) }
+            case .acceptanceRequired:
+                KikiConsentGateView()
             }
-            else { KikiConsentGateView() }
         }
         .environmentObject(consent)
         .foregroundStyle(KikiPalette.text).tint(KikiPalette.lavender)
@@ -49,58 +56,11 @@ struct KikiStartupPermissionsView: View {
     @EnvironmentObject private var consent: KikiConsentStore
 
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView {
-                VStack(spacing: 28) {
-                    Spacer(minLength: 48)
-                    Image("KikiLaunchMark").resizable().scaledToFit()
-                        .frame(width: 84, height: 84).accessibilityHidden(true)
-                    VStack(spacing: 14) {
-                        Text(permissions.stage == .failed ? "暂时无法连接" : "准备开始")
-                            .font(.title.weight(.semibold)).foregroundStyle(KikiPalette.text)
-                        Text(statusText).font(.subheadline).lineSpacing(5)
-                            .foregroundStyle(KikiPalette.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    if permissions.stage == .failed {
-                        VStack(spacing: 14) {
-                            Button("重试连接") { Task { await permissions.retry(consent: consent) } }
-                                .font(.body.weight(.semibold)).foregroundStyle(.white)
-                                .frame(maxWidth: .infinity).padding(.vertical, 17)
-                                .background(KikiPalette.action, in: RoundedRectangle(cornerRadius: 16))
-                                .accessibilityIdentifier("startup.retryNetwork")
-                            Link("打开系统设置", destination: URL(string: UIApplication.openSettingsURLString)!)
-                                .font(.footnote).foregroundStyle(KikiPalette.lavender)
-                        }
-                    } else {
-                        ProgressView().tint(KikiPalette.lavender)
-                            .accessibilityLabel(statusText)
-                    }
-                    Spacer(minLength: 48)
-                }
-                .frame(maxWidth: 420)
-                .padding(.horizontal, 28).padding(.vertical, 32)
-                .frame(minHeight: geometry.size.height)
-                .frame(maxWidth: .infinity)
-            }
+        KikiStartupView(errorMessage: permissions.stage == .failed ? permissions.errorMessage : nil,
+                        retryIdentifier: "startup.retryNetwork") {
+            Task { await permissions.retry(consent: consent) }
         }
-        .background(KikiPalette.background.ignoresSafeArea())
         .accessibilityIdentifier("startup.permissions")
-    }
-
-    private var statusText: String {
-        switch permissions.stage {
-        case .failed:
-            return permissions.errorMessage ?? "请允许 Kiki 使用无线数据，或连接可用网络后重试。"
-        case .waitingForForeground:
-            return "请完成系统确认，返回后会继续。"
-        case .requestingNotifications:
-            return "允许通知，及时收到新的消息。\n暂不允许也可以继续登录。"
-        case .idle, .checkingNetwork:
-            return "正在检查网络连接。\n如系统询问网络访问，请选择允许。"
-        case .ready:
-            return "准备就绪"
-        }
     }
 }
 
@@ -128,13 +88,6 @@ private struct KikiAuthorizedRootView: View {
         return foregroundSessionKey
     }
 
-    private var pushedMoment: Binding<KikiPushNavigation?> {
-        Binding(get: {
-            guard let route = push.navigation, case .moment = route.content else { return nil }
-            return route
-        }, set: { push.navigation = $0 })
-    }
-
     var body: some View {
         ZStack {
             KikiPalette.background.ignoresSafeArea()
@@ -147,8 +100,6 @@ private struct KikiAuthorizedRootView: View {
                              isRoomSearchFocused: selectedTab == 0 && isRoomSearchFocused,
                              hidesTabBar: selectedTab == 2 && !store.directConversationPath.isEmpty) {
                     KikiDiscoverView(isActive: selectedTab == 0, onSearchFocusChange: { isRoomSearchFocused = $0 })
-                } moments: {
-                    KikiMomentsView(store: store, isActive: selectedTab == 1)
                 } messages: {
                     KikiMessagesView(store: store, isActive: selectedTab == 2 && push.navigation == nil)
                 } profile: {
@@ -187,12 +138,6 @@ private struct KikiAuthorizedRootView: View {
         .onChange(of: selectedTab) { _ in
             isRoomSearchFocused = false
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        }
-        .sheet(item: pushedMoment, onDismiss: { push.navigationDidDismiss() }) { route in
-            switch route.content {
-            case .moment(let moment): KikiMomentCommentsView(moment: moment, store: store)
-            case .direct, .room: EmptyView()
-            }
         }
         .background(KikiDirectConversationPresenter(store: store, onOpen: { selectedTab = 2 }, onOpenRoom: { selectedTab = 0 })
             .allowsHitTesting(false).accessibilityHidden(true))
@@ -425,15 +370,16 @@ struct KikiDirectConversationPresenter: UIViewControllerRepresentable {
 
 /// Let the system own the tab bar's glass, selected shape, hit targets and
 /// safe-area insets, using the same native component as Apple's apps.
-struct KikiMainTabs<Rooms: View, Moments: View, Messages: View, Profile: View>: View {
+struct KikiMainTabs<Rooms: View, Messages: View, Profile: View>: View {
     @Binding var selection: Int
     let unreadCount: Int
     var isRoomSearchFocused = false
     var hidesTabBar = false
     @ViewBuilder var rooms: () -> Rooms
-    @ViewBuilder var moments: () -> Moments
     @ViewBuilder var messages: () -> Messages
     @ViewBuilder var profile: () -> Profile
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var searchKeyboardVisible = false
 
     private var barVisibility: Visibility {
@@ -468,22 +414,51 @@ struct KikiMainTabs<Rooms: View, Moments: View, Messages: View, Profile: View>: 
             nativePage(rooms())
                 .tabItem { Label("语聊", systemImage: "waveform").accessibilityIdentifier("discoverTab") }
                 .tag(0)
-            nativePage(moments())
-                .tabItem { Label("动态", systemImage: "square.text.square").accessibilityIdentifier("momentsTab") }
-                .tag(1)
             nativePage(messages())
                 .tabItem {
-                    Label("消息", systemImage: "bubble.left.and.bubble.right")
+                    Label {
+                        Text("消息")
+                    } icon: {
+                        Image(uiImage: messageTabImage).renderingMode(.original)
+                    }
                         .accessibilityIdentifier("messagesTab")
                         .accessibilityValue(unreadCount > 0 ? "\(unreadCount) 条未读消息" : "")
                 }
-                .badge(unreadCount > 0 ? "" : nil as String?)
+                .badge(textOnlyMessageBadge)
                 .tag(2)
             nativePage(profile())
                 .tabItem { Label("我", systemImage: "person.crop.circle").accessibilityIdentifier("profileTab") }
                 .tag(3)
         }
         .tint(KikiPalette.purple)
+    }
+
+    private var textOnlyMessageBadge: String? {
+        // iPad's regular-width top tabs hide icons, including the composed dot.
+        if #available(iOS 18.0, *), UIDevice.current.userInterfaceIdiom == .pad,
+           horizontalSizeClass == .regular, unreadCount > 0 { return "" }
+        return nil
+    }
+
+    private var messageTabImage: UIImage {
+        // The system badge has a fixed minimum size. Compose a smaller dot into
+        // the icon while keeping the native tab's layout and touch target.
+        let size = CGSize(width: 34, height: 28)
+        let traits = UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light)
+        let color = selection == 2 ? UIColor(KikiPalette.purple) : UIColor.label
+        let symbol = UIImage(systemName: "bubble.left.and.bubble.right.fill",
+                             withConfiguration: UIImage.SymbolConfiguration(pointSize: 23, weight: .regular))?
+            .withTintColor(color.resolvedColor(with: traits), renderingMode: .alwaysOriginal)
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            if let symbol {
+                symbol.draw(at: CGPoint(x: (size.width - symbol.size.width) / 2,
+                                        y: (size.height - symbol.size.height) / 2))
+            }
+            if unreadCount > 0 {
+                UIColor.systemRed.resolvedColor(with: traits).setFill()
+                UIBezierPath(ovalIn: CGRect(x: size.width - 6, y: 0, width: 6, height: 6)).fill()
+            }
+        }.withRenderingMode(.alwaysOriginal)
     }
 
     private func nativePage<Page: View>(_ page: Page) -> some View {
@@ -541,38 +516,65 @@ extension View {
 }
 
 @available(iOS 16.0, *)
-private struct KikiStartupView: View {
+struct KikiStartupView: View {
+    var errorMessage: String?
+    var retryIdentifier = "retryLegalDocuments"
+    var showsOfflineDocuments = false
+    var retryAction: (() -> Void)?
+    @State private var isReadingOfflineDocuments = false
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 Color("KikiLaunchBackground").ignoresSafeArea()
 
-                // Match the native launch screen while the account restores.
-                VStack(spacing: 0) {
-                    Image("KikiLaunchMark")
-                        .resizable().scaledToFit().frame(width: 128, height: 128)
-                        .accessibilityHidden(true)
-                    Text("Kiki语聊")
-                        .font(.system(size: 28, weight: .semibold))
-                        .foregroundStyle(KikiPalette.text).frame(height: 34)
-                        .padding(.top, 24)
-                    Text("听见，同频的你")
-                        .font(.system(size: 13))
-                        .foregroundStyle(KikiPalette.secondary).frame(height: 16)
-                        .padding(.top, 10)
+                if let errorMessage {
+                    ScrollView {
+                        VStack(spacing: 40) {
+                            brand.padding(.top, max(32, geometry.size.height / 2 - 121))
+                            VStack(spacing: 16) {
+                                Text(errorMessage).font(.footnote).lineSpacing(4)
+                                    .foregroundStyle(KikiPalette.secondary).multilineTextAlignment(.center)
+                                Button("重试连接") { retryAction?() }
+                                    .font(.body.weight(.semibold)).foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 16)
+                                    .background(KikiPalette.action, in: RoundedRectangle(cornerRadius: 16))
+                                    .accessibilityIdentifier(retryIdentifier)
+                                Link("打开系统设置", destination: URL(string: UIApplication.openSettingsURLString)!)
+                                    .font(.footnote).foregroundStyle(KikiPalette.lavender)
+                                if showsOfflineDocuments {
+                                    Button("离线阅读已保存的协议") { isReadingOfflineDocuments = true }
+                                        .font(.footnote).foregroundStyle(KikiPalette.lavender)
+                                }
+                            }.frame(maxWidth: 380)
+                        }.padding(.horizontal, 24).padding(.bottom, 24).frame(maxWidth: .infinity)
+                    }
+                } else {
+                    // Keep the native launch appearance throughout silent checks.
+                    brand.position(x: geometry.size.width / 2, y: geometry.size.height / 2 - 28)
                 }
-                .position(x: geometry.size.width / 2, y: geometry.size.height / 2 - 28)
-
-                ProgressView()
-                    .tint(KikiPalette.lavender)
-                    .accessibilityLabel("正在恢复账号")
-                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 120)
-
-                Text("让每一种声音，都有回响")
-                    .font(.system(size: 11)).foregroundStyle(KikiPalette.muted)
-                    .position(x: geometry.size.width / 2, y: geometry.size.height - 24)
             }
-            .dynamicTypeSize(.medium)
         }
+        .accessibilityIdentifier("startup.brand")
+        .sheet(isPresented: $isReadingOfflineDocuments) {
+            NavigationStack {
+                ScrollView { KikiLocalLegalLinks().padding(24) }
+                    .background(KikiPalette.background.ignoresSafeArea())
+                    .navigationTitle("已保存的协议").navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { isReadingOfflineDocuments = false } } }
+            }
+        }
+    }
+
+    private var brand: some View {
+        VStack(spacing: 0) {
+            Image("KikiLaunchMark")
+                .resizable().scaledToFit().frame(width: 128, height: 128)
+                .accessibilityHidden(true)
+            Text("Kiki")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(Color("KikiLaunchText")).frame(height: 34)
+                .padding(.top, 24)
+        }.dynamicTypeSize(.medium)
     }
 }

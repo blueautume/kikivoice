@@ -1,14 +1,19 @@
 import SwiftUI
 import UIKit
 
+enum KikiAvatarAppearance {
+    static let placeholderSymbolName = "person.crop.circle.fill"
+    static let backgroundColor = UIColor.tertiarySystemFill
+    static let foregroundColor = UIColor.secondaryLabel
+}
+
 @available(iOS 16.0, *)
 struct KikiAvatar: View {
+    // Retained for older account and room payloads; default avatars are uniform.
     var index: Int
     var size: CGFloat = 40
     var customURL: String? = nil
     @State private var customImage: UIImage?
-    private let faces = ["🧑🏻‍🚀", "👩🏻", "🧑🏼", "👩🏽‍🦱", "🧑🏻‍🎨", "👩🏼‍🦰", "🧑🏽‍🎤", "👨🏻‍🦱", "👩🏻‍🎤", "🧑🏼‍🚀", "👩🏾", "👨🏼"]
-    private let colors: [Color] = [Color(hex: 0x6351A4), Color(hex: 0x958392), Color(hex: 0x758779), Color(hex: 0xAD796A), Color(hex: 0x6B8F9B)]
     var body: some View {
         Group {
             if let customURL {
@@ -20,9 +25,8 @@ struct KikiAvatar: View {
             }
         }
         .frame(width: size, height: size)
-        .background(LinearGradient(colors: [colors[abs(index) % colors.count].opacity(0.8), colors[abs(index) % colors.count].opacity(0.35)], startPoint: .topLeading, endPoint: .bottomTrailing))
+        .background(Color(uiColor: KikiAvatarAppearance.backgroundColor))
         .clipShape(Circle())
-        .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
         .accessibilityHidden(true)
         .task(id: customURL) {
             customImage = nil
@@ -35,6 +39,9 @@ struct KikiAvatar: View {
         }
     }
     private var placeholder: some View {
-        Text(faces[abs(index) % faces.count]).font(.system(size: size * 0.62))
+        Image(systemName: KikiAvatarAppearance.placeholderSymbolName)
+            .resizable()
+            .scaledToFit()
+            .foregroundStyle(Color(uiColor: KikiAvatarAppearance.foregroundColor))
     }
 }

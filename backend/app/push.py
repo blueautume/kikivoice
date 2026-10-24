@@ -47,7 +47,7 @@ BINDING_TTL = 30 * DAY
 PENDING_TTL = DAY
 RECEIPT_TTL = 7 * DAY
 HOSTS = {"sandbox":"https://api.sandbox.push.apple.com", "production":"https://api.push.apple.com"}
-GENERIC_ALERT = {"title":"Kiki语聊","body":"你有新的消息，请打开应用查看。"}
+GENERIC_ALERT = {"title":"kiki","body":"你有新的消息，请打开应用查看。"}
 MAX_ALERT_TITLE_BYTES = 160
 MAX_ALERT_BODY_BYTES = 2048
 MAX_PAYLOAD_BYTES = 4096
@@ -259,7 +259,7 @@ class PushService:
                 read=db.execute("SELECT through_seq FROM social_reads WHERE conversation_id=? AND account_id=?",(message["conversation_id"],user["account_id"])).fetchone()
                 if read and read[0]>=message["seq"]:return None
             return {"type":"direct_message","personID":actor["login_id"]}
-        notice=db.execute("SELECT * FROM social_notifications WHERE id=? AND recipient_id=? AND created_at>?",(row["source_id"],user["account_id"],int(self.clock())-30*DAY)).fetchone()
+        notice=db.execute("SELECT * FROM social_notifications WHERE is_retired=0 AND id=? AND recipient_id=? AND created_at>?",(row["source_id"],user["account_id"],int(self.clock())-30*DAY)).fetchone()
         if notice is None or must_unread and notice["read_at"] is not None:return None
         sequence=db.execute("SELECT seq FROM social_notification_sequence WHERE notification_id=?",(notice["id"],)).fetchone()
         if sequence is None or sequence["seq"]<=self.social.notification_state(db,user)["cleared_through_seq"]:return None
@@ -269,22 +269,14 @@ class PushService:
             if event is None or actor is None or not room_started.still_following(db,user["account_id"],event):return None
             result["roomID"]=event["room_id"]
             return result
-        if notice["moment_id"]:
-            moment=db.execute("SELECT p.*,a.login_id FROM social_moments p JOIN accounts a ON a.account_id=p.author_id WHERE p.id=? AND "+self.social.valid_account_sql(),(notice["moment_id"],*self.social.legal_args)).fetchone()
-            if moment is None or moment["login_id"] in policy.blockedUserIDs:return None
-            if notice["dedupe_key"] and notice["dedupe_key"].startswith("comment:"):
-                if not db.execute("SELECT 1 FROM social_comments WHERE id=? AND moment_id=?",(notice["dedupe_key"][8:],moment["id"])).fetchone():return None
-            if notice["dedupe_key"] and notice["dedupe_key"].startswith("like:"):
-                if actor is None or not db.execute("SELECT 1 FROM social_likes WHERE moment_id=? AND actor_id=?",(moment["id"],actor["account_id"])).fetchone():return None
-            result["momentID"]=notice["moment_id"]
-        elif actor:
+        if actor:
             if notice["kind"]=="follow" and not db.execute("SELECT 1 FROM social_follows WHERE follower_id=? AND followed_id=?",(actor["account_id"],user["account_id"])).fetchone():return None
             result["personID"]=actor["login_id"]
         return result
 
     def badge(self,db,user,policy):
         count=0
-        for notice in db.execute("SELECT n.id,n.actor_id,a.login_id FROM social_notifications n JOIN social_notification_sequence s ON s.notification_id=n.id LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE recipient_id=? AND read_at IS NULL AND n.created_at>? AND s.seq>COALESCE((SELECT cleared_through_seq FROM social_notification_state WHERE account_id=?),0)",(user["account_id"],int(self.clock())-30*DAY,user["account_id"])):
+        for notice in db.execute("SELECT n.id,n.actor_id,a.login_id FROM social_notifications n JOIN social_notification_sequence s ON s.notification_id=n.id LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE n.is_retired=0 AND recipient_id=? AND read_at IS NULL AND n.created_at>? AND s.seq>COALESCE((SELECT cleared_through_seq FROM social_notification_state WHERE account_id=?),0)",(user["account_id"],int(self.clock())-30*DAY,user["account_id"])):
             if notice["actor_id"] and (notice["login_id"] in policy.blockedUserIDs or not db.execute("SELECT 1 FROM accounts a WHERE a.account_id=? AND "+self.social.valid_account_sql(),(notice["actor_id"],*self.social.legal_args)).fetchone()):continue
             count+=1
         for item in db.execute("SELECT m.sender_id,a.login_id,COUNT(*) n FROM social_messages m JOIN accounts a ON a.account_id=m.sender_id LEFT JOIN social_reads r ON r.conversation_id=m.conversation_id AND r.account_id=m.recipient_id LEFT JOIN social_conversation_state s ON s.conversation_id=m.conversation_id AND s.account_id=m.recipient_id WHERE m.recipient_id=? AND m.created_at>? AND m.seq>MAX(COALESCE(r.through_seq,0),COALESCE(s.cleared_through_seq,0)) AND "+self.social.valid_account_sql()+" GROUP BY m.sender_id,a.login_id",(user["account_id"],int(self.clock())-30*DAY,*self.social.legal_args)):
@@ -302,12 +294,9 @@ class PushService:
                 source=db.execute("SELECT text FROM social_messages WHERE id=? AND recipient_id=?",(row["source_id"],user["account_id"])).fetchone()
                 if source:alert["body"]=source["text"]
             else:
-                notice=db.execute("SELECT * FROM social_notifications WHERE id=? AND recipient_id=?",(row["source_id"],user["account_id"])).fetchone()
+                notice=db.execute("SELECT * FROM social_notifications WHERE is_retired=0 AND id=? AND recipient_id=?",(row["source_id"],user["account_id"])).fetchone()
                 if notice:
                     alert["body"]=notice["text"]
-                    if notice["dedupe_key"] and notice["dedupe_key"].startswith("comment:"):
-                        comment=db.execute("SELECT text FROM social_comments WHERE id=? AND moment_id=? AND author_id=?",(notice["dedupe_key"][8:],notice["moment_id"],row["actor_id"])).fetchone()
-                        if comment:alert["body"]+="："+comment["text"]
         alert={"title":preview_text(alert["title"],MAX_ALERT_TITLE_BYTES),"body":preview_text(alert["body"],MAX_ALERT_BODY_BYTES)}
         payload={"aps":{"alert":alert,"sound":"default","badge":badge},"deliveryID":row["id"],"accountTag":self.account_tag(row["recipient_id"])}
         # JSON escaping also consumes APNs' byte budget (quotes, newlines, etc.).
@@ -347,7 +336,7 @@ class PushService:
         policy=self.social.policy(user)
         with self.database(self.settings) as db:
             self.social.check(db,user)
-            notice=db.execute("SELECT * FROM social_notifications WHERE id=? AND recipient_id=?",(notification_id,user["account_id"])).fetchone()
+            notice=db.execute("SELECT * FROM social_notifications WHERE is_retired=0 AND id=? AND recipient_id=?",(notification_id,user["account_id"])).fetchone()
             if notice is None:raise HTTPException(404,"通知已失效或暂不可见")
             source={"recipient_id":user["account_id"],"actor_id":notice["actor_id"],"event_kind":"notification","source_id":notification_id}
             result=self.destination(db,user,source,policy,must_unread=False)

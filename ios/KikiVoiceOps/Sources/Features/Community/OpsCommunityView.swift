@@ -39,7 +39,7 @@ struct OpsCommunityView: View {
                             Button { selectedRestriction = restriction } label: {
                                 OpsCard {
                                     VStack(alignment: .leading, spacing: 8) {
-                                        Text(restriction.targetUserID).font(.caption).lineLimit(2)
+                                        Text(restriction.accountLabel).font(.subheadline.monospaced()).lineLimit(2)
                                         ForEach(restrictionDates(restriction), id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
                                         Label("核对并解除限制", systemImage: "lock.open").font(.subheadline)
                                     }
@@ -102,7 +102,8 @@ private struct OpsRestrictionRestoreView: View {
     var body: some View {
         Form {
             Section("核对账号") {
-                Text(restriction.targetUserID).textSelection(.enabled)
+                Text(restriction.accountLabel).textSelection(.enabled)
+                Text("审核编号：\(restriction.targetUserID)").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 Text("关联处置：\(restriction.reportID)").font(.caption).textSelection(.enabled)
                 Text("本操作解除该账号现有的语聊封禁、文字禁言及禁麦限制，不恢复已关闭的房间。")
                     .font(.subheadline).foregroundStyle(.secondary)
@@ -124,7 +125,7 @@ private struct OpsRestrictionRestoreView: View {
                     Task { if await store.moderate(submitted) { dismiss() } }
                 }
                 Button("取消", role: .cancel) { }
-            } message: { Text("账号：\(restriction.targetUserID)\n理由：\(note)") }
+            } message: { Text("账号：\(restriction.accountLabel)\n理由：\(note)") }
     }
 }
 
@@ -152,9 +153,10 @@ struct OpsReportDetail: View {
                 Text("编号：\(report.id)").font(.caption).textSelection(.enabled)
                 Text("房间：\(report.roomTitle)\n\(report.roomID)").font(.subheadline).textSelection(.enabled)
                 if let id = report.targetUserID {
-                    Text("被举报人：\(report.targetName ?? "未知")\n\(id)").font(.subheadline).textSelection(.enabled)
+                    Text("被举报人：\(report.targetName ?? "未知")\n\(report.targetLabel ?? id)").font(.subheadline).textSelection(.enabled)
+                    Text("审核编号：\(id)").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
-                Text("举报人：\(report.reporterName)\n\(report.reporterID)").font(.caption).textSelection(.enabled)
+                Text("举报人：\(report.reporterName)\n\(report.reporterLabel)").font(.caption).textSelection(.enabled)
                 if !report.details.isEmpty { Text(report.details).textSelection(.enabled) }
             }
             if let excerpt = report.messageExcerpt, !excerpt.isEmpty {

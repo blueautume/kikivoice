@@ -16,7 +16,7 @@ struct KikiDirectConversationView: View {
     @State private var loadedPersonID: String?
     @State private var error: String?
     @State private var report: KikiSocialReportTarget?
-    @State private var showsProfile = false
+    @State private var selectedProfile: KikiPersonDestination?
     @State private var generation = UUID()
     @State private var latestVisibleID: String?
     @State private var lastAcknowledgedID: String?
@@ -30,10 +30,11 @@ struct KikiDirectConversationView: View {
     private var pending: KikiPendingDirectMessage? { store.pendingDirectMessages[person.id] }
     private var directAccess: KikiDirectMessageAccess? { store.directMessageAccess[person.id] }
     private var visibleMessages: [KikiDirectMessage] { loadedPersonID == person.id ? messages : [] }
-    private var canSend: Bool { hasLoaded && loadedPersonID == person.id && directAccess?.canSend == true }
+    private var hasLoadedCurrentConversation: Bool { hasLoaded && loadedPersonID == person.id }
+    private var canSend: Bool { hasLoadedCurrentConversation && directAccess?.canSend == true }
     private var refreshScope: KikiDirectRefreshScope {
         .init(personID: person.id, isForeground: scenePhase == .active, isVisible: isVisible && isActive,
-              hasOverlay: showsProfile || report != nil)
+              hasOverlay: selectedProfile != nil || report != nil)
     }
     private var draft: Binding<String> { Binding(get: { store.directDrafts[person.id] ?? "" }, set: { store.updateDirectDraft($0, personID: person.id) }) }
     private var canSubmit: Bool {
@@ -48,9 +49,10 @@ struct KikiDirectConversationView: View {
                 ScrollView {
                     LazyVStack(spacing: 16) {
                         if nextCursor != nil { Button("更早的消息") { Task { await loadMore() } }.disabled(isLoading) }
-                        if isLoading && visibleMessages.isEmpty { ProgressView().padding(30) }
-                        if !isLoading && visibleMessages.isEmpty && error == nil {
+                        if isLoading && visibleMessages.isEmpty && pending == nil { ProgressView().padding(30) }
+                        if hasLoadedCurrentConversation && !isLoading && visibleMessages.isEmpty && pending == nil && error == nil {
                             KikiEmptyState(symbol: "bubble.left.and.bubble.right", title: "这里什么都没有", message: "")
+                                .accessibilityIdentifier("social.direct.empty")
                         }
                         ForEach(visibleMessages) { message in
                             VStack(spacing: 16) {
@@ -63,9 +65,9 @@ struct KikiDirectConversationView: View {
                                 .onAppear { if message.id == messages.last?.id { latestVisibleID = message.id; Task { await acknowledgeVisible() } } }
                         }
                         if let pending {
-                            HStack { Spacer(minLength: 45)
+                            senderRow(mine: true, id: "pending") {
                                 VStack(alignment: .trailing, spacing: 7) {
-                                    Text(pending.text).font(.body).padding(13).background(KikiPalette.purple.opacity(0.13), in: RoundedRectangle(cornerRadius: 16))
+                                    messageBubble(pending.text, mine: true, id: "pending")
                                     if pending.isSending { Label("正在发送", systemImage: "clock").font(.caption).foregroundStyle(KikiPalette.muted) }
                                     else { Button("发送未确认，点击重试") { Task { await send() } }.font(.caption).foregroundStyle(KikiPalette.lavender) }
                                 }
@@ -74,15 +76,25 @@ struct KikiDirectConversationView: View {
                         Color.clear.frame(height: 1).id("bottom")
                     }.padding(18).frame(maxWidth: 760).frame(maxWidth: .infinity)
                 }.onChange(of: visibleMessages.last?.id) { old, _ in
-                    if old == nil || latestVisibleID == old || isComposing { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                    // Let short conversations stay at the top when the keyboard changes size.
+                    if old == nil || latestVisibleID == old || isComposing { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom") } }
                 }
-                    .onChange(of: pending?.isSending) { _ in proxy.scrollTo("bottom", anchor: .bottom) }
+                    .onChange(of: pending?.isSending) { _ in proxy.scrollTo("bottom") }
             }
             composer
         }.background(KikiPalette.background.ignoresSafeArea())
             .navigationTitle(person.name).navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button { showsProfile = true } label: { Image(systemName: "person.crop.circle") }.accessibilityLabel("查看个人主页") }
+                if #available(iOS 26.0, *) {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        profileAvatarButton
+                    }
+                    .sharedBackgroundVisibility(.hidden)
+                } else {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        profileAvatarButton
+                    }
+                }
             }
             .onAppear { isVisible = true }
             .onDisappear {
@@ -112,6 +124,7 @@ struct KikiDirectConversationView: View {
             }
             .onChange(of: store.directHistoryRevision[person.id]) { _, _ in
                 generation = UUID(); messages = []; nextCursor = nil; isLoading = false; refreshRequestID = nil
+                hasLoaded = false; loadedPersonID = nil; error = nil
                 latestVisibleID = nil; lastAcknowledgedID = nil
                 if refreshScope.permitsRefresh { Task { await reload(silent: true) } }
             }
@@ -119,14 +132,23 @@ struct KikiDirectConversationView: View {
                 generation = UUID(); messages = []; nextCursor = nil; clearedThroughSeq = 0
                 hasLoaded = false
                 latestVisibleID = nil; lastAcknowledgedID = nil; isLoading = false; refreshRequestID = nil
-                report = nil; showsProfile = false
+                report = nil; selectedProfile = nil
                 if refreshScope.permitsRefresh { Task { await reload() } }
             }
             .onChange(of: store.socialRevision) { _, _ in requestRefresh() }
             .onChange(of: store.directContentRevision) { _, _ in requestRefresh() }
-            .sheet(isPresented: $showsProfile) { KikiPublicProfileView(userID: person.id, store: store).kikiRoomSheet() }
+            .sheet(item: $selectedProfile) { KikiPublicProfileView(userID: $0.id, store: store).kikiRoomSheet() }
             .sheet(item: $report) { KikiSocialReportForm(target: $0, store: store).kikiRoomSheet() }
             .tint(KikiPalette.lavender).foregroundStyle(KikiPalette.text)
+    }
+    private var profileAvatarButton: some View {
+        Button { selectedProfile = .init(id: person.id) } label: {
+            KikiAvatar(index: person.avatarIndex, size: 44, customURL: person.avatarURL)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("查看\(person.name)的个人主页")
+        .accessibilityIdentifier("social.direct.profile")
     }
     private var composer: some View {
         VStack(spacing: 8) {
@@ -153,18 +175,46 @@ struct KikiDirectConversationView: View {
     }
     private func messageRow(_ message: KikiDirectMessage) -> some View {
         let mine = message.senderID == store.userID
-        return HStack(alignment: .bottom, spacing: 10) {
-            if mine { Spacer(minLength: 45) }
-            else { KikiAvatar(index: person.avatarIndex, size: 34, customURL: person.avatarURL).accessibilityHidden(true) }
-            VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
-                Text(message.text).font(.body).multilineTextAlignment(.leading).padding(13)
-                    .background(mine ? KikiPalette.purple.opacity(0.16) : KikiPalette.surface, in: RoundedRectangle(cornerRadius: 16))
-                    .textSelection(.enabled)
-            }.contextMenu {
-                if !mine { Button("举报消息", systemImage: "exclamationmark.bubble") { report = .init(kind: .directMessage, targetID: message.id, name: person.name + "的消息") } }
-            }
-            if !mine { Spacer(minLength: 45) }
+        return senderRow(mine: mine, id: message.id) {
+            messageBubble(message.text, mine: mine, id: message.id)
+                .contextMenu {
+                    if !mine { Button("举报消息", systemImage: "exclamationmark.bubble") { report = .init(kind: .directMessage, targetID: message.id, name: person.name + "的消息") } }
+                }
         }
+    }
+    private func senderRow<Content: View>(mine: Bool, id: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            if mine { Spacer(minLength: 45) }
+            else { senderAvatar(mine: false, id: id) }
+            VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
+                Text(mine ? (store.profileName.isEmpty ? "我" : store.profileName) : person.name)
+                    .font(.caption).foregroundStyle(KikiPalette.secondary)
+                    .lineLimit(1).truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+                    .accessibilityIdentifier("social.direct.sender.name." + id)
+                content()
+            }
+            .frame(maxWidth: 520, alignment: mine ? .trailing : .leading)
+            if mine { senderAvatar(mine: true, id: id) }
+            else { Spacer(minLength: 45) }
+        }
+    }
+    private func senderAvatar(mine: Bool, id: String) -> some View {
+        Button { selectedProfile = .init(id: mine ? store.userID : person.id) } label: {
+            KikiAvatar(index: mine ? store.avatarIndex : person.avatarIndex, size: 36,
+                       customURL: mine ? store.customAvatarURL : person.avatarURL)
+                .frame(width: 44, height: 44).contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(mine ? "查看我的个人主页" : "查看\(person.name)的个人主页")
+        .accessibilityIdentifier("social.direct.sender.avatar." + id)
+    }
+    private func messageBubble(_ text: String, mine: Bool, id: String) -> some View {
+        Text(text).font(.body).multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true).padding(13)
+            .background(mine ? KikiPalette.purple.opacity(0.16) : KikiPalette.surface, in: RoundedRectangle(cornerRadius: 16))
+            .textSelection(.enabled)
+            .accessibilityIdentifier("social.direct.message." + id)
     }
     private func showsTimestamp(before message: KikiDirectMessage) -> Bool {
         guard let index = messages.firstIndex(where: { $0.id == message.id }), index > 0 else { return true }

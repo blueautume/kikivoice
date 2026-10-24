@@ -98,6 +98,30 @@ def test_apple_subject_stable_and_legacy_login_removed(client):
         assert "refresh-" not in credentials and "not-stored" not in credentials
 
 
+def test_removed_gift_and_currency_routes_are_absent_and_new_accounts_create_no_wallets(client):
+    session = login(client)
+    headers = authorization(session)
+    room = create_room(client, headers)
+    media_hash = "a" * 64
+    for method, path in [
+        ("GET", "/v1/gifts/catalog"), ("GET", "/v1/me/wallet"),
+        ("GET", f"/v1/rooms/{room['id']}/gifts"),
+        ("POST", f"/v1/rooms/{room['id']}/gifts"),
+        ("POST", f"/v1/rooms/{room['id']}/gifts/batch"),
+        ("GET", f"/v1/gift-media/{media_hash}.mov"),
+        ("GET", f"/v1/gift-media/{media_hash}.png"),
+        ("POST", "/v1/internal/qa/login"),
+    ]:
+        assert client.request(method, path, headers=headers).status_code == 404
+    paths = client.app.openapi()["paths"]
+    assert not any(term in path for path in paths for term in ("gift", "wallet", "diamond"))
+    with sqlite3.connect(client.settings.db_path) as db:
+        names = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type IN ('table','index')")}
+        assert not any(term in name for name in names for term in ("gift", "wallet", "diamond"))
+        assert db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 1
+
+
 def test_auth_refresh_logout_and_expiration(client):
     result = login(client)
     headers = authorization(result)

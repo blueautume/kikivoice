@@ -1,5 +1,7 @@
 # 隐私签署与 App Store 准备记录
 
+> **当前范围（2026-10-23，r16）：** 动态、图片发布、点赞、评论及相应通知与治理已移除。保留公开资料、关系、文字私信、头像照片和语聊；历史功能数据仅受限回滚保留。正式正文已由单一来源同步生成至 App、账号/语聊服务与官网，集合 hash 为 `44c189c201f28fe97b0e3391dd51d9e30e14b3e044fc8cc8686fa000cec28601`。下文各版本均为历史记录，当前行为以 [关系与私信](P1_SOCIAL.zh-CN.md) 为准。
+
 > **目录迁移（2026-10-22）：** 当前用户端为 `ios/KikiTalk`，管理端为 `ios/KikiVoiceOps`，均按 Sources/App、Core、Features 与 Tests/Resources/Configuration 组织；原 application/RTCube 和 experiments/livekit/admin-ios 路径只用于识别历史。可点源码链接已映射新位置，旧构建命令和验收仍按原批次阅读。本次未修改正式协议、后端或线上环境。
 
 > **证据位置：** 下文 `output/`、`experiments/livekit/validation/` 的截图和结果为本地归档，未纳入 Git，克隆仓库不会自动取得；保留链接用于追溯当时记录。

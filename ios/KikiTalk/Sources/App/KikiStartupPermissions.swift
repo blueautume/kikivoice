@@ -36,7 +36,7 @@ final class KikiStartupHTTPSProbe: KikiStartupNetworkProbing {
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
-        request.setValue("KikiTalk-Startup/1", forHTTPHeaderField: "User-Agent")
+        request.setValue("kiki-Startup/1", forHTTPHeaderField: "User-Agent")
         let (bytes, response) = try await session.bytes(for: request)
         try Task.checkCancellation()
         guard let response = response as? HTTPURLResponse,

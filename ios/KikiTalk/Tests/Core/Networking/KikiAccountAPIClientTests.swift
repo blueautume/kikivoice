@@ -113,43 +113,31 @@ final class KikiAccountAPIClientTests: XCTestCase {
         XCTAssertEqual(response.user.avatarURL, "https://kiki.group/v1/avatars/abc123.jpg")
     }
 
-    func testNicknameEditPreservesCustomAvatarByOmittingPresetIndex() async throws {
-        let server = KikiAPIMockServer { request in
-            XCTAssertEqual(request.url?.path, "/v1/me")
-            XCTAssertEqual(request.httpMethod, "PATCH")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-access-token")
-            let body = try requestBody(request)
-            XCTAssertEqual(body["name"] as? String, "海边小岛")
-            XCTAssertEqual(body["bio"] as? String, "一起听歌")
-            XCTAssertNil(body["avatarIndex"])
-            XCTAssertNil(body["avatarURL"])
-            var user = userFixture
-            user["name"] = "海边小岛"
-            user["needsNickname"] = false
-            user["avatarURL"] = "https://kiki.group/v1/avatars/abc123.jpg"
-            return (200, try jsonData(user))
+    func testProfileTextEditsPreserveDefaultAndUploadedAvatars() async throws {
+        for avatarURL in [String?.none, "https://kiki.group/v1/avatars/abc123.jpg"] {
+            let server = KikiAPIMockServer { request in
+                XCTAssertEqual(request.url?.path, "/v1/me")
+                XCTAssertEqual(request.httpMethod, "PATCH")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-access-token")
+                let body = try requestBody(request)
+                XCTAssertEqual(Set(body.keys), ["name", "bio"])
+                XCTAssertEqual(body["name"] as? String, "海边小岛")
+                XCTAssertEqual(body["bio"] as? String, "一起听歌")
+                var user = userFixture
+                user["name"] = "海边小岛"
+                user["needsNickname"] = false
+                // Existing accounts may retain a legacy index in their response.
+                user["avatarIndex"] = 5
+                user["avatarURL"] = avatarURL as Any? ?? NSNull()
+                return (200, try jsonData(user))
+            }
+
+            let user = try await server.client.updateProfile(name: "海边小岛", bio: "一起听歌", token: "test-access-token")
+
+            XCTAssertFalse(user.needsNickname)
+            XCTAssertEqual(user.avatarIndex, 5)
+            XCTAssertEqual(user.avatarURL, avatarURL)
         }
-
-        let user = try await server.client.updateProfile(name: "海边小岛", bio: "一起听歌", token: "test-access-token")
-
-        XCTAssertFalse(user.needsNickname)
-        XCTAssertNotNil(user.avatarURL)
-    }
-
-    func testSelectingPresetSendsIndexToReplaceCustomPhoto() async throws {
-        let server = KikiAPIMockServer { request in
-            let body = try requestBody(request)
-            XCTAssertEqual(body["avatarIndex"] as? Int, 5)
-            var user = userFixture
-            user["avatarIndex"] = 5
-            user["avatarURL"] = NSNull()
-            return (200, try jsonData(user))
-        }
-
-        let user = try await server.client.updateProfile(name: "小岛", bio: "", avatarIndex: 5, token: "test-access-token")
-
-        XCTAssertEqual(user.avatarIndex, 5)
-        XCTAssertNil(user.avatarURL)
     }
 
     func testPhotoUploadUsesAuthenticatedRawJPEGBody() async throws {

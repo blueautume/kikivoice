@@ -451,7 +451,7 @@ class AdminService:
         elif backup["healthy"] is None:
             alerts.append({"code":"backup_unknown","level":"info","message":"尚无已验证的备份状态。"})
         return {"schemaVersion":1, "serverTime":iso(now),
-            "service":{"id":SERVICE_ID,"name":"Kiki 自建语聊服务" if production else "LiveKit 语聊实验服务","host":"furby.top","mode":"single-host-production" if production else "single-host-laboratory","readOnly":True},
+            "service":{"id":SERVICE_ID,"name":"kiki 自建语聊服务" if production else "LiveKit 语聊实验服务","host":"furby.top","mode":"single-host-production" if production else "single-host-laboratory","readOnly":True},
             "accountService":{"connected":False,"message":"本看板只包含语聊数据；账号运营数据请在运维 App 切换至账号服务。" if production else "账号服务尚未接入；下列身份是语聊实验参与身份，并非账号 DAU。"},
             "operations":operations,"capacity":capacity,"connections":connection,"quality":quality,
             "infrastructure":infrastructure,"health":health,"rooms":rooms,"alerts":alerts,

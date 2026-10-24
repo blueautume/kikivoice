@@ -302,7 +302,6 @@ final class KikiRoomMessageInputTests: XCTestCase {
         for item in cases {
             let model = ScreenshotModel(text: item.draft, messageCount: item.messages, scheme: item.scheme)
             var expectedDraft = item.draft
-            defer { model.gifts.reset() }
             let host = UIHostingController(rootView: ComposerScreenshotFixture(model: model))
             host.safeAreaRegions = inspectSoftwareKeyboard ? .all : .container
             window.rootViewController = host
@@ -436,6 +435,82 @@ final class KikiRoomMessageInputTests: XCTestCase {
         }
     }
 
+    func testIncomingInvitationStaysAboveFixedActionsWithoutMovingComposer() async throws {
+        let scene = try foregroundScene()
+        let previous = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        defer { window.endEditing(true); window.isHidden = true; previous?.makeKeyAndVisible() }
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        let cases: [(name: String, size: CGSize, scheme: ColorScheme, type: DynamicTypeSize, full: Bool)] = [
+            ("phone-light", CGSize(width: 375, height: 812), .light, .large, false),
+            ("phone-dark-full", CGSize(width: 375, height: 812), .dark, .large, true),
+            ("phone-short", CGSize(width: 375, height: 600), .light, .large, false),
+            ("phone-accessibility", CGSize(width: 375, height: 812), .dark, .accessibility1, true),
+            ("ipad-wide", CGSize(width: 1133, height: 744), .light, .large, true)
+        ]
+        for item in cases {
+            let model = ScreenshotModel(text: "邀请通知不会遮挡操作", messageCount: 1, scheme: item.scheme)
+            model.dynamicTypeSize = item.type
+            model.isRoomFull = item.full
+            let host = UIHostingController(rootView: ComposerScreenshotFixture(model: model))
+            host.safeAreaRegions = .container
+            window.rootViewController = host
+            window.frame = CGRect(origin: .zero, size: item.size)
+            host.view.frame = window.bounds
+            window.makeKeyAndVisible()
+            try await waitFor { model.invitationPlacement.isReady && model.probes["action.1"]?.window != nil }
+            try await Task.sleep(nanoseconds: 100_000_000)
+            window.layoutIfNeeded()
+            let input = try XCTUnwrap(descendants(of: host.view).compactMap { $0 as? KikiRoomMessageInput.InputView }.first)
+            let restingInput = input.convert(input.bounds, to: window)
+            let restingActions = try assertActionColumn(model: model, input: input, window: window,
+                                                       phase: item.name + ".without-invitation")
+            model.hasInvitation = true
+            try await waitFor {
+                guard let card = model.probes["invitation"], card.window != nil, card.bounds.height > 0 else { return false }
+                let cardFrame = card.convert(card.bounds, to: window)
+                return cardFrame.maxY <= restingActions.viewport.minY - 7.5
+            }
+            window.layoutIfNeeded()
+            let card = try layoutFrame("invitation", model: model, window: window)
+            let composer = try layoutFrame("composerBar", model: model, window: window)
+            let controls = try assertActionColumn(model: model, input: input, window: window,
+                                                  anchoredTo: restingActions, phase: item.name + ".with-invitation")
+            XCTAssertGreaterThan(card.height, 100, "The real card must include its text and both response buttons")
+            XCTAssertGreaterThanOrEqual(card.minY, window.safeAreaInsets.top - 1)
+            XCTAssertLessThanOrEqual(card.maxY, controls.viewport.minY - 7.5,
+                                     "The entire invitation must be above both microphone and hand controls")
+            for button in controls.buttons { XCTAssertFalse(card.intersects(button)) }
+            XCTAssertFalse(card.intersects(composer))
+            XCTAssertEqual(input.convert(input.bounds, to: window).maxY, restingInput.maxY, accuracy: 1,
+                           "Receiving an invitation must not move the composer")
+            XCTAssertEqual(input.convert(input.bounds, to: window).width, restingInput.width, accuracy: 1)
+            try captureInputScreenshot(name: device + "-incoming-invitation-" + item.name, window: window)
+
+            // A growing native draft changes the composer height. The shared
+            // geometry must re-evaluate the card clearance while leaving the
+            // action column in its original screen position.
+            model.text = "第一行草稿\n第二行继续\n第三行保留\n第四行内容"
+            try await waitFor { input.bounds.height > restingInput.height + 10 }
+            try await Task.sleep(nanoseconds: 100_000_000)
+            window.layoutIfNeeded()
+            let grownCard = try layoutFrame("invitation", model: model, window: window)
+            let grownComposer = try layoutFrame("composerBar", model: model, window: window)
+            let grownControls = try assertActionColumn(model: model, input: input, window: window,
+                anchoredTo: restingActions, phase: item.name + ".with-growing-draft")
+            XCTAssertLessThanOrEqual(grownCard.maxY, min(grownComposer.minY, grownControls.viewport.minY) - 7.5)
+            for button in grownControls.buttons { XCTAssertFalse(grownCard.intersects(button)) }
+
+            model.hasInvitation = false
+            model.text = "邀请通知不会遮挡操作"
+            try await waitFor { abs(input.bounds.height - restingInput.height) < 1 }
+            window.layoutIfNeeded()
+            XCTAssertEqual(input.convert(input.bounds, to: window).maxY, restingInput.maxY, accuracy: 1)
+            try assertActionColumn(model: model, input: input, window: window,
+                                   anchoredTo: restingActions, phase: item.name + ".invitation-dismissed")
+        }
+    }
+
     private func layoutFrame(_ key: String, model: ScreenshotModel, window: UIWindow) throws -> CGRect {
         let probe = try XCTUnwrap(model.probes[key], "Missing fixture geometry: " + key)
         return probe.convert(probe.bounds, to: window)
@@ -452,7 +527,7 @@ final class KikiRoomMessageInputTests: XCTestCase {
                                     phase: String) throws -> ActionColumnGeometry {
         let inputFrame = input.convert(input.bounds, to: window)
         let body = try layoutFrame("content", model: model, window: window)
-        let buttons = try (0..<4).map { try layoutFrame("action.\($0)", model: model, window: window) }
+        let buttons = try (0..<2).map { try layoutFrame("action.\($0)", model: model, window: window) }
         for (index, frame) in buttons.enumerated() {
             XCTAssertEqual(frame.width, 44, accuracy: 1)
             XCTAssertEqual(frame.height, 44, accuracy: 1)
@@ -462,11 +537,15 @@ final class KikiRoomMessageInputTests: XCTestCase {
                 XCTAssertEqual(frame.minY - buttons[index - 1].maxY, 6, accuracy: 1)
             }
         }
-        let rail = try XCTUnwrap(scrollAncestor(of: try XCTUnwrap(model.probes["action.3"])))
+        let rail = try XCTUnwrap(scrollAncestor(of: try XCTUnwrap(model.probes["action.1"])))
         let nativeRail = rail.convert(rail.bounds, to: window)
         let visibleRail = rail.convert(rail.bounds.inset(by: rail.adjustedContentInset), to: window)
         print("KikiRoomActions phase=\(phase) buttons=\(buttons) scrollWindow=\(nativeRail) contentViewport=\(visibleRail) frame=\(rail.frame) bounds=\(rail.bounds) contentSize=\(rail.contentSize) contentOffset=\(rail.contentOffset) contentInset=\(rail.contentInset) adjustedInset=\(rail.adjustedContentInset) safeArea=\(rail.safeAreaInsets)")
         XCTAssertGreaterThan(visibleRail.height, 0)
+        if rail.contentSize.height <= visibleRail.height + 1 {
+            XCTAssertEqual(try XCTUnwrap(buttons.last).maxY, visibleRail.maxY, accuracy: 1,
+                           "The final room action must meet the rail bottom without an obsolete empty control slot")
+        }
         XCTAssertGreaterThanOrEqual(visibleRail.minY, window.bounds.minY - 1)
         XCTAssertLessThanOrEqual(visibleRail.maxY, window.bounds.maxY + 1)
         if let initial {
@@ -495,7 +574,7 @@ final class KikiRoomMessageInputTests: XCTestCase {
                        "The audience strip belongs to the full-width stage, without an action-column gutter")
         XCTAssertGreaterThan(audience.height, 40)
         XCTAssertGreaterThanOrEqual(visibleRail.minY, stageViewport.maxY - 1,
-                                    "The four action hit areas must stay in the conversation area below the stage")
+                                    "The room action hit areas must stay in the conversation area below the stage")
         XCTAssertLessThanOrEqual(stageViewport.maxY, inputFrame.minY + 1,
                                  "Keeping the action rail fixed must not disable keyboard avoidance for the stage")
         let chat = try layoutFrame("chat", model: model, window: window)
@@ -562,12 +641,12 @@ final class KikiRoomMessageInputTests: XCTestCase {
     }
 
     private func assertActionReachability(model: ScreenshotModel, window: UIWindow) async throws {
-        let last = try XCTUnwrap(model.probes["action.3"])
+        let last = try XCTUnwrap(model.probes["action.1"])
         let scroll = try XCTUnwrap(scrollAncestor(of: last))
         let previous = scroll.contentOffset
-        if scroll.bounds.height < 193 {
+        if scroll.bounds.height < 93 {
             XCTAssertGreaterThan(scroll.contentSize.height, scroll.bounds.height + 1,
-                                 "A short resting window must let the four tools scroll independently")
+                                 "A short resting window must let the two tools scroll independently")
         }
         scroll.scrollRectToVisible(last.convert(last.bounds, to: scroll), animated: false)
         window.layoutIfNeeded()
@@ -576,7 +655,7 @@ final class KikiRoomMessageInputTests: XCTestCase {
         let frame = last.convert(last.bounds, to: window)
         XCTAssertGreaterThanOrEqual(frame.minY, viewport.minY - 1)
         XCTAssertLessThanOrEqual(frame.maxY, viewport.maxY + 1,
-                                 "The diamond action must stay reachable when the keyboard is closed")
+                                 "The room action must stay reachable when the keyboard is closed")
         scroll.setContentOffset(previous, animated: false)
         window.layoutIfNeeded()
         await settle()
@@ -745,9 +824,12 @@ final class KikiRoomMessageInputTests: XCTestCase {
     private final class ScreenshotModel: ObservableObject {
         @Published var text: String
         @Published var focused = false
+        @Published var hasInvitation = false
+        @Published var isRoomFull = false
+        @Published var dynamicTypeSize: DynamicTypeSize = .large
+        var invitationPlacement = KikiRoomInvitationPlacement.pending
         let messageCount: Int
         let scheme: ColorScheme
-        let gifts = KikiGiftStore()
         var probes: [String: UIView] = [:]
         var dismissals = 0
         var submissions = 0
@@ -774,75 +856,78 @@ final class KikiRoomMessageInputTests: XCTestCase {
         @ObservedObject var model: ScreenshotModel
         @SwiftUI.State private var stageContentHeight: CGFloat = 0
         var body: some View {
-            VStack(spacing: 14) {
-                HStack(spacing: 10) {
-                    KikiAvatar(index: 1, size: 36)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("今晚一起聊聊").font(.system(size: 17, weight: .semibold))
-                        Text("房主 小岛").font(.system(size: 11)).foregroundStyle(KikiPalette.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "ellipsis").frame(width: 44, height: 44)
-                    Image(systemName: "xmark").frame(width: 44, height: 44)
-                }.frame(height: 60)
-                KikiRoomContentLayout(hasChatContent: model.messageCount > 0,
-                                     onStageHeightChange: { stageContentHeight = $0 }) { width, columns in
-                    VStack(spacing: 14) {
-                        seats(width: width, avatarSize: columns ? 68 : 55)
-                        KikiRoomAudienceStrip(listeners: listeners, onOpenPerson: { _ in }) { member in
-                            KikiAvatar(index: member.avatarIndex, size: 36)
-                        }.background(LayoutProbe(key: "audience", model: model))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .background(LayoutProbe(key: "stageContent", model: model))
-                } chat: {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(0..<model.messageCount, id: \.self) { index in
-                                KikiRoomChatBubbleRow(id: "fixture-\(index)", senderName: index == 0 ? "小岛" : "同频朋友",
-                                    text: index == 0 ? "大家晚上好，欢迎来聊天 😀" : "八个麦位和聊天都留在输入栏上方。",
-                                    isLocal: false, onOpenSender: {}) {
-                                        KikiAvatar(index: index + 1, size: 32)
-                                    } bubbleBackground: {
-                                        RoundedRectangle(cornerRadius: 15).fill(KikiPalette.elevated)
-                                    }
-                            }
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }.background(LayoutProbe(key: "chat", model: model))
-                }.background(LayoutProbe(key: "content", model: model))
-            }
-            .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 2)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(KikiPalette.background.ignoresSafeArea())
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                KikiRoomComposerBar {
-                    KikiRoomMessageInput(text: $model.text, isFocused: $model.focused,
-                        placeholder: "说点什么…", isEnabled: true,
-                        onSubmit: { model.submissions += 1 }, onNotice: { _ in })
-                        .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 21))
-                        .overlay(RoundedRectangle(cornerRadius: 21).stroke(KikiPalette.muted.opacity(0.3), lineWidth: 1))
-                } send: {
-                    Button { model.submissions += 1 } label: { Image(systemName: "paperplane.fill").frame(width: 44, height: 44) }
-                }
-                .padding(.horizontal, 18).padding(.vertical, 8)
-            }
-            .overlay {
-                KikiRoomActionRail(hasChatContent: model.messageCount > 0, stageContentHeight: stageContentHeight,
-                                   contentTopInset: 84) {
-                    ForEach(0..<4, id: \.self) { index in
-                        Button {} label: {
-                            Group {
-                                if index == 2 {
-                                    Image("RaiseHand").renderingMode(.template).resizable().scaledToFit()
-                                        .frame(width: 21, height: 21)
-                                } else {
-                                    Image(systemName: index == 0 ? "gift.fill" : (index == 1 ? "mic.slash.fill" : "diamond.fill"))
+            KikiRoomBottomLayout(hasChatContent: model.messageCount > 0,
+                                 stageContentHeight: stageContentHeight, contentTopInset: 84) {
+                VStack(spacing: 14) {
+                    HStack(spacing: 10) {
+                        KikiAvatar(index: 1, size: 36)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("今晚一起聊聊").font(.system(size: 17, weight: .semibold))
+                            Text("房主 小岛").font(.system(size: 11)).foregroundStyle(KikiPalette.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "ellipsis").frame(width: 44, height: 44)
+                        Image(systemName: "xmark").frame(width: 44, height: 44)
+                    }.frame(height: 60)
+                    KikiRoomContentLayout(hasChatContent: model.messageCount > 0,
+                                         onStageHeightChange: { stageContentHeight = $0 }) { width, columns in
+                        VStack(spacing: 14) {
+                            seats(width: width, avatarSize: columns ? 68 : 55)
+                            KikiRoomAudienceStrip(listeners: listeners, onOpenPerson: { _ in }) { member in
+                                KikiAvatar(index: member.avatarIndex, size: 36)
+                            }.background(LayoutProbe(key: "audience", model: model))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .background(LayoutProbe(key: "stageContent", model: model))
+                    } chat: {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(0..<model.messageCount, id: \.self) { index in
+                                    KikiRoomChatBubbleRow(id: "fixture-\(index)", senderName: index == 0 ? "小岛" : "同频朋友",
+                                        text: index == 0 ? "大家晚上好，欢迎来聊天 😀" : "八个麦位和聊天都留在输入栏上方。",
+                                        isLocal: false, onOpenSender: {}) {
+                                            KikiAvatar(index: index + 1, size: 32)
+                                        }
                                 }
-                            }
-                            .frame(width: 44, height: 44)
-                            .background(KikiPalette.elevated, in: Circle())
-                        }.background(LayoutProbe(key: "action.\(index)", model: model))
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }.background(LayoutProbe(key: "chat", model: model))
+                    }.background(LayoutProbe(key: "content", model: model))
+                }
+                .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 2)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(KikiPalette.background.ignoresSafeArea())
+            } footer: { placement in
+                KikiRoomComposerWithInvitation(hasInvitation: model.hasInvitation, placement: placement) {
+                    KikiIncomingSeatInvitationCard(isBusy: false, isEnabled: true, isRoomFull: model.isRoomFull,
+                        onAccept: { model.hasInvitation = false }, onDecline: { model.hasInvitation = false })
+                        .background(LayoutProbe(key: "invitation", model: model))
+                } composer: {
+                    KikiRoomComposerBar {
+                        KikiRoomMessageInput(text: $model.text, isFocused: $model.focused,
+                            placeholder: "说点什么…", isEnabled: true,
+                            onSubmit: { model.submissions += 1 }, onNotice: { _ in })
+                            .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 21))
+                            .overlay(RoundedRectangle(cornerRadius: 21).stroke(KikiPalette.muted.opacity(0.3), lineWidth: 1))
+                    } send: {
+                        Button { model.submissions += 1 } label: { Image(systemName: "paperplane.fill").frame(width: 44, height: 44) }
                     }
+                    .background(LayoutProbe(key: "composerBar", model: model))
+                }
+                .onChange(of: placement, initial: true) { _, value in model.invitationPlacement = value }
+            } controls: {
+                ForEach(0..<2, id: \.self) { index in
+                    Button {} label: {
+                        Group {
+                            if index == 1 {
+                                Image("RaiseHand").renderingMode(.template).resizable().scaledToFit()
+                                    .frame(width: 21, height: 21)
+                            } else {
+                                Image(systemName: "mic.slash.fill")
+                            }
+                        }
+                        .frame(width: 44, height: 44)
+                        .background(KikiPalette.elevated, in: Circle())
+                    }.background(LayoutProbe(key: "action.\(index)", model: model))
                 }
             }
             .foregroundStyle(KikiPalette.text)
@@ -851,6 +936,7 @@ final class KikiRoomMessageInputTests: XCTestCase {
                 model.focused = false
             })
             .preferredColorScheme(model.scheme)
+            .environment(\.dynamicTypeSize, model.dynamicTypeSize)
         }
 
         private var listeners: [KikiRoomMember] {
@@ -875,7 +961,7 @@ final class KikiRoomMessageInputTests: XCTestCase {
                             if number <= 8 {
                                 KikiRoomSeatTile(slot: KikiRoomSeat(index: number, userID: nil, locked: false, audioLocked: false),
                                     member: nil, participant: nil, localUserID: "fixture-owner",
-                                    avatarSize: avatarSize, gifts: model.gifts)
+                                    avatarSize: avatarSize)
                                     .background(LayoutProbe(key: "seat.\(number)", model: model))
                             } else { Color.clear.frame(maxWidth: .infinity) }
                         }

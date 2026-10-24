@@ -169,13 +169,14 @@ final class KikiRoomRuntimeTests: XCTestCase {
     }
 
     func testRoomSyncHintsOnlyInvalidateKnownResources() throws {
-        let hint = KikiRoomSyncHint(version: 1, resources: [.state, .gifts])
-        XCTAssertEqual(KikiRoomSyncHint.decode(try JSONEncoder().encode(hint))?.resources, [.state, .gifts])
+        let hint = KikiRoomSyncHint(version: 1, resources: [.state, .chat])
+        XCTAssertEqual(KikiRoomSyncHint.decode(try JSONEncoder().encode(hint))?.resources, [.state, .chat])
         for invalid in [
             "{\"version\":2,\"resources\":[\"state\"]}",
             "{\"version\":1,\"resources\":[]}",
             "{\"version\":1,\"resources\":[\"state\",\"state\"]}",
             "{\"version\":1,\"resources\":[\"permissions\"]}",
+            "{\"version\":1,\"resources\":[\"decorations\"]}",
             "{\"version\":1,\"text\":\"forged message\"}"
         ] { XCTAssertNil(KikiRoomSyncHint.decode(Data(invalid.utf8))) }
         XCTAssertNil(KikiRoomSyncHint.decode(Data(repeating: 0, count: 513)))
@@ -186,9 +187,9 @@ final class KikiRoomRuntimeTests: XCTestCase {
         var gate = KikiRoomSyncHintGate(minimumInterval: 1.5)
         XCTAssertNil(gate.delay(now: now))
         gate.invalidate([.state])
-        gate.invalidate([.chat, .gifts])
+        gate.invalidate([.chat])
         XCTAssertEqual(gate.delay(now: now), 0)
-        XCTAssertEqual(gate.take(now: now), [.state, .chat, .gifts])
+        XCTAssertEqual(gate.take(now: now), [.state, .chat])
         XCTAssertNil(gate.delay(now: now))
         // A new event while the previous GET is in flight cannot be discarded.
         gate.invalidate([.chat])
@@ -208,14 +209,14 @@ final class KikiRoomRuntimeTests: XCTestCase {
         var delivered: Set<KikiRoomSyncHint.Resource> = []
         for index in 0..<100 {
             let now = start.addingTimeInterval(Double(index) / 10)
-            gate.invalidate(index == 99 ? [.gifts] : [.state])
+            gate.invalidate(index == 99 ? [.chat] : [.state])
             delivered.formUnion(gate.take(now: now))
         }
         XCTAssertEqual(gate.invalidationCount, 100)
         XCTAssertLessThanOrEqual(gate.batchCount, 7, "A packet flood must not become 100 HTTPS requests")
-        XCTAssertTrue(gate.pending.contains(.gifts), "The final packet remains queued through the cooldown")
+        XCTAssertTrue(gate.pending.contains(.chat), "The final packet remains queued through the cooldown")
         delivered.formUnion(gate.take(now: start.addingTimeInterval(12)))
-        XCTAssertEqual(delivered, [.state, .gifts])
+        XCTAssertEqual(delivered, [.state, .chat])
         XCTAssertTrue(gate.pending.isEmpty)
         XCTAssertLessThanOrEqual(gate.batchCount, 8)
     }

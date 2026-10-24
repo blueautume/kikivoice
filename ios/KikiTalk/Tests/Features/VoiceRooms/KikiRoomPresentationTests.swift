@@ -376,8 +376,6 @@ final class KikiRoomPresentationTests: XCTestCase {
     }
 
     func testOfflineSeatKeepsTheSameGridHeightAndDoesNotNeedAStatusCaption() {
-        let gifts = KikiGiftStore()
-        defer { gifts.reset() }
         let slot = KikiRoomSeat(index: 2, userID: "member", locked: false, audioLocked: false)
         let participant = KikiVoiceParticipant(id: "member", name: "海边的朋友", isLocal: false,
                                                isHost: false, isSpeaking: false, microphoneEnabled: false)
@@ -389,7 +387,7 @@ final class KikiRoomPresentationTests: XCTestCase {
                                                audioMuted: false, chatMuted: false, online: online,
                                                canPublishAudio: online, canPublishData: online)
                     let host = UIHostingController(rootView: KikiRoomSeatTile(slot: slot, member: member,
-                        participant: participant, localUserID: "owner", avatarSize: 56, gifts: gifts)
+                        participant: participant, localUserID: "owner", avatarSize: 56)
                         .dynamicTypeSize(textSize).frame(width: width))
                     return host.sizeThatFits(in: CGSize(width: width, height: 1_000))
                 }
@@ -468,15 +466,17 @@ final class KikiRoomPresentationTests: XCTestCase {
         let scene = try foregroundScene()
         let previous = scene.windows.first { $0.isKeyWindow }
         let base = UIWindow(windowScene: scene)
-        base.rootViewController = UIHostingController(rootView: KikiRoomCardsFixture(rooms: presentationRooms)
-            .environmentObject(presentationStore()).preferredColorScheme(.light))
+        let cards = KikiRoomCardsFixture(rooms: presentationRooms).environmentObject(presentationStore())
+        let host = UIHostingController(rootView: cards.preferredColorScheme(.light))
+        base.rootViewController = host
+        base.overrideUserInterfaceStyle = .dark
         base.makeKeyAndVisible()
         var resumeCount = 0
         let overlay = KikiVoiceRoomFloatingOverlay(windowScene: scene, roomTitle: "周末一起聊聊", avatarURL: nil,
                                                    avatarIndex: 4, hostName: "小岛") { resumeCount += 1 }
         defer { overlay.hide(); base.isHidden = true; previous?.makeKeyAndVisible() }
         overlay.show()
-        try await Task.sleep(nanoseconds: 180_000_000)
+        try await Task.sleep(nanoseconds: 300_000_000)
         let floating = try XCTUnwrap(scene.windows.first {
             !$0.isHidden && $0.accessibilityIdentifier == "voiceRoomFloatingWindow"
         })
@@ -495,9 +495,20 @@ final class KikiRoomPresentationTests: XCTestCase {
         XCTAssertEqual(Set(bubble.accessibilityCustomActions?.map(\.name) ?? []), ["移到左侧", "移到右侧"])
         XCTAssertTrue(bubble.gestureRecognizers?.contains { $0 is UIPanGestureRecognizer } == true)
         let captions = descendants(of: bubble).compactMap { ($0 as? UILabel)?.text }
-        XCTAssertEqual(captions, ["🧑🏻‍🎨"], "The visible control contains the real host preset avatar, without a text capsule")
+        XCTAssertTrue(captions.isEmpty, "Default avatars use a native person symbol without emoji or a text capsule")
+        let placeholder = try XCTUnwrap(descendants(of: bubble).first {
+            $0.accessibilityIdentifier == "voiceRoomFloatingAvatarPlaceholder"
+        } as? UIImageView)
+        XCTAssertTrue(placeholder.image?.isSymbolImage == true)
+        XCTAssertFalse(placeholder.isHidden)
+        XCTAssertEqual(host.view.traitCollection.userInterfaceStyle, .light)
+        XCTAssertEqual(placeholder.traitCollection.userInterfaceStyle, .light,
+                       "The floating window follows the visible app's preference: override=\(floating.overrideUserInterfaceStyle), window=\(floating.traitCollection.userInterfaceStyle), root=\(floating.rootViewController!.traitCollection.userInterfaceStyle)")
+        XCTAssertEqual(placeholder.tintColor.resolvedColor(with: placeholder.traitCollection),
+                       UIColor.secondaryLabel.resolvedColor(with: host.view.traitCollection))
         let rings = (bubble.layer.sublayers ?? []).compactMap { $0 as? CAShapeLayer }
-        XCTAssertTrue(rings.allSatisfy { ($0.animationKeys() ?? []).isEmpty && $0.opacity == 0 })
+        XCTAssertTrue(rings.allSatisfy { ($0.animationKeys() ?? []).isEmpty && $0.opacity == 0 },
+                      "Appearance changes must leave idle rings static: \(rings.map { ($0.animationKeys() ?? [], $0.opacity) })")
 
         overlay.update(roomTitle: "周末一起聊聊", status: "语聊中", avatarURL: nil, avatarIndex: 4,
                        hostName: "小岛", isSpeaking: true)
@@ -510,6 +521,38 @@ final class KikiRoomPresentationTests: XCTestCase {
             XCTAssertTrue(rings.contains { !($0.animationKeys() ?? []).isEmpty })
         }
         try capture(name: "floating-host-avatar-speaking", windows: [base, floating], bounds: base.bounds)
+        host.rootView = cards.preferredColorScheme(.dark)
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(placeholder.traitCollection.userInterfaceStyle, .dark,
+                       "Changing the app's color scheme updates the separate window without a room status refresh")
+        try capture(name: "floating-host-avatar-speaking-dark", windows: [base, floating], bounds: base.bounds)
+        host.rootView = cards.preferredColorScheme(.light)
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(placeholder.traitCollection.userInterfaceStyle, .light)
+        host.rootView = cards.preferredColorScheme(nil)
+        base.overrideUserInterfaceStyle = .light
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(placeholder.traitCollection.userInterfaceStyle, .light)
+        base.overrideUserInterfaceStyle = .dark
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(placeholder.traitCollection.userInterfaceStyle, .dark,
+                       "The floating avatar follows ambient appearance changes when the app uses the system style")
+        host.rootView = cards.preferredColorScheme(.light)
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(placeholder.traitCollection.userInterfaceStyle, .light)
+        let alternateHost = UIHostingController(rootView: cards.preferredColorScheme(.dark))
+        base.rootViewController = alternateHost
+        base.layoutIfNeeded()
+        KikiVoiceRoomFloatingOverlay.mainNavigationDidLayout(in: base)
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(placeholder.traitCollection.userInterfaceStyle, .dark,
+                       "Navigating to another main controller replaces the observed appearance source")
+        base.rootViewController = host
+        base.layoutIfNeeded()
+        KikiVoiceRoomFloatingOverlay.mainNavigationDidLayout(in: base)
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(placeholder.traitCollection.userInterfaceStyle, .light)
+        XCTAssertTrue(base.isKeyWindow)
         bubble.sendActions(for: .touchUpInside)
         XCTAssertEqual(resumeCount, 1)
 
@@ -521,7 +564,8 @@ final class KikiRoomPresentationTests: XCTestCase {
         let avatar = try XCTUnwrap(descendants(of: bubble).first {
             $0.accessibilityIdentifier == "voiceRoomFloatingAvatar"
         } as? UIImageView)
-        XCTAssertNotNil(avatar.image, "The preset emoji is rasterized and desaturated while offline")
+        XCTAssertNil(avatar.image, "The default system symbol remains the fallback while offline")
+        XCTAssertFalse(placeholder.isHidden)
         XCTAssertLessThan(try XCTUnwrap(avatar.superview).alpha, 0.5)
         XCTAssertFalse(descendants(of: bubble).contains { ($0 as? UILabel)?.text?.contains("重连") == true },
                        "Connectivity is exposed to VoiceOver, without a visible caption or a new line")
@@ -801,8 +845,6 @@ private struct KikiDiscoverSearchFixture: View {
         KikiMainTabs(selection: $model.selectedTab, unreadCount: 0,
                      isRoomSearchFocused: model.selectedTab == 0 && model.searchFocused) {
             KikiDiscoverView(isActive: model.selectedTab == 0, onSearchFocusChange: { model.searchFocused = $0 })
-        } moments: {
-            Text("动态")
         } messages: {
             Text("消息")
         } profile: {

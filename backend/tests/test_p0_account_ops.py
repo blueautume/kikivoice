@@ -117,19 +117,26 @@ def test_community_upstream_failures_are_bounded_and_private(ops, response):
     assert result.status_code == 503 and "/private/" not in result.text
 
 
-def test_existing_acl_schema_upgrade_preserves_grants_and_cascade(tmp_path):
+@pytest.mark.parametrize("old_scopes", [("account", "voice"), ("account", "voice", "community", "gifts")])
+def test_existing_acl_schema_upgrade_preserves_active_grants_and_cascade(tmp_path, old_scopes):
     db = sqlite3.connect(tmp_path/"old.sqlite3")
     db.execute("PRAGMA foreign_keys=ON")
-    db.executescript(ops_auth.SCHEMA.replace("'account','voice','community'", "'account','voice'"))
+    old_constraint = ",".join("'" + scope + "'" for scope in old_scopes)
+    db.executescript(ops_auth.SCHEMA.replace("'account','voice','community'", old_constraint))
     now = int(time.time())
     db.execute("INSERT INTO ops_accounts VALUES(?,?,?,?,NULL)", ("ops_old", b"old-handle", "原有观察员", now))
-    db.execute("INSERT INTO ops_grants VALUES(?,?,?)", ("ops_old", "voice", now))
+    db.executemany("INSERT INTO ops_grants VALUES(?,?,?)", [("ops_old", scope, now + index) for index, scope in enumerate(old_scopes)])
     db.commit()
+    expected = [(scope, now + index) for index, scope in enumerate(old_scopes) if scope in ops_auth.SCOPES]
     ops_auth.initialize_database(db)
-    assert db.execute("SELECT service FROM ops_grants").fetchall() == [("voice",)]
-    db.execute("INSERT INTO ops_grants VALUES(?,?,?)", ("ops_old", "community", now))
+    assert db.execute("SELECT service,granted_at FROM ops_grants ORDER BY granted_at").fetchall() == expected
+    assert db.execute("SELECT name FROM ops_accounts WHERE account_id='ops_old'").fetchone() == ("原有观察员",)
+    if "community" not in old_scopes:
+        db.execute("INSERT INTO ops_grants VALUES(?,?,?)", ("ops_old", "community", now + 4))
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("INSERT INTO ops_grants VALUES(?,?,?)", ("ops_old", "gifts", now))
     ops_auth.initialize_database(db)
-    assert db.execute("SELECT COUNT(*) FROM ops_grants").fetchone()[0] == 2
+    assert {row[0] for row in db.execute("SELECT service FROM ops_grants")} == set(ops_auth.SCOPES)
     db.execute("DELETE FROM ops_accounts")
     assert db.execute("SELECT COUNT(*) FROM ops_grants").fetchone()[0] == 0
     assert db.execute("PRAGMA foreign_key_check").fetchall() == []

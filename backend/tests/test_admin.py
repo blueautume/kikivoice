@@ -98,7 +98,7 @@ def test_aggregate_counts_and_no_personal_fields(admin_client):
     first = admin_client.post("/v1/auth/apple", json=apple_payload(admin_client, "private-apple-subject")).json()
     _body, headers = admin_login(admin_client)
     data = admin_client.get("/admin/v1/dashboard", headers=headers).json()
-    assert data["service"] == {"id":"account", "name":"Kiki 账号服务", "host":"kiki.group", "mode":"account", "readOnly":True}
+    assert data["service"] == {"id":"account", "name":"kiki 账号服务", "host":"kiki.group", "mode":"account", "readOnly":True}
     assert data["operations"]["totalAccounts"] == 1
     assert data["operations"]["accountsCreatedToday"] == 1
     assert data["operations"]["validBusinessSessions"] == 1

@@ -1,6 +1,6 @@
 # Kiki 运维 iOS
 
-独立 SwiftUI 管理 App，提供两个只读看板及另行授权的社区管理，Bundle ID `com.kikitalk.voiceops`，最低 iOS 17，开发 Team `A82X46N3WS`。打开 `KikiVoiceOps.xcworkspace` 并选择共享 scheme `KikiVoiceOps`；不依赖腾讯、LiveKit SDK 或第三方网络库。普通 KikiTalk 的 Apple 登录保持原状，运维身份另建独立命名空间。
+独立 SwiftUI 管理 App，提供两个只读看板和另行授权的社区管理，Bundle ID `com.kikitalk.voiceops`，最低 iOS 17，开发 Team `A82X46N3WS`。打开 `KikiVoiceOps.xcworkspace` 并选择共享 scheme `KikiVoiceOps`；不依赖腾讯、LiveKit SDK 或第三方网络库。普通 Kiki 的 Apple 登录保持原状，运维身份另建独立命名空间。
 
 P0 新增 `community` 独立权限：查看举报、警告、临时禁言／禁麦、语聊封禁、关房与解除限制。查看权限不能代替社区权限，语聊限制不封禁 Apple 账号；所有处置需说明理由和二次确认。未知处理结果先保存在按账号隔离的 Keychain 中，关闭页面、后台或重启后使用同一请求编号恢复，确认后删除，避免网络超时重复处罚。详细范围和验收见 [P0 交付说明](../../docs/P0_COMMUNITY_SAFETY.zh-CN.md)。
 
@@ -95,3 +95,7 @@ xcodebuild test \
 新增 Swift 文件后运行 `python3 Scripts/generate_project.py` 重新生成项目。图标的普通、深色和着色版本沿用现有运维图标，修改后可用 `swift Scripts/generate_app_icon.swift` 重新生成。
 
 最终公网签名回归为 24/24 通过、0 跳过、0 失败：`/tmp/kiki-ops-passkey-public.xcresult`。两个明确的临时软件 WebAuthn 验收账号已删除，没有为真人自动授权。5 张待授权/双服务看板截图与完整部署记录见 [运维 Passkey 说明](../../docs/OPS_PASSKEYS.zh-CN.md)。系统 Passkey 与 Face ID / Touch ID 仍需本人完成授权确认。
+
+2026-10-23 管理端范围统一为语聊、账号、社区三项服务；服务枚举和编码权限均只包含 `voice`、`account`、`community`。完整离线回归 66 项：65 通过、1 项既有公网测试跳过、0 失败（`/tmp/kiki-ops-removal-tests.xcresult`）。签名 Release generic iOS device build 成功，实际版本仍为 `1.0 (1)`，保留 `webcredentials:kiki.group`；需安装本轮新版管理 App 才能更新导航。
+
+2026-10-23 动态模块下线：账号看板不再展示动态、评论及私有图片统计；社交举报仅处理个人资料与私聊文字，动态素材读取接口、图片证据界面和缓存均已清理。关注关系、私聊举报、社交禁言及独立语聊治理保留。完整签名模拟器回归 65 项：64 通过、1 项既有公网测试跳过、0 失败（`/tmp/kiki-remove-moments-ops-final-tests.xcresult`）。签名 Release 已打包为 `output/remove-moments-2026-10-23/kiki-ops-1.0-1.ipa`，实际版本仍为 `1.0 (1)`。

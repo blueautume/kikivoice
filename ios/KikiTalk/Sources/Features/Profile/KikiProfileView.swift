@@ -15,8 +15,6 @@ struct KikiProfileView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 28) {
                     identity
-                    activity
-                    KikiGiftWalletCard(gifts: store.gifts)
                     library
                     footer
                 }
@@ -38,7 +36,7 @@ struct KikiProfileView: View {
                     .accessibilityIdentifier("profile.settings")
                 }
             }
-            .refreshable { await store.refreshLibrary(); await store.refreshSocialSummary(); await store.refreshExperience() }
+            .refreshable { await store.refreshLibrary(); await store.refreshSocialSummary() }
         }
         .sheet(item: $activeSheet, onDismiss: openPendingRoom) { sheet in
             sheetContent(sheet)
@@ -46,121 +44,68 @@ struct KikiProfileView: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(item: $relationship) { KikiRelationshipsView(store: store, initialKind: $0) }
-        .task(id: isActive) { if isActive { await store.refreshLibrary(); await store.refreshSocialSummary(); await store.refreshExperience() } }
+        .task(id: isActive) { if isActive { await store.refreshLibrary(); await store.refreshSocialSummary() } }
     }
 
     private var identity: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(alignment: .center, spacing: 17) {
-                Button {
-                    activeSheet = .edit
-                } label: {
-                    KikiDecoratedAvatar(gifts: store.gifts, userID: store.userID, index: store.avatarIndex, size: 82, customURL: store.customAvatarURL)
-                        .overlay(alignment: .bottomTrailing) {
-                            Image(systemName: "pencil")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 25, height: 25)
-                                .background(KikiPalette.action, in: Circle())
-                                .overlay(Circle().stroke(KikiPalette.background, lineWidth: 3))
-                        }
-                }
-                .accessibilityLabel("编辑头像与个人资料")
-
-                VStack(alignment: .leading, spacing: 9) {
-                    Text(store.profileName)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundStyle(KikiPalette.text)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                    Text("账号 ID · \(store.userID)")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .tracking(1)
-                        .foregroundStyle(KikiPalette.muted)
-                }
-                Spacer(minLength: 0)
+        KikiProfileIdentityHeader {
+            Button {
+                activeSheet = .edit
+            } label: {
+                KikiAvatar(index: store.avatarIndex, size: 82, customURL: store.customAvatarURL)
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 25, height: 25)
+                            .background(KikiPalette.action, in: Circle())
+                            .overlay(Circle().stroke(KikiPalette.background, lineWidth: 3))
+                    }
             }
-
-            Text(store.bio.isEmpty ? "写一句介绍，让同频的人找到你。" : store.bio)
-                .font(.system(size: 14))
-                .lineSpacing(5)
-                .foregroundStyle(KikiPalette.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel("编辑头像与个人资料")
+        } details: {
+            KikiProfileIdentityDetails(name: store.profileName, displayID: store.displayID,
+                                       followingCount: store.socialProfile?.followingCount,
+                                       followerCount: store.socialProfile?.followerCount) { relationship = $0 }
         }
-    }
-
-    private var activity: some View {
-        HStack(spacing: 0) {
-            relationshipButton(value: store.socialProfile?.followingCount, title: "关注", kind: .following)
-            Divider().frame(height: 30)
-            relationshipButton(value: store.socialProfile?.followerCount, title: "粉丝", kind: .followers)
-            Divider().frame(height: 30)
-            relationshipButton(value: nil, title: "互关", kind: .mutual)
-        }.padding(.vertical, 18).background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 18))
-    }
-
-    private func relationshipButton(value: Int?, title: String, kind: KikiRelationshipKind) -> some View {
-        Button { relationship = kind } label: {
-            VStack(spacing: 7) {
-                if let value { Text("\(value)").font(.title3.weight(.semibold)).foregroundStyle(KikiPalette.text) }
-                else { Image(systemName: "person.2").font(.title3).foregroundStyle(KikiPalette.lavender) }
-                Text(title).font(.subheadline).foregroundStyle(KikiPalette.secondary)
-            }.frame(maxWidth: .infinity).contentShape(Rectangle())
-        }.buttonStyle(.plain)
     }
 
     private var library: some View {
         VStack(alignment: .leading, spacing: 13) {
-            sectionTitle("我的社区", subtitle: "每一次相遇，都值得记住")
+            sectionTitle("我的社区")
             VStack(spacing: 0) {
-                profileRow(symbol: "bookmark.fill", title: "我的收藏", subtitle: "留住每一次心动的相遇", count: store.favoriteRooms.count, color: KikiPalette.lavender) {
+                profileRow(symbol: "bookmark.fill", title: "我的收藏", count: store.favoriteRooms.count, color: KikiPalette.lavender) {
                     activeSheet = .favorites
                 }
                 rowDivider
-                profileRow(symbol: "clock.arrow.circlepath", title: "最近加入", subtitle: "回到熟悉的声音里", count: store.recentRooms.count, color: KikiPalette.mint) {
+                profileRow(symbol: "clock.arrow.circlepath", title: "最近加入", count: store.recentRooms.count, color: KikiPalette.mint) {
                     activeSheet = .history
                 }
-                rowDivider
-                profileRow(symbol: "mic.fill", title: "我的房间", subtitle: "为同频的朋友留一个位置", count: store.createdRooms.count, color: Color(hex: 0xF4B67A)) {
-                    activeSheet = .created
-                }
+
             }
             .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 23))
         }
     }
 
     private var footer: some View {
-        VStack(spacing: 6) {
-            Text("KikiTalk")
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .tracking(1)
-                .foregroundStyle(KikiPalette.muted)
-            Text("让世界听见你")
-                .font(.system(size: 10))
-                .foregroundStyle(KikiPalette.muted.opacity(0.7))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 1)
+        Text("Kiki 让世界听见你")
+            .font(.footnote)
+            .foregroundStyle(KikiPalette.muted)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 1)
     }
 
     private var rowDivider: some View {
         Rectangle().fill(KikiPalette.elevated).frame(height: 1).padding(.leading, 66)
     }
 
-    private func sectionTitle(_ title: String, subtitle: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(title)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(KikiPalette.text)
-            Spacer()
-            Text(subtitle)
-                .font(.system(size: 8, weight: .semibold, design: .rounded))
-                .tracking(2)
-                .foregroundStyle(KikiPalette.muted)
-        }
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(KikiPalette.text)
     }
 
-    private func profileRow(symbol: String, title: String, subtitle: String? = nil, count: Int? = nil, color: Color, action: @escaping () -> Void) -> some View {
+    private func profileRow(symbol: String, title: String, count: Int? = nil, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 13) {
                 Image(systemName: symbol)
@@ -172,11 +117,6 @@ struct KikiProfileView: View {
                     Text(title)
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(KikiPalette.text)
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.system(size: 10))
-                            .foregroundStyle(KikiPalette.muted)
-                    }
                 }
                 Spacer()
                 if let count {
@@ -189,7 +129,7 @@ struct KikiProfileView: View {
                     .foregroundStyle(KikiPalette.muted)
             }
             .padding(.horizontal, 17)
-            .padding(.vertical, subtitle == nil ? 14 : 17)
+            .padding(.vertical, 14)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -204,8 +144,6 @@ struct KikiProfileView: View {
             KikiProfileRoomCollection(title: "我的收藏", subtitle: "喜欢的声音，随时再见。", collection: .favorites, emptySymbol: "bookmark", emptyTitle: "把喜欢的房间留在这里", emptyMessage: "长按大厅里的房间卡片即可收藏，下次就能快速找到。", onSelect: chooseRoom)
         case .history:
             KikiProfileRoomCollection(title: "最近加入", subtitle: "每一次相遇，都留下足迹。", collection: .history, emptySymbol: "clock", emptyTitle: "新的故事，等你开启", emptyMessage: "加入感兴趣的房间，你的足迹会出现在这里。", onSelect: chooseRoom)
-        case .created:
-            KikiProfileRoomCollection(title: "我的房间", subtitle: "你创造的小小世界。", collection: .created, emptySymbol: "mic.badge.plus", emptyTitle: "你的第一个房间，正在等你", emptyMessage: "在「语聊」页面轻点右上角创建，邀请朋友来聊聊。", onSelect: chooseRoom)
         case .settings:
             KikiProfileSettings()
         }
@@ -229,8 +167,144 @@ struct KikiProfileView: View {
     }
 }
 
+/// Larger accessibility text gets the full width instead of squeezing beside
+/// the avatar. Normal text keeps the three rows level with the 82 pt avatar.
+struct KikiProfileIdentityHeader<Avatar: View, Details: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ViewBuilder var avatar: () -> Avatar
+    @ViewBuilder var details: () -> Details
+
+    var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 16) {
+                avatar()
+                details().frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else {
+            HStack(alignment: .center, spacing: 17) {
+                avatar()
+                details().frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+/// Three visible rows match the avatar height; the relationship buttons extend
+/// their touch targets without adding empty height to the bottom row.
+struct KikiProfileIdentityDetails: View {
+    let name: String
+    let displayID: String
+    let followingCount: Int?
+    let followerCount: Int?
+    var onRelationship: (KikiRelationshipKind) -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        KikiProfileIdentityRows(minimumSpacing: dynamicTypeSize.isAccessibilitySize ? 10 : 0) {
+            nameRow
+            accountRow
+            relationshipsRow
+        }
+    }
+
+    var nameRow: some View {
+        KikiProfileIdentityName(name: name)
+    }
+
+    var accountRow: some View {
+        KikiProfileIdentityAccount(displayID: displayID)
+    }
+
+    var relationshipsRow: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 18) { relationshipButtons }
+            VStack(alignment: .leading, spacing: 12) { relationshipButtons }
+        }
+        .accessibilityIdentifier("profile.identity.relationships")
+    }
+
+    @ViewBuilder private var relationshipButtons: some View {
+        relationshipButton(value: followingCount, title: "关注", kind: .following)
+        relationshipButton(value: followerCount, title: "粉丝", kind: .followers)
+    }
+
+    private func relationshipButton(value: Int?, title: String, kind: KikiRelationshipKind) -> some View {
+        let count = value.map(String.init) ?? "—"
+        return HStack(spacing: 5) {
+            Text(count).font(.subheadline.weight(.semibold)).foregroundStyle(KikiPalette.text)
+            Text(title).font(.subheadline).foregroundStyle(KikiPalette.secondary)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityHidden(true)
+        .overlay {
+            Button { onRelationship(kind) } label: {
+                Color.clear.frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(count) \(title)")
+            .accessibilityIdentifier("profile.relationship.\(kind.rawValue)")
+        }
+    }
+}
+
+private struct KikiProfileIdentityName: View {
+    let name: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title2) private var accessibleSize: CGFloat = 26
+
+    var body: some View {
+        Text(name)
+            .font(.system(size: dynamicTypeSize.isAccessibilitySize ? accessibleSize : 26,
+                          weight: .bold, design: .rounded))
+            .foregroundStyle(KikiPalette.text)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.75)
+            .accessibilityIdentifier("profile.identity.name")
+    }
+}
+
+private struct KikiProfileIdentityAccount: View {
+    let displayID: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .caption) private var accessibleSize: CGFloat = 13
+
+    var body: some View {
+        Text("账号 ID · \(displayID)")
+            .font(.system(size: dynamicTypeSize.isAccessibilitySize ? accessibleSize : 13,
+                          weight: .medium, design: .monospaced))
+            .foregroundStyle(KikiPalette.muted)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+            .accessibilityIdentifier("profile.identity.account")
+    }
+}
+
+/// Use each row's natural height, then divide all remaining vertical room into
+/// two equal gaps. Accessible text may grow beyond the ordinary 82 pt minimum.
+struct KikiProfileIdentityRows: Layout {
+    var minimumSpacing: CGFloat = 0
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
+        let sizes = subviews.map { $0.sizeThatFits(ProposedViewSize(width: width, height: nil)) }
+        let height = sizes.reduce(0) { $0 + $1.height } + minimumSpacing * CGFloat(max(0, sizes.count - 1))
+        return CGSize(width: width, height: max(82, height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let sizes = subviews.map { $0.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil)) }
+        let rowHeight = sizes.reduce(0) { $0 + $1.height }
+        let gap = subviews.count > 1 ? max(minimumSpacing, (bounds.height - rowHeight) / CGFloat(subviews.count - 1)) : 0
+        var y = bounds.minY
+        for (index, subview) in subviews.enumerated() {
+            subview.place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
+                          proposal: ProposedViewSize(width: bounds.width, height: sizes[index].height))
+            y += sizes[index].height + gap
+        }
+    }
+}
+
 private enum KikiProfileSheet: String, Identifiable {
-    case edit, favorites, history, created, settings
+    case edit, favorites, history, settings
     var id: String { rawValue }
 }
 
@@ -240,11 +314,9 @@ private struct KikiProfileEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var bio = ""
-    @State private var avatarIndex = 0
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var pendingJPEG: Data?
     @State private var photoPreview: UIImage?
-    @State private var chosePreset = false
     @State private var isLoadingPhoto = false
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -264,7 +336,7 @@ private struct KikiProfileEditor: View {
                                 Image(uiImage: photoPreview).resizable().scaledToFill()
                                     .frame(width: 98, height: 98).clipShape(Circle())
                             } else {
-                                KikiAvatar(index: avatarIndex, size: 98, customURL: chosePreset ? nil : store.customAvatarURL)
+                                KikiAvatar(index: store.avatarIndex, size: 98, customURL: store.customAvatarURL)
                             }
                         }
                         PhotosPicker(selection: $selectedPhoto, matching: .images, photoLibrary: .shared()) {
@@ -278,42 +350,12 @@ private struct KikiProfileEditor: View {
                         }
                         .disabled(isLoadingPhoto || isSaving)
                         .accessibilityIdentifier("chooseAvatarPhoto")
-                        Text(pendingJPEG == nil ? "选择照片，或使用下方预设头像" : "照片将在保存资料后上传")
+                        Text(pendingJPEG == nil ? "上传照片作为你的头像" : "照片将在保存资料后上传")
                             .font(.system(size: 12))
                             .foregroundStyle(KikiPalette.secondary)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.top, 16)
-
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 66), spacing: 12)], spacing: 16) {
-                        ForEach(0..<8) { index in
-                            Button {
-                                avatarIndex = index
-                                chosePreset = true
-                                selectedPhoto = nil
-                                isLoadingPhoto = false
-                                pendingJPEG = nil
-                                photoPreview = nil
-                                errorMessage = nil
-                            } label: {
-                                KikiAvatar(index: index, size: 56)
-                                    .padding(5)
-                                    .overlay {
-                                        Circle().stroke(chosePreset && avatarIndex == index ? KikiPalette.lavender : .clear, lineWidth: 2)
-                                    }
-                                    .overlay(alignment: .bottomTrailing) {
-                                        if chosePreset && avatarIndex == index {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .font(.system(size: 17, weight: .semibold))
-                                                .foregroundStyle(KikiPalette.lavender, KikiPalette.surface)
-                                        }
-                                    }
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("头像 \(index + 1)")
-                            .accessibilityAddTraits(chosePreset && avatarIndex == index ? .isSelected : [])
-                        }
-                    }
 
                     VStack(alignment: .leading, spacing: 10) {
                         fieldHeading("昵称", count: name.count, limit: 16)
@@ -383,10 +425,8 @@ private struct KikiProfileEditor: View {
             }
             .task(id: selectedPhoto) { await loadSelectedPhoto() }
             .onAppear {
-                chosePreset = store.customAvatarURL == nil
                 name = store.profileName
                 bio = store.bio
-                avatarIndex = store.avatarIndex
             }
         }
         .tint(KikiPalette.lavender)
@@ -401,7 +441,7 @@ private struct KikiProfileEditor: View {
         Task {
             defer { isSaving = false }
             do {
-                try await store.updateProfile(name: trimmedName, bio: bio.trimmingCharacters(in: .whitespacesAndNewlines), avatarIndex: avatarIndex, jpegData: pendingJPEG, clearCustomAvatar: chosePreset)
+                try await store.updateProfile(name: trimmedName, bio: bio.trimmingCharacters(in: .whitespacesAndNewlines), jpegData: pendingJPEG)
                 dismiss()
             } catch {
                 errorMessage = error.localizedDescription
@@ -426,7 +466,6 @@ private struct KikiProfileEditor: View {
             guard selectedPhoto == selection else { return }
             pendingJPEG = prepared.data
             photoPreview = prepared.image
-            chosePreset = false
         } catch is CancellationError { }
         catch {
             guard !Task.isCancelled, selectedPhoto == selection else { return }
@@ -445,7 +484,7 @@ private struct KikiProfileEditor: View {
 }
 
 private enum KikiRoomCollectionKind {
-    case favorites, history, created
+    case favorites, history
 }
 
 /// Downsample before decoding the full photo, correct EXIF orientation, and
@@ -501,7 +540,6 @@ private struct KikiProfileRoomCollection: View {
         switch collection {
         case .favorites: return store.favoriteRooms
         case .history: return store.recentRooms
-        case .created: return store.createdRooms
         }
     }
 
@@ -681,7 +719,7 @@ private struct KikiAccountSettings: View {
     @State private var showDeletion = false
 
     var body: some View {
-        KikiAccountSettingsContent(userID: store.userID, appleIDBound: store.isAppleIDBound,
+        KikiAccountSettingsContent(userID: store.displayID, appleIDBound: store.isAppleIDBound,
                                    isLoggingOut: isLoggingOut,
                                    onLogout: { showLogoutConfirmation = true },
                                    onDelete: { showDeletion = true })
@@ -746,7 +784,7 @@ private struct KikiAccountDeletion: View {
     @State private var isDeleting = false
     @State private var errorMessage: String?
     @State private var copiedNoticeID: UUID?
-    private var canDelete: Bool { !store.userID.isEmpty && confirmationID == store.userID && !isDeleting }
+    private var canDelete: Bool { !store.displayID.isEmpty && confirmationID == store.displayID && !isDeleting }
 
     var body: some View {
         NavigationStack {
@@ -768,12 +806,12 @@ private struct KikiAccountDeletion: View {
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(KikiPalette.secondary)
                         HStack(spacing: 8) {
-                            Text(store.userID)
+                            Text(store.displayID)
                                 .font(.system(size: 13, weight: .medium, design: .monospaced))
                                 .foregroundStyle(KikiPalette.text)
                                 .fixedSize(horizontal: false, vertical: true)
                             Button {
-                                UIPasteboard.general.string = store.userID
+                                UIPasteboard.general.string = store.displayID
                                 copiedNoticeID = UUID()
                                 UIAccessibility.post(notification: .announcement, argument: "已复制ID")
                             } label: {
@@ -781,7 +819,7 @@ private struct KikiAccountDeletion: View {
                                     .font(.system(size: 15)).frame(width: 44, height: 44)
                             }
                             .buttonStyle(.plain).foregroundStyle(KikiPalette.purple)
-                            .disabled(store.userID.isEmpty)
+                            .disabled(store.displayID.isEmpty)
                             .accessibilityLabel("复制账号 ID")
                             .accessibilityIdentifier("deleteAccountCopyID")
                         }
@@ -880,7 +918,7 @@ private struct KikiProfileAbout: View {
                                 .font(.system(size: 42, weight: .medium))
                                 .foregroundStyle(.white)
                         }
-                        Text("KikiTalk")
+                        Text("Kiki")
                             .font(.system(size: 29, weight: .bold, design: .rounded))
                             .foregroundStyle(KikiPalette.text)
                         Text("让世界听见你")
@@ -918,7 +956,7 @@ private struct KikiProfileAbout: View {
                 .frame(maxWidth: .infinity)
             }
             .background(KikiPalette.background.ignoresSafeArea())
-            .navigationTitle("关于 KikiTalk")
+            .navigationTitle("关于 Kiki")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -992,7 +1030,7 @@ struct KikiSafetyCenter: View {
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(user.name)
-                                Text(user.userID).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
+                                Text(user.publicID).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
                             }
                             Spacer()
                             Button("解除") { unblockTarget = user }.buttonStyle(.borderless).disabled(rtc.isUpdatingBlock)
@@ -1001,7 +1039,7 @@ struct KikiSafetyCenter: View {
                         }
                     }
                 } header: { Text("黑名单 · \(rtc.safetyState.blockedUsers.count)") }
-                footer: { Text("拉黑后隐藏对方私信、动态和房间文字，并屏蔽对方音频。解除后可再次接收对方内容，关注关系不会自动恢复；公开房间内，对方仍可能听到你。") }
+                footer: { Text("拉黑后隐藏对方私信和房间文字，并屏蔽对方音频。解除后可再次接收对方内容，关注关系不会自动恢复；公开房间内，对方仍可能听到你。") }
                 Section {
                     if rtc.myReports.isEmpty { Text("暂无举报记录").foregroundStyle(.secondary) }
                     ForEach(rtc.myReports) { report in
@@ -1016,7 +1054,7 @@ struct KikiSafetyCenter: View {
                 } header: { Text("我的举报") }
                 footer: { Text("显示最近 \(rtc.reportRetentionDays) 天的可用记录。举报提交成功不表示已认定违规；运营核查后更新状态。") }
                 Section("帮助与申诉") {
-                    Link("联系运营：2114581274@qq.com", destination: URL(string: "mailto:2114581274@qq.com?subject=KikiTalk%E7%A4%BE%E5%8C%BA%E5%8F%8D%E9%A6%88")!)
+                    Link("联系运营：2114581274@qq.com", destination: URL(string: "mailto:2114581274@qq.com?subject=Kiki%E7%A4%BE%E5%8C%BA%E5%8F%8D%E9%A6%88")!)
                     Text("申诉时请提供账号编号、举报编号或房间编号和发生时间。请勿发送 Apple 密码、登录凭证或完整身份证照片。当前不承诺全天人工值守。").font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -1128,7 +1166,7 @@ private struct KikiPrivacyHelp: View {
         List {
             Section("设备权限") {
                 Text("麦克风仅在你主动开麦时申请；拒绝后仍可聆听和发送文字。头像使用系统照片选择器，只访问你选中的照片。当前不申请定位、通讯录、相机或广告跟踪权限。")
-                Link("打开 KikiTalk 系统设置", destination: URL(string: UIApplication.openSettingsURLString)!)
+                Link("打开 Kiki 系统设置", destination: URL(string: UIApplication.openSettingsURLString)!)
             }
             Section("通知与后台语聊") {
                 Text("系统通知需你主动允许，可在“设置 > 通知”开启或关闭。提醒预览不显示对方姓名和消息正文。最小化房间仍可能保持收听和发言；需要停止时，请关闭麦克风或离开房间。")
@@ -1138,7 +1176,7 @@ private struct KikiPrivacyHelp: View {
                 Text("账号、隐私政策、撤回同意和注销入口仍可使用。公开房间内请谨慎分享个人信息。")
             }
             Section("帮助与反馈") {
-                Link("发送反馈邮件", destination: URL(string: "mailto:2114581274@qq.com?subject=KikiTalk%E5%8F%8D%E9%A6%88")!)
+                Link("发送反馈邮件", destination: URL(string: "mailto:2114581274@qq.com?subject=Kiki%E5%8F%8D%E9%A6%88")!)
                 Text("联系邮箱：2114581274@qq.com").textSelection(.enabled)
                 Text("请附账号或房间编号、问题时间、设备与系统版本；不要提供密码或登录凭证。如设备未配置邮件应用，可复制邮箱到自己的邮件工具发送。")
             }

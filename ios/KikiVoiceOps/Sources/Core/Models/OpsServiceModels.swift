@@ -34,7 +34,6 @@ enum OpsIdentityEndpoint {
         guard let url = request.url, let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
               parts.scheme == "https", parts.host == host, parts.port == nil || parts.port == 443,
               parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil else { return false }
-        if parts.percentEncodedPath.range(of: "^/admin/v2/services/account/social/media/[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}\\.jpg$", options: .regularExpression) != nil { return request.httpMethod == "GET" }
         guard let methods = allowedMethods[parts.percentEncodedPath] else { return false }
         return methods.split(separator: ",").contains(Substring(request.httpMethod ?? "GET"))
     }

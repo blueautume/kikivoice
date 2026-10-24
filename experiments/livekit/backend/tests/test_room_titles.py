@@ -73,6 +73,8 @@ def test_title_update_rejects_member_and_admin_and_closed_room(lab):
 
 @pytest.mark.parametrize('payload', [
     {}, {"title": "name", "status": "ended"}, {"title": None},
+    {"theme": None}, {"theme": 0, "status": "ended"},
+    {"theme": -1}, {"theme": 5}, {"theme": True}, {"theme": "2"},
     {"title": "name", "hostID": "other"}, {"title": "name", "category": "other"},
     {"title": "a" * 41}, {"title": "中" * 34}, {"title": "a\x00b"}, {"title": "a\nb"},
 ])
@@ -93,3 +95,62 @@ def test_empty_rename_restores_default_and_transport_failure_cannot_commit(lab):
     failed = lab.client.patch(f'/v1/rooms/{room_id}', headers=headers(owner), json={"title": "不应提交"})
     assert failed.status_code == 503
     assert lab.app.state.db.execute('SELECT title FROM rooms WHERE id=?', (room_id,)).fetchone()[0] == "小岛的房间"
+
+
+@pytest.mark.parametrize("theme", range(5))
+def test_five_room_themes_can_be_selected_at_creation(lab, theme):
+    owner = login(lab)
+    response = lab.client.post('/v1/rooms', headers=headers(owner),
+        json={"category": "随心聊", "theme": theme, "isLive": False})
+    assert response.status_code == 200, response.text
+    assert response.json()["theme"] == theme
+
+
+@pytest.mark.parametrize("theme", [-1, 5, True, "2"])
+def test_create_room_rejects_nonpreset_theme_before_creating_media(lab, theme):
+    owner = login(lab)
+    response = lab.client.post('/v1/rooms', headers=headers(owner),
+        json={"category": "随心聊", "theme": theme, "isLive": False})
+    assert response.status_code == 422
+    assert not lab.rtc.rooms
+    assert lab.app.state.db.execute("SELECT COUNT(*) FROM rooms").fetchone()[0] == 0
+
+
+def test_owner_edits_background_with_title_and_notifies_room_and_catalog(lab):
+    owner, room = joined_owner(lab)
+    guest = login(lab, "朋友")
+    room_id = room["id"]
+    path = f'/v1/rooms/{room_id}'
+    before = lab.client.get(path + '/state', headers=headers(owner)).json()
+    catalog_before = lab.client.get('/v1/room-catalog/changes', headers=headers(owner)).json()["revision"]
+    assert lab.client.patch(path, headers=headers(guest), json={"theme": 4}).status_code == 403
+    changed = lab.client.patch(path, headers=headers(owner), json={"title": "暮色小屋", "theme": 4})
+    assert changed.status_code == 200, changed.text
+    state = changed.json()
+    assert state["room"]["title"] == "暮色小屋" and state["room"]["theme"] == 4
+    assert state["revision"] > before["revision"] and state["seats"] == before["seats"]
+    assert lab.client.get(path, headers=headers(guest)).json()["theme"] == 4
+    assert lab.client.get('/v1/library', headers=headers(owner)).json()["created"][0]["theme"] == 4
+    catalog = lab.client.get('/v1/room-catalog/changes', headers=headers(owner),
+        params={"after": catalog_before, "waitSeconds": 0}).json()
+    assert catalog["changed"]
+    repeated = lab.client.patch(path, headers=headers(owner), json={"theme": 4}).json()
+    assert repeated["revision"] == state["revision"]
+    assert repeated["room"]["title"] == "暮色小屋"
+    lab.rtc.unavailable = True
+    failed = lab.client.patch(path, headers=headers(owner), json={"title": "未提交", "theme": 1})
+    assert failed.status_code == 503
+    row = lab.app.state.db.execute('SELECT title,theme FROM rooms WHERE id=?', (room_id,)).fetchone()
+    assert tuple(row) == ("暮色小屋", 4)
+    lab.rtc.unavailable = False
+    assert lab.client.patch(path, headers=headers(owner), json={"status": "ended"}).status_code == 200
+    assert lab.client.patch(path, headers=headers(owner), json={"theme": 1}).status_code == 409
+
+
+def test_historical_sixth_background_uses_default_without_rewriting_data(lab):
+    owner, room = joined_owner(lab)
+    with lab.app.state.db:
+        lab.app.state.db.execute('UPDATE rooms SET theme=5 WHERE id=?', (room["id"],))
+    current = lab.client.get('/v1/rooms/' + room["id"], headers=headers(owner)).json()
+    assert current["theme"] == 0
+    assert lab.app.state.db.execute('SELECT theme FROM rooms WHERE id=?', (room["id"],)).fetchone()[0] == 5

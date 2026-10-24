@@ -56,12 +56,10 @@ def signed_headers(secret, path, body, *, timestamp=None, nonce=None):
 
 def validate_settings(settings):
     if settings.voice_bridge_enabled:
-        if settings.qa_gifts_enabled:
-            raise RuntimeError("Isolated QA identities cannot authorize the production voice service")
         if (settings.voice_base_url != VOICE_BASE_URL or len(settings.voice_bridge_secret) < 43
                 or len(set(settings.voice_bridge_secret)) < 16):
             raise RuntimeError("Configure the fixed HTTPS voice endpoint and an independent high-entropy bridge secret")
-        if settings.voice_bridge_secret in {settings.secret_key, settings.qa_gifts_token,
+        if settings.voice_bridge_secret in {settings.secret_key,
                                            settings.apple_token_encryption_key}:
             raise RuntimeError("Voice bridge credentials must be independent")
 

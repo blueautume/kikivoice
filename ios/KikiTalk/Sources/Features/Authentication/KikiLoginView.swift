@@ -156,13 +156,10 @@ struct KikiLoginView: View {
                         Image("KikiLaunchMark")
                             .resizable().scaledToFit().frame(width: 84, height: 84)
                             .accessibilityHidden(true)
-                        VStack(spacing: 12) {
-                            Text("听见同频的你")
-                                .font(.title.weight(.semibold)).foregroundStyle(KikiPalette.text)
-                                .accessibilityAddTraits(.isHeader)
-                            Text("用 Apple 账户，开始中文语聊")
-                                .font(.subheadline).foregroundStyle(KikiPalette.secondary)
-                        }.multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                        Text("听见同频的你")
+                            .font(.title.weight(.semibold)).foregroundStyle(KikiPalette.text)
+                            .accessibilityAddTraits(.isHeader)
+                            .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 80)
                     VStack(spacing: 16) {

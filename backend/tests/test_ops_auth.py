@@ -119,6 +119,24 @@ def test_real_registration_usernameless_auth_and_opaque_ops_only_session(ops):
         assert session["token"] not in str(db.execute("SELECT * FROM ops_sessions").fetchall())
 
 
+def test_removed_gift_management_routes_and_permission_cannot_be_used(ops):
+    session, _ = register(ops, "管理范围验收")
+    for scope in ("account", "voice", "community"):
+        grant(ops, session, scope)
+    assert ops.client.get("/admin/v2/me", headers=authorization(session)).json()["account"]["permissions"] == {
+        "account": True, "voice": True, "community": True}
+    with pytest.raises(ValueError):
+        grant(ops, session, "gifts")
+    media_hash = "a" * 64
+    for method, path in [
+        ("GET", "/admin/v2/gifts/catalog"), ("POST", "/admin/v2/gifts/catalog"),
+        ("PATCH", "/admin/v2/gifts/catalog/aurora_car"),
+        ("POST", "/admin/v2/gifts/assets/video"),
+        ("PUT", f"/admin/v2/gifts/assets/{media_hash}/poster"),
+    ]:
+        assert ops.client.request(method, path, headers=authorization(session)).status_code == 404
+
+
 def test_registration_and_auth_challenges_are_one_use_even_after_crypto_failure(ops):
     option=options(ops,"registration");key=Authenticator();credential=key.registration(option,flags=0x41)
     assert verify(ops,"registration",option,credential).status_code==401

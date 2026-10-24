@@ -183,11 +183,11 @@ class SafetyStore:
 
     def snapshot(self, user_id):
         now = int(time.time())
-        rows = self.db.execute("""SELECT b.blocked_user_id,COALESCE(u.name,'用户'),b.created_at FROM safety_blocks b
+        rows = self.db.execute("""SELECT b.blocked_user_id,COALESCE(u.name,'用户'),b.created_at,u.display_id FROM safety_blocks b
             LEFT JOIN users u ON u.id=b.blocked_user_id WHERE b.user_id=? AND COALESCE(u.deleted,0)=0
             ORDER BY b.created_at DESC,b.blocked_user_id""", (user_id,)).fetchall()
         notices = self.db.execute("SELECT * FROM safety_notices WHERE user_id=? AND expires_at>? ORDER BY created_at DESC,id DESC LIMIT 50", (user_id,now)).fetchall()
-        return {"schemaVersion":1, "blockedUsers":[{"userID":r[0],"name":r[1],"createdAt":r[2]} for r in rows],
+        return {"schemaVersion":1, "blockedUsers":[{"userID":r[0],"name":r[1],"createdAt":r[2],"displayID":r[3]} for r in rows],
             "notices":[{"id":r["id"],"message":r["message"],"action":r["action"],"createdAt":r["created_at"],"expiresAt":r["expires_at"]} for r in notices],
             "restrictions":self.restrictions(user_id)}
 
@@ -214,6 +214,12 @@ class SafetyStore:
         # an endless catch-up loop. The client clears its own cache on block changes.
         return result
 
+    def display_id(self, user_id):
+        # Public numbers can be reused after erasure. Moderation always acts on
+        # the immutable target user ID, never on this presentation-only value.
+        person = self.db.execute("SELECT display_id FROM users WHERE id=? AND deleted=0", (user_id,)).fetchone()
+        return person[0] if person else None
+
     def report_json(self, row, *, operator=False):
         result = {"id":row["id"], "status":row["status"], "targetType":row["target_type"],
             "roomID":row["room_id"],"targetUserID":row["target_user_id"],"messageID":row["message_id"],
@@ -224,7 +230,8 @@ class SafetyStore:
                 return person[0] if person else "已移除用户"
             evidence = json.loads(row["evidence_json"])
             result.update(roomTitle=row["room_title"], reporterID=row["reporter_id"], reporterName=name(row["reporter_id"]),
-                targetName=name(row["target_user_id"]), messageExcerpt=evidence.get("message",{}).get("text"),
+                targetName=name(row["target_user_id"]), reporterDisplayID=self.display_id(row["reporter_id"]),
+                targetDisplayID=self.display_id(row["target_user_id"]), messageExcerpt=evidence.get("message",{}).get("text"),
                 lastAction=row["last_action"],evidenceExpiresAt=row["evidence_expires_at"])
         return result
 
@@ -293,6 +300,7 @@ class SafetyStore:
             ORDER BY user_id LIMIT 5001""", (now,now,now)).fetchall()
         return {"schemaVersion":1,"reports":[self.report_json(r,operator=True) for r in rows],"retentionDays":30,
             "activeRestrictions":[{"reportID":r["source_report_id"],"targetUserID":r["user_id"],
+                "targetDisplayID":self.display_id(r["user_id"]),
                 "chatMutedUntil":r["chat_muted_until"] if r["chat_muted_until"] and r["chat_muted_until"]>now else None,
                 "voiceMutedUntil":r["voice_muted_until"] if r["voice_muted_until"] and r["voice_muted_until"]>now else None,
                 "bannedUntil":r["banned_until"] if r["banned_until"] and r["banned_until"]>now else None} for r in active[:5000]],

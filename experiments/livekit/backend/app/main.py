@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import account_bridge, ops_gateway, safety, incidents, social_policy, experience, seating, room_catalog, room_started
+from . import account_bridge, ops_gateway, safety, incidents, social_policy, seating, room_catalog, room_started
 from .rtc import LiveKitGateway
 from .signal_gateway import SignalAuthorization, SignalGateway
 from .chat import RoomChatStore, initialize_chat_database, validate_text
@@ -209,7 +209,7 @@ class RoomCreate(Model):
     title: str = Field(default="", max_length=40)
     category: str = Field(min_length=1, max_length=12)
     isLive: bool = Field(strict=True)
-    theme: int = Field(strict=True, ge=0, le=5)
+    theme: int = Field(strict=True, ge=0, le=4)
 
     @field_validator("title")
     @classmethod
@@ -227,6 +227,7 @@ class RoomCreate(Model):
 class RoomUpdate(Model):
     status: str | None = Field(default=None, pattern="^(live|active|closed|ended)$")
     title: str | None = Field(default=None, max_length=40)
+    theme: int | None = Field(default=None, strict=True, ge=0, le=4)
 
     @field_validator("title")
     @classmethod
@@ -235,8 +236,9 @@ class RoomUpdate(Model):
 
     @model_validator(mode="after")
     def one_operation(self):
-        if (self.status is None) == (self.title is None):
-            raise ValueError("Supply exactly one of status or title")
+        edits = self.title is not None or self.theme is not None
+        if (self.status is None) == (not edits):
+            raise ValueError("Supply status alone, or title/theme edits")
         return self
 
 
@@ -365,7 +367,6 @@ def initialize_database(path):
     safety.initialize_database(db)
     incidents.initialize_database(db)
     social_policy.initialize_database(db)
-    experience.initialize_database(db)
     seating.initialize_database(db)
     room_catalog.initialize_database(db)
     room_started.initialize_database(db)
@@ -409,7 +410,6 @@ def create_app(settings=None, gateway=None):
             with app.state.db:
                 app.state.db.execute("UPDATE sessions SET revoked_at=COALESCE(revoked_at,?),revoked_reason='mode-switch' WHERE token_hash NOT IN (SELECT token_hash FROM account_authorizations)", (int(time.time()),))
         app.state.chat = RoomChatStore(app.state.db, Limiter())
-        app.state.experience = experience.ExperienceStore(app.state.db, Limiter())
         app.state.seating = seating.OrderedSeats(app.state.db)
         app.state.safety = safety.SafetyStore.configured(app.state.db, Limiter(), settings.safety_terms_path)
         app.state.incidents = incidents.IncidentStore(app.state.db)
@@ -428,7 +428,6 @@ def create_app(settings=None, gateway=None):
             async with lock:
                 with app.state.db:
                     app.state.chat.prune()
-                    app.state.experience.prune()
                     app.state.safety.prune()
                     app.state.incidents.prune()
                     social_policy.prune(app.state.db)
@@ -458,7 +457,7 @@ def create_app(settings=None, gateway=None):
             app.state.db.close()
             await app.state.rtc.close()
 
-    app = FastAPI(title="Kiki LiveKit laboratory", docs_url=None, redoc_url=None,
+    app = FastAPI(title="kiki Voice API", docs_url=None, redoc_url=None,
                   openapi_url=None, lifespan=lifespan)
 
     def client_ip(request):
@@ -638,7 +637,7 @@ def create_app(settings=None, gateway=None):
         return authenticate(request)[0]
 
     def user_json(user):
-        return {"id": user["id"], "sdkUserID": user["id"], "name": user["name"],
+        return {"id": user["id"], "sdkUserID": user["id"], "displayID": user["display_id"], "name": user["name"],
                 "bio": user["bio"], "avatarIndex": user["avatar_index"],
                 "notificationsEnabled": bool(user["notifications"]), "avatarURL": user["avatar_url"],
                 "needsNickname": bool(user["needs_nickname"])}
@@ -681,13 +680,13 @@ def create_app(settings=None, gateway=None):
         online = known_online_members.get(room["id"], set()) if room["status"] == "active" else set()
         blocked = {row[0] for row in app.state.db.execute("""SELECT blocked_user_id FROM safety_blocks WHERE user_id=?
             UNION SELECT user_id FROM safety_blocks WHERE blocked_user_id=?""", (user_id, user_id))}
-        preview = [{"userID": row["id"], "name": row["name"], "avatarIndex": row["avatar_index"], "avatarURL": row["avatar_url"]}
+        preview = [{"userID": row["id"], "displayID": row["display_id"], "name": row["name"], "avatarIndex": row["avatar_index"], "avatarURL": row["avatar_url"]}
                    for row in app.state.db.execute("""SELECT u.* FROM room_members m JOIN users u ON u.id=m.user_id
                        WHERE m.room_id=? AND m.active=1 AND u.deleted=0 ORDER BY m.joined_at,m.user_id""", (room["id"],))
                    if row["id"] in online and row["id"] != owner["id"] and row["id"] not in blocked][:5]
         return {"id": room["id"], "title": room["title"], "host": owner["name"],
-                "hostID": owner["id"], "category": room["category"], "audience": audience,
-                "isLive": False, "theme": room["theme"], "isCreatedByMe": owner["id"] == user_id,
+                "hostID": owner["id"], "hostDisplayID": owner["display_id"], "category": room["category"], "audience": audience,
+                "isLive": False, "theme": room["theme"] if room["theme"] in range(5) else 0, "isCreatedByMe": owner["id"] == user_id,
                 "status": "live" if room["status"] == "active" else "ended",
                 "createdAt": room["created_at"], "hostAvatarIndex": owner["avatar_index"],
                 "hostAvatarURL": owner["avatar_url"], "memberPreview": preview}
@@ -857,7 +856,7 @@ def create_app(settings=None, gateway=None):
             with db:
                 db.execute("DELETE FROM seat_invitations WHERE room_id=? AND expires_at<=?", (room_id, now))
                 bump(room_id)
-        rows = db.execute("SELECT m.*,u.name,u.avatar_index,u.avatar_url,s.chat_muted_until,s.voice_muted_until,s.banned_until,p.offline_since,a.status request_status,q.user_id requested_user FROM room_members m JOIN users u ON u.id=m.user_id LEFT JOIN safety_restrictions s ON s.user_id=m.user_id LEFT JOIN room_presence p ON p.room_id=m.room_id AND p.user_id=m.user_id LEFT JOIN seat_request_states a ON a.room_id=m.room_id AND a.user_id=m.user_id LEFT JOIN seat_requests q ON q.room_id=m.room_id AND q.user_id=m.user_id WHERE m.room_id=? AND m.active=1 ORDER BY m.joined_at,m.user_id", (room_id,)).fetchall()
+        rows = db.execute("SELECT m.*,u.name,u.avatar_index,u.avatar_url,u.display_id,s.chat_muted_until,s.voice_muted_until,s.banned_until,p.offline_since,a.status request_status,q.user_id requested_user FROM room_members m JOIN users u ON u.id=m.user_id LEFT JOIN safety_restrictions s ON s.user_id=m.user_id LEFT JOIN room_presence p ON p.room_id=m.room_id AND p.user_id=m.user_id LEFT JOIN seat_request_states a ON a.room_id=m.room_id AND a.user_id=m.user_id LEFT JOIN seat_requests q ON q.room_id=m.room_id AND q.user_id=m.user_id WHERE m.room_id=? AND m.active=1 ORDER BY m.joined_at,m.user_id", (room_id,)).fetchall()
         seats = db.execute("SELECT * FROM room_seats WHERE room_id=? ORDER BY seat_index", (room_id,)).fetchall()
         seats_by_user = {seat["user_id"]: seat for seat in seats if seat["user_id"] is not None}
         members = []
@@ -865,7 +864,7 @@ def create_app(settings=None, gateway=None):
             permissions = permissions_for_seat(member, seats_by_user.get(member["user_id"]))
             offline_since = member["offline_since"] if member["user_id"] not in online else None
             grace = OWNER_DISCONNECT_GRACE_SECONDS if member["user_id"] == room["owner_id"] else DISCONNECT_GRACE_SECONDS
-            members.append({"userID": member["user_id"], "name": member["name"],
+            members.append({"userID": member["user_id"], "displayID": member["display_id"], "name": member["name"],
                 "avatarIndex": member["avatar_index"], "avatarURL": member["avatar_url"], "role": member["role"],
                 "seatIndex": permissions["seatIndex"], "audioMuted": bool(member["audio_muted"] or member["voice_muted_until"] and member["voice_muted_until"] > now),
                 "chatMuted": bool(member["chat_muted"] or member["chat_muted_until"] and member["chat_muted_until"] > now), "online": member["user_id"] in online,
@@ -875,19 +874,19 @@ def create_app(settings=None, gateway=None):
                     "pending" if member["requested_user"] else "none",
                 "canPublishAudio": permissions["canPublishAudio"], "canPublishData": permissions["canPublishData"]})
         moderator = me["role"] in {"owner", "admin"}
-        invitations = db.execute("SELECT i.*,u.name FROM seat_invitations i JOIN users u ON u.id=i.user_id WHERE i.room_id=? ORDER BY i.expires_at,i.user_id", (room_id,)).fetchall()
-        queue = db.execute("SELECT q.*,u.name,COALESCE(a.status,'pending') request_status,a.approval_order FROM seat_requests q JOIN users u ON u.id=q.user_id LEFT JOIN seat_request_states a ON a.room_id=q.room_id AND a.user_id=q.user_id WHERE q.room_id=? ORDER BY CASE WHEN a.status='approved' THEN 0 ELSE 1 END,a.approval_order,q.requested_at,q.rowid", (room_id,)).fetchall()
-        bans = db.execute("SELECT b.*,u.name FROM room_bans b JOIN users u ON u.id=b.user_id WHERE b.room_id=? ORDER BY b.banned_at,b.user_id", (room_id,)).fetchall() if moderator else []
+        invitations = db.execute("SELECT i.*,u.name,u.display_id FROM seat_invitations i JOIN users u ON u.id=i.user_id WHERE i.room_id=? ORDER BY i.expires_at,i.user_id", (room_id,)).fetchall()
+        queue = db.execute("SELECT q.*,u.name,u.display_id,COALESCE(a.status,'pending') request_status,a.approval_order FROM seat_requests q JOIN users u ON u.id=q.user_id LEFT JOIN seat_request_states a ON a.room_id=q.room_id AND a.user_id=q.user_id WHERE q.room_id=? ORDER BY CASE WHEN a.status='approved' THEN 0 ELSE 1 END,a.approval_order,q.requested_at,q.rowid", (room_id,)).fetchall()
+        bans = db.execute("SELECT b.*,u.name,u.display_id FROM room_bans b JOIN users u ON u.id=b.user_id WHERE b.room_id=? ORDER BY b.banned_at,b.user_id", (room_id,)).fetchall() if moderator else []
         return {"room": room_json(room, user["id"], len(online)),
             "seatMode": "ordered", "disconnectGraceSeconds": DISCONNECT_GRACE_SECONDS,
             "ownerDisconnectGraceSeconds": OWNER_DISCONNECT_GRACE_SECONDS,
             "revision": db.execute("SELECT revision FROM room_revisions WHERE room_id=?", (room_id,)).fetchone()[0],
             "me": next(member for member in members if member["userID"] == user["id"]), "members": members,
             "seats": [{"index": seat["seat_index"], "userID": seat["user_id"], "locked": bool(seat["locked"]), "audioLocked": bool(seat["audio_locked"])} for seat in seats],
-            "queue": [{"userID": q["user_id"], "name": q["name"], "requestedAt": q["requested_at"], "position": index+1,
+            "queue": [{"userID": q["user_id"], "displayID": q["display_id"], "name": q["name"], "requestedAt": q["requested_at"], "position": index+1,
                        "status": q["request_status"], "online": q["user_id"] in online} for index,q in enumerate(queue)],
-            "invitations": [{"userID": i["user_id"], "name": i["name"], "seatIndex": i["seat_index"], "expiresAt": i["expires_at"]} for i in invitations if moderator or i["user_id"] == user["id"]],
-            "bans": [{"userID": b["user_id"], "name": b["name"], "bannedAt": b["banned_at"]} for b in bans]}
+            "invitations": [{"userID": i["user_id"], "displayID": i["display_id"], "name": i["name"], "seatIndex": i["seat_index"], "expiresAt": i["expires_at"]} for i in invitations if moderator or i["user_id"] == user["id"]],
+            "bans": [{"userID": b["user_id"], "displayID": b["display_id"], "name": b["name"], "bannedAt": b["banned_at"]} for b in bans]}
 
     def schedule_media(room_id, user_id, kind):
         app.state.db.execute("INSERT INTO media_cleanup VALUES(?,?,?) ON CONFLICT(room_id,user_id) DO UPDATE SET kind=excluded.kind", (room_id, user_id, kind))
@@ -1114,10 +1113,9 @@ def create_app(settings=None, gateway=None):
             if associated or media:
                 continue
             with db:
-                db.execute("UPDATE users SET name='已注销',bio='',avatar_index=0,notifications=0,avatar_url=NULL,deleted=1 WHERE id=?", (user_id,))
+                db.execute("UPDATE users SET name='已注销',bio='',avatar_index=0,notifications=0,avatar_url=NULL,display_id=NULL,deleted=1 WHERE id=?", (user_id,))
                 room_started.erase(db,user_id)
                 app.state.safety.clear_user(user_id)
-                app.state.experience.clear_user(user_id, deleted=True)
                 db.execute("DELETE FROM safety_restrictions WHERE user_id=?", (user_id,))
                 db.execute("DELETE FROM favorites WHERE user_id=?", (user_id,))
                 db.execute("DELETE FROM history WHERE user_id=?", (user_id,))
@@ -1282,7 +1280,6 @@ def create_app(settings=None, gateway=None):
                 async with lock:
                     with app.state.db:
                         app.state.chat.prune()
-                        app.state.experience.prune()
                         app.state.safety.prune()
                         app.state.incidents.prune()
                         social_policy.prune(app.state.db)
@@ -1341,7 +1338,6 @@ def create_app(settings=None, gateway=None):
                 db.execute("INSERT OR IGNORE INTO deletion_requests(user_id,requested_at) VALUES(?,?)", (user["id"], now))
             if reason in {"withdrawal", "deleted"}:
                 app.state.chat.clear_sender(user["id"])
-                app.state.experience.clear_user(user["id"], deleted=reason == "deleted")
                 app.state.safety.clear_user(user["id"])
                 app.state.incidents.clear_user(user["id"])
         await app.state.signal.close_session(session["token_hash"])
@@ -1388,7 +1384,6 @@ def create_app(settings=None, gateway=None):
                 if deleted or erase_withdrawal:
                     room_started.erase(db,row["user_id"])
                     app.state.chat.clear_sender(row["user_id"])
-                    app.state.experience.clear_user(row["user_id"], deleted=deleted)
                     social = db.execute("SELECT consent_epoch FROM account_social_privacy WHERE user_id=?",(row["user_id"],)).fetchone()
                     preserve_blocks = (not deleted and withdrawal_epoch is not None
                                        and social is not None and social[0] > withdrawal_epoch)
@@ -1611,21 +1606,24 @@ def create_app(settings=None, gateway=None):
             room = get_room(room_id)
             if room["owner_id"] != user["id"]:
                 raise HTTPException(403, "只有房主可以修改或结束房间")
-            if payload.title is not None:
-                app.state.safety.enforce(user["id"], "chat")
-                title = payload.title or default_room_title(user["name"])
-                app.state.safety.check_text(title)
+            if payload.title is not None or payload.theme is not None:
+                if payload.title is not None:
+                    app.state.safety.enforce(user["id"], "chat")
+                    title = payload.title or default_room_title(user["name"])
+                    app.state.safety.check_text(title)
+                else:
+                    title = room["title"]
+                theme = payload.theme if payload.theme is not None else room["theme"]
                 presence = {}
                 await synchronize(presence, room_id=room_id)
                 room = get_room(room_id)
-                # Read all authorization/presence before committing the title;
-                # a later SFU outage cannot turn a committed rename into 503.
+                # Confirm live-room authorization before committing either field.
                 state = await room_state(room_id, user, session, presence)
-                if state["me"]["chatMuted"]:
+                if payload.title is not None and state["me"]["chatMuted"]:
                     raise HTTPException(403, "你已被禁言，暂时无法修改房间名称")
-                if room["title"] != title:
+                if room["title"] != title or room["theme"] != theme:
                     with app.state.db:
-                        app.state.db.execute("UPDATE rooms SET title=? WHERE id=?", (title, room_id))
+                        app.state.db.execute("UPDATE rooms SET title=?,theme=? WHERE id=?", (title, theme, room_id))
                         bump(room_id)
                 state["room"] = room_json(get_room(room_id), user["id"], state["room"]["audience"])
                 state["revision"] = app.state.db.execute("SELECT revision FROM room_revisions WHERE room_id=?", (room_id,)).fetchone()[0]
@@ -2038,8 +2036,6 @@ def create_app(settings=None, gateway=None):
     app.include_router(social_policy.build_router(app, settings, lock, valid_session))
     app.include_router(room_started.build_router(app, settings, lock))
     app.include_router(incidents.build_router(app, settings, lock, authenticate))
-    app.include_router(experience.build_router(app, lock, authenticate, chat_member,
-                                             participant_ids, member_row, valid_session))
     # Exposed for focused lifecycle/authorization tests without a real WebRTC client.
     app.state.authorize_signal = authorize_signal
     app.state.signal_disconnected = signal_disconnected

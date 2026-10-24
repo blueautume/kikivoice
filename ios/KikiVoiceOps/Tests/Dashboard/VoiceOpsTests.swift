@@ -14,7 +14,8 @@ final class VoiceOpsTests: XCTestCase {
         for url in ["https://furby.top/admin/v2/me", "https://kiki.group/admin/v1/dashboard", "https://kiki.group/v1/me",
                     "http://kiki.group/admin/v2/me", "https://kiki.group:8443/admin/v2/me", "https://user@kiki.group/admin/v2/me",
                     "https://kiki.group/admin/v2/me?token=x", "https://kiki.group/admin/v2/me#x", "https://kiki.group/admin/v2/%6de",
-                    "https://kiki.group/admin/v2/../me", "https://other.invalid/admin/v2/me"] {
+                    "https://kiki.group/admin/v2/../me", "https://other.invalid/admin/v2/me",
+                    "https://kiki.group/admin/v2/services/account/social/media/11111111-2222-4333-8444-555555555555.jpg"] {
             XCTAssertFalse(OpsIdentityEndpoint.permits(URLRequest(url: URL(string: url)!)))
         }
         var wrong = URLRequest(url: URL(string: "https://kiki.group/admin/v2/me")!); wrong.httpMethod = "DELETE"

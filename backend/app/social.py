@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .voice_bridge import signed_headers
 from .social_content import (ContentMethods, initialize_content, purge_content, erase_content, install_content_routes)
 from .community_content import PublicTextPolicy
-from . import room_started
+from . import room_started, account_numbers
 
 DAYS = 30 * 86400
 POLICY_PATH = "/internal/v1/account/social-policy"
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS social_notifications(
  id TEXT PRIMARY KEY,recipient_id TEXT NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
  actor_id TEXT REFERENCES accounts(account_id) ON DELETE CASCADE,
  kind TEXT NOT NULL,text TEXT NOT NULL,created_at INTEGER NOT NULL,read_at INTEGER,
- dedupe_key TEXT UNIQUE,room_id TEXT,moment_id TEXT);
+ dedupe_key TEXT UNIQUE,room_id TEXT,is_retired INTEGER NOT NULL DEFAULT 0 CHECK(is_retired IN (0,1)));
 CREATE INDEX IF NOT EXISTS social_notification_recipient ON social_notifications(recipient_id,created_at DESC,id DESC);
 CREATE TABLE IF NOT EXISTS social_notification_sequence(
  seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,8 +161,6 @@ class Policy(Model):
 
 def initialize(db):
     db.executescript(SCHEMA)
-    if "moment_id" not in {row["name"] for row in db.execute("PRAGMA table_info(social_notifications)")}:
-        db.execute("ALTER TABLE social_notifications ADD COLUMN moment_id TEXT")
     db.execute("INSERT INTO social_notification_sequence(notification_id) SELECT n.id FROM social_notifications n WHERE NOT EXISTS(SELECT 1 FROM social_notification_sequence s WHERE s.notification_id=n.id) ORDER BY n.created_at,n.id")
     initialize_content(db)
     room_started.initialize(db)
@@ -356,7 +354,7 @@ class SocialService(ContentMethods):
                               (target, *self.legal_args)).fetchall()
             return sum(item[0] not in blocked for item in rows)
         room = next((item.roomID for item in policy.currentRooms if item.userID == row["login_id"]), None)
-        return {"id":row["login_id"],"name":row["name"],"bio":row["bio"],"avatarIndex":row["avatar_index"],
+        return {"id":row["login_id"],"displayID":account_numbers.display_id(row),"name":row["name"],"bio":row["bio"],"avatarIndex":row["avatar_index"],
                 "avatarURL":self.settings.public_base_url.rstrip("/")+"/v1/avatars/"+row["avatar_filename"] if row["avatar_filename"] else None,
                 "following":following,"followsYou":follows_you,"mutual":following and follows_you,
                 "followingCount":count("following"),"followerCount":count("followers"),"currentRoomID":room}
@@ -383,8 +381,8 @@ class SocialService(ContentMethods):
                 order = "a.created_at"
             if query:
                 literal = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-                conditions.append("(a.name LIKE ? ESCAPE '\\' OR a.login_id LIKE ? ESCAPE '\\')")
-                args.extend(("%"+literal+"%", "%"+literal+"%"))
+                conditions.append("(a.name LIKE ? ESCAPE '\\' OR a.login_id LIKE ? ESCAPE '\\' OR (a.public_number IS NOT NULL AND ('kiki_' || printf('%06d',a.public_number)) LIKE ? ESCAPE '\\'))")
+                args.extend(("%"+literal+"%", "%"+literal+"%", "%"+literal+"%"))
             if key:
                 conditions.append(f"({order}<? OR ({order}=? AND a.login_id<?))")
                 args.extend((key[0],key[0],key[1]))
@@ -435,11 +433,11 @@ class SocialService(ContentMethods):
             raise HTTPException(429, "操作较多，请稍后再试", headers={"Retry-After":"3600"})
         db.execute("INSERT INTO social_rate_events VALUES(?,?,?,?)", (str(uuid.uuid4()),user["account_id"],kind,now))
 
-    def notice(self, db, recipient, kind, text, actor=None, dedupe=None,moment_id=None,*,room_id=None,push_expires_at=None):
+    def notice(self, db, recipient, kind, text, actor=None, dedupe=None,*,room_id=None,push_expires_at=None):
         now = int(time.time())
         notice_id = str(uuid.uuid4())
-        inserted = db.execute("INSERT OR IGNORE INTO social_notifications(id,recipient_id,actor_id,kind,text,created_at,dedupe_key,moment_id,room_id) VALUES(?,?,?,?,?,?,?,?,?)",
-                   (notice_id,recipient,actor,kind,text,now,dedupe,moment_id,room_id))
+        inserted = db.execute("INSERT OR IGNORE INTO social_notifications(id,recipient_id,actor_id,kind,text,created_at,dedupe_key,room_id) VALUES(?,?,?,?,?,?,?,?)",
+                   (notice_id,recipient,actor,kind,text,now,dedupe,room_id))
         if inserted.rowcount and hasattr(self,"push"):
             self.push.enqueue(db,recipient,"notification",notice_id,actor,expires_at=push_expires_at)
 
@@ -518,7 +516,7 @@ class SocialService(ContentMethods):
         key = self.cursor(user,"notifications",value=cursor)
         with self.database(self.settings) as db:
             self.check(db,user)
-            rows = db.execute("SELECT n.*,a.login_id AS actor_public,s.seq FROM social_notifications n JOIN social_notification_sequence s ON s.notification_id=n.id LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE n.recipient_id=? AND n.created_at>? AND s.seq>COALESCE((SELECT cleared_through_seq FROM social_notification_state WHERE account_id=?),0)"+
+            rows = db.execute("SELECT n.*,a.login_id AS actor_public,s.seq FROM social_notifications n JOIN social_notification_sequence s ON s.notification_id=n.id LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE n.is_retired=0 AND n.recipient_id=? AND n.created_at>? AND s.seq>COALESCE((SELECT cleared_through_seq FROM social_notification_state WHERE account_id=?),0)"+
                               (" AND (n.created_at<? OR (n.created_at=? AND n.id<?))" if key else "")+
                               " ORDER BY n.created_at DESC,n.id DESC LIMIT ?",
                               (user["account_id"],int(time.time())-DAYS,user["account_id"],*((key[0],key[0],key[1]) if key else ()),limit+1)).fetchall()
@@ -529,7 +527,7 @@ class SocialService(ContentMethods):
             self.check(db,user)
             notices=[]
             for row in candidates:
-                fresh=db.execute("SELECT 1 FROM social_notifications n JOIN social_notification_sequence s ON s.notification_id=n.id WHERE n.id=? AND n.recipient_id=? AND s.seq>COALESCE((SELECT cleared_through_seq FROM social_notification_state WHERE account_id=?),0)",(row["id"],user["account_id"],user["account_id"])).fetchone()
+                fresh=db.execute("SELECT 1 FROM social_notifications n JOIN social_notification_sequence s ON s.notification_id=n.id WHERE n.is_retired=0 AND n.id=? AND n.recipient_id=? AND s.seq>COALESCE((SELECT cleared_through_seq FROM social_notification_state WHERE account_id=?),0)",(row["id"],user["account_id"],user["account_id"])).fetchone()
                 if not fresh or row["actor_public"] in policy.blockedUserIDs:
                     continue
                 actor = None
@@ -539,7 +537,7 @@ class SocialService(ContentMethods):
                         continue
                     actor = self.person(db,user,account,policy)
                 notices.append({"id":row["id"],"seq":row["seq"],"kind":row["kind"],"actor":actor,"text":row["text"],"createdAt":row["created_at"],
-                                "readAt":row["read_at"],"roomID":row["room_id"],"momentID":row["moment_id"]})
+                                "readAt":row["read_at"],"roomID":row["room_id"]})
             unread=self.unread(db,user,policy)
             state=self.notification_inbox_state(db,user,policy)
         return {"notifications":notices,"unreadCount":unread,"nextCursor":self.cursor(user,"notifications",key=[candidates[-1]["created_at"],candidates[-1]["id"]]) if len(rows)>limit and candidates else None,"retentionDays":30,"inboxState":state}
@@ -554,13 +552,13 @@ class SocialService(ContentMethods):
 
     def notification_inbox_state(self,db,user,policy):
         state=self.notification_state(db,user)
-        rows=db.execute("SELECT n.id,n.actor_id,a.login_id AS actor_public FROM social_notifications n JOIN social_notification_sequence s ON s.notification_id=n.id LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE n.recipient_id=? AND n.created_at>? AND s.seq>? ORDER BY s.seq DESC",(user["account_id"],int(time.time())-DAYS,state["cleared_through_seq"]))
+        rows=db.execute("SELECT n.id,n.actor_id,a.login_id AS actor_public FROM social_notifications n JOIN social_notification_sequence s ON s.notification_id=n.id LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE n.is_retired=0 AND n.recipient_id=? AND n.created_at>? AND s.seq>? ORDER BY s.seq DESC",(user["account_id"],int(time.time())-DAYS,state["cleared_through_seq"]))
         latest=next((row["id"] for row in rows if self.notification_visible(db,row,policy)),None)
         return {"isPinned":bool(state["is_pinned"]),"isHidden":state["cleared_through_seq"]>0 and latest is None,"throughNotificationID":latest,"clearedThroughSeq":state["cleared_through_seq"]}
 
     def unread(self, db, user, policy, *, cutoff=None):
         if cutoff is None: cutoff=int(time.time())-DAYS
-        rows=db.execute("SELECT n.actor_id,a.login_id AS actor_public FROM social_notifications n JOIN social_notification_sequence s ON s.notification_id=n.id LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE n.recipient_id=? AND n.read_at IS NULL AND n.created_at>? AND s.seq>COALESCE((SELECT cleared_through_seq FROM social_notification_state WHERE account_id=?),0)",(user["account_id"],cutoff,user["account_id"])).fetchall()
+        rows=db.execute("SELECT n.actor_id,a.login_id AS actor_public FROM social_notifications n JOIN social_notification_sequence s ON s.notification_id=n.id LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE n.is_retired=0 AND n.recipient_id=? AND n.read_at IS NULL AND n.created_at>? AND s.seq>COALESCE((SELECT cleared_through_seq FROM social_notification_state WHERE account_id=?),0)",(user["account_id"],cutoff,user["account_id"])).fetchall()
         return sum(self.notification_visible(db,row,policy) for row in rows)
 
     def pin_notifications(self,user,payload):
@@ -582,7 +580,7 @@ class SocialService(ContentMethods):
             self.check(db,user)
             old,hashed=self.receipt(db,user,payload.requestID,{"kind":"notifications-clear","throughNotificationID":payload.throughNotificationID})
             if old: return {"ok":True}
-            row=db.execute("SELECT s.seq,n.actor_id,a.login_id AS actor_public FROM social_notifications n JOIN social_notification_sequence s ON s.notification_id=n.id LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE n.id=? AND n.recipient_id=? AND n.created_at>?",(payload.throughNotificationID,user["account_id"],int(time.time())-DAYS)).fetchone()
+            row=db.execute("SELECT s.seq,n.actor_id,a.login_id AS actor_public FROM social_notifications n JOIN social_notification_sequence s ON s.notification_id=n.id LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE n.is_retired=0 AND n.id=? AND n.recipient_id=? AND n.created_at>?",(payload.throughNotificationID,user["account_id"],int(time.time())-DAYS)).fetchone()
             if row is None or not self.notification_visible(db,row,policy): raise HTTPException(404,"通知不存在或已过期")
             self.rate(db,user,"inbox",300,1000)
             db.execute("INSERT INTO social_notification_state(account_id,is_pinned,cleared_through_seq) VALUES(?,0,?) ON CONFLICT(account_id) DO UPDATE SET is_pinned=0,cleared_through_seq=MAX(cleared_through_seq,excluded.cleared_through_seq)",(user["account_id"],row["seq"]))
@@ -605,7 +603,7 @@ class SocialService(ContentMethods):
             self.check(db,user)
             old,hashed=self.receipt(db,user,payload.requestID,content)
             if old: return {"ok":True}
-            row=db.execute("SELECT n.actor_id,a.login_id AS actor_public FROM social_notifications n LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE n.id=? AND n.recipient_id=? AND n.created_at>?",(notification_id,user["account_id"],int(time.time())-DAYS)).fetchone()
+            row=db.execute("SELECT n.actor_id,a.login_id AS actor_public FROM social_notifications n LEFT JOIN accounts a ON a.account_id=n.actor_id WHERE n.is_retired=0 AND n.id=? AND n.recipient_id=? AND n.created_at>?",(notification_id,user["account_id"],int(time.time())-DAYS)).fetchone()
             if row is None or not self.notification_visible(db,row,policy):
                 raise HTTPException(404,"通知不存在或暂不可见")
             self.rate(db,user,"inbox",300,1000)
@@ -778,10 +776,7 @@ def metrics(db,now=None):
     scalar=lambda sql,args=():db.execute(sql,args).fetchone()[0]
     return {"follows":scalar("SELECT COUNT(*) FROM social_follows"),
             "mutualPairs":scalar("SELECT COUNT(*) FROM social_follows f WHERE f.follower_id<f.followed_id AND EXISTS(SELECT 1 FROM social_follows b WHERE b.follower_id=f.followed_id AND b.followed_id=f.follower_id)"),
-            "moments":scalar("SELECT COUNT(*) FROM social_moments"),
-            "comments":scalar("SELECT COUNT(*) FROM social_comments"),
-            "privateMedia":scalar("SELECT COUNT(*) FROM social_media"),
             "messagesLast30Days":scalar("SELECT COUNT(*) FROM social_messages WHERE created_at>?",(now-DAYS,)),
-            "pendingReports":scalar("SELECT COUNT(*) FROM social_reports WHERE status='pending' AND created_at>?",(now-DAYS,)),
+            "pendingReports":scalar("SELECT COUNT(*) FROM social_reports WHERE target_type IN ('profile','direct_message') AND status='pending' AND created_at>?",(now-DAYS,)),
             "activePostingRestrictions":scalar("SELECT COUNT(*) FROM social_restrictions WHERE muted_until>?",(now,)),
-            "note":"账号服务社交汇总；动态/关系为当前保留总量，私聊为滚动30天。举报证据需独立社区管理权限；以上不包含语聊在线人数或外部推送投递。"}
+            "note":"账号服务社交汇总；关系为当前保留总量，私聊为滚动30天。举报证据需独立社区管理权限；以上不包含语聊在线人数或外部推送投递。"}

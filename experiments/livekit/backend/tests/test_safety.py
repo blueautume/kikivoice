@@ -61,6 +61,8 @@ def safety(lab, account):
 
 def test_block_filters_authoritative_messages_and_announcement_without_stalling_cursor(lab):
     room,(owner,guest,other),_ = setup_room(lab,3)
+    with lab.app.state.db:
+        lab.app.state.db.execute("UPDATE users SET display_id=? WHERE id=?", ("kiki_000001", owner["user"]["id"]))
     for sender,text in ((owner,"公告作者的消息"),(other,"其他人的消息")):
         response = lab.client.post(f'/v1/rooms/{room["id"]}/messages',headers=headers(sender),
             json={"clientMessageID":str(uuid.uuid4()),"text":text})
@@ -69,6 +71,9 @@ def test_block_filters_authoritative_messages_and_announcement_without_stalling_
     response = lab.client.put('/v1/safety/blocks/'+owner['user']['id'],headers=headers(guest))
     assert response.status_code == 200
     assert response.json()["blockedUsers"][0]["name"] == owner["user"]["name"]
+    assert response.json()["blockedUsers"][0]["displayID"] == "kiki_000001"
+    assert response.json()["blockedUsers"][0]["userID"] == owner["user"]["id"]
+    assert safety(lab, guest)["blockedUsers"][0]["displayID"] == "kiki_000001"
     data = lab.client.get(f'/v1/rooms/{room["id"]}/messages',headers=headers(guest)).json()
     assert [m["text"] for m in data["messages"]] == ["其他人的消息"]
     assert data["latestSeq"] == data["nextAfterSeq"] == 2
@@ -103,12 +108,18 @@ def test_report_requires_real_observed_participation_and_server_owned_message_ev
 def test_signed_query_exposes_bounded_evidence_and_rejects_replay_across_paths(community):
     room,(owner,guest),_ = setup_room(community)
     entry = report(community,room,guest,owner)
+    with community.app.state.db:
+        community.app.state.db.execute("UPDATE users SET display_id=? WHERE id=?", ("kiki_000001", owner["user"]["id"]))
+        community.app.state.db.execute("UPDATE users SET display_id=? WHERE id=?", ("kiki_000002", guest["user"]["id"]))
     payload = {"status":"pending","limit":50,"opsActorID":ACTOR}
     body = json.dumps(payload).encode()
     auth = signed(path=MODERATION_QUERY_PATH,body=body)
     result = community.client.post(MODERATION_QUERY_PATH,content=body,headers=auth)
     assert result.status_code == 200 and result.json()["reports"][0]["id"] == entry["id"]
     assert result.json()["reports"][0]["reporterName"] == guest["user"]["name"]
+    assert result.json()["reports"][0]["reporterDisplayID"] == "kiki_000002"
+    assert result.json()["reports"][0]["targetDisplayID"] == "kiki_000001"
+    assert result.json()["reports"][0]["targetUserID"] == owner["user"]["id"]
     assert community.client.post(MODERATION_QUERY_PATH,content=body,headers=auth).status_code == 401
     # Re-signing a used nonce for a different fixed path still fails.
     assert community.client.post(DASHBOARD_PATH,content=b"{}",headers=signed(nonce=auth["X-Kiki-Ops-Nonce"])).status_code == 401
@@ -343,7 +354,7 @@ def test_active_restriction_can_be_restored_after_source_evidence_expires(commun
     result = community.client.post(MODERATION_QUERY_PATH,content=body,headers=signed(path=MODERATION_QUERY_PATH,body=body)).json()
     assert result['reports'] == []
     assert result['activeRestrictions'][0]['reportID'] == entry['id']
-    assert set(result['activeRestrictions'][0]) == {'reportID','targetUserID','chatMutedUntil','voiceMutedUntil','bannedUntil'}
+    assert set(result['activeRestrictions'][0]) == {'reportID','targetUserID','targetDisplayID','chatMutedUntil','voiceMutedUntil','bannedUntil'}
     moderate(community,entry,'restore_user')
     assert safety(community,guest)['restrictions']['bannedUntil'] is None
 

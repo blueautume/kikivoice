@@ -49,7 +49,7 @@ def test_people_follow_literal_search_cursor_binding_and_notification_ack(client
 
 def test_social_fail_closed_preserves_account_login_and_deletion(client):
     alice=login(client)
-    for path in ('/v1/social/people','/v1/social/relationships/ids','/v1/social/notifications','/v1/social/moments','/v1/social/conversations'):
+    for path in ('/v1/social/people','/v1/social/relationships/ids','/v1/social/notifications','/v1/social/conversations'):
         assert client.get(path,headers=authorization(alice)).status_code==503
     assert client.get('/v1/me',headers=authorization(alice)).status_code==200
     assert client.delete('/v1/account',headers=authorization(alice)).status_code==200
@@ -116,21 +116,6 @@ def test_block_request_retry_cannot_reapply_after_newer_unblock(client):
     assert client.put(route,headers=authorization(alice),json={'requestID':block_id}).json()=={'ok':True,'blocked':False}
     assert len(calls)==before and state is False
     assert client.request('DELETE',route,headers=authorization(alice),json={'requestID':block_id}).status_code==409
-
-
-def test_interaction_notice_links_to_auth_single_moment(client):
-    setup(client)
-    alice,bob=[login(client,name) for name in ('alice','bob')]
-    created=client.post('/v1/social/moments',headers=authorization(alice),json={'requestID':rid(),'text':'晚饭后的闲聊','mediaIDs':[]})
-    assert created.status_code==200,created.text
-    moment=created.json()['moment']
-    assert client.put('/v1/social/moments/'+moment['id']+'/like',headers=authorization(bob),json={'requestID':rid()}).status_code==200
-    notice=client.get('/v1/social/notifications',headers=authorization(alice)).json()['notifications'][0]
-    assert notice['momentID']==moment['id']
-    assert client.get('/v1/social/moments/'+moment['id']).status_code==401
-    assert client.get('/v1/social/moments/'+moment['id'],headers=authorization(alice)).json()['moment']['id']==moment['id']
-    assert client.delete('/v1/social/moments/'+moment['id'],headers=authorization(alice)).status_code==200
-    assert client.get('/v1/social/moments/'+moment['id'],headers=authorization(alice)).status_code==404
 
 
 from test_voice_bridge import bridge_client

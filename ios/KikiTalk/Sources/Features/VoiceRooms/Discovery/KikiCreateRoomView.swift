@@ -53,29 +53,7 @@ struct KikiCreateRoomView: View {
 
                     VStack(alignment: .leading, spacing: 12) {
                         fieldTitle("背景")
-                        HStack(spacing: 10) {
-                            ForEach(0..<5) { index in
-                                Button { theme = index } label: {
-                                    KikiCover(theme: index)
-                                        .frame(height: 58)
-                                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                                        .overlay {
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .stroke(theme == index ? KikiPalette.lavender : .clear, lineWidth: 2)
-                                        }
-                                        .overlay {
-                                            if theme == index {
-                                                Image(systemName: "checkmark.circle.fill")
-                                                    .foregroundStyle(.white)
-                                                    .font(.system(size: 18))
-                                            }
-                                        }
-                                }
-                                .accessibilityLabel("背景\(index + 1)")
-                                .accessibilityAddTraits(theme == index ? .isSelected : [])
-                                .buttonStyle(.plain)
-                            }
-                        }
+                        KikiRoomBackgroundPicker(theme: $theme)
                     }
 
                     if let errorMessage {

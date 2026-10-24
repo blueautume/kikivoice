@@ -786,15 +786,15 @@ extension KikiConsentTests {
             let store = try await directIntroductionStore(documents: docs, api: mock.client, voice: mock.voiceClient)
             store.updateDirectDraft("离线验收草稿 😀", personID: peer)
             let expectedEnabled = established || remaining > 0
-            try await withMomentWindow { window in
+            try await withSocialWindow { window in
                 window.rootViewController = UIHostingController(rootView: NavigationStack {
                     KikiDirectConversationView(person: person, store: store)
                 }.environment(\.scenePhase, .active).preferredColorScheme(.light))
                 window.makeKeyAndVisible()
-                try await self.waitUntil { !requests.values.isEmpty && store.directMessageAccess[peer]?.canSend == expectedEnabled && !self.momentEditableViews(window).isEmpty }
+                try await self.waitUntil { !requests.values.isEmpty && store.directMessageAccess[peer]?.canSend == expectedEnabled && !self.socialEditableViews(window).isEmpty }
                 try await Task.sleep(nanoseconds: 350_000_000)
                 window.layoutIfNeeded()
-                let input = try XCTUnwrap(self.momentEditableViews(window).filter { !$0.isHidden && $0.bounds.width > 100 && $0.bounds.height > 15 }.first,
+                let input = try XCTUnwrap(self.socialEditableViews(window).filter { !$0.isHidden && $0.bounds.width > 100 && $0.bounds.height > 15 }.first,
                                           "Production DM composer must contain a native UIKit text input")
                 var hierarchyEnabled = true
                 var ancestor: UIView? = input
@@ -1318,7 +1318,7 @@ private final class KikiCatalogFixtureState: @unchecked Sendable {
 extension KikiConsentTests {
     func testConfirmedProfileFollowReturnsBeforeASlowSecondarySummary() async throws {
         let docs = try XCTUnwrap(KikiLegalBundle.bundled)
-        let person = momentFixturePerson(following: false)
+        let person = socialFixturePerson(following: false)
         var confirmed = person; confirmed.following = true
         let personData = try JSONSerialization.data(withJSONObject: ["person": JSONSerialization.jsonObject(with: JSONEncoder().encode(confirmed))])
         let summaryArrived = expectation(description: "Secondary profile summary is in flight")
@@ -1337,7 +1337,7 @@ extension KikiConsentTests {
             }
             return try p1VisualResponse(request, documents: docs)
         }
-        let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
         let follow = Task {
             let result = try await store.setFollowing(person, enabled: true)
             followReturned.fulfill()
@@ -1374,7 +1374,7 @@ extension KikiConsentTests {
             XCTAssertFalse(request.url?.path.hasPrefix("/v1/blocks") == true)
             return try p1VisualResponse(request, documents: docs)
         }
-        let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
         _ = try await store.socialDirectMessages(peer)
         store.updateDirectDraft("Unsent private draft", personID: peer)
         do { _ = try await store.sendDirectDraft(peer); XCTFail("The first write must remain uncertain") } catch { }
@@ -1383,14 +1383,14 @@ extension KikiConsentTests {
         try await store.setSocialBlock(peer, enabled: true)
         XCTAssertEqual(store.socialPrivacyRevision, revision + 1)
         XCTAssertNil(store.directDrafts[peer]); XCTAssertNil(store.pendingDirectMessages[peer]); XCTAssertNil(store.directMessageAccess[peer])
-        XCTAssertFalse(store.isFollowing(momentFixturePerson(following: true)))
+        XCTAssertFalse(store.isFollowing(socialFixturePerson(following: true)))
         let rtc = KikiRTCService.shared
         let previous = rtc.socialStore; rtc.socialStore = store
         defer { rtc.socialStore = previous }
         try await rtc.setBlocked(peer, enabled: false)
         XCTAssertEqual(writes.values, ["PUT", "DELETE"])
         XCTAssertEqual(store.socialPrivacyRevision, revision + 2)
-        XCTAssertFalse(store.isFollowing(momentFixturePerson(following: true)), "Unblocking must not recreate a removed follow")
+        XCTAssertFalse(store.isFollowing(socialFixturePerson(following: true)), "Unblocking must not recreate a removed follow")
         XCTAssertFalse(rtc.isUpdatingBlock)
         await store.logout()
     }
@@ -1417,7 +1417,7 @@ extension KikiConsentTests {
                                        ("375-large-text", CGSize(width: 375, height: 812), .accessibility2),
                                        ("ipad-width", CGSize(width: 1133, height: 744), .large)] {
             let writes = TestRequests(), directReads = TestRequests()
-            let person = momentFixturePerson(following: false)
+            let person = socialFixturePerson(following: false)
             var confirmed = person; confirmed.following = true
             let personData = try JSONSerialization.data(withJSONObject: ["person": JSONSerialization.jsonObject(with: JSONEncoder().encode(person))])
             let confirmedData = try JSONSerialization.data(withJSONObject: ["person": JSONSerialization.jsonObject(with: JSONEncoder().encode(confirmed))])
@@ -1435,8 +1435,8 @@ extension KikiConsentTests {
                 }
                 return try p1VisualResponse(request, documents: docs)
             }
-            let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
-            try await withMomentWindow { window in
+            let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+            try await withSocialWindow { window in
                 let original = window.frame
                 window.frame = CGRect(origin: original.origin, size: size)
                 let tabs = KikiDirectNavigationFixtureTabs()
@@ -1450,8 +1450,8 @@ extension KikiConsentTests {
                 }
                 let tabController = try XCTUnwrap(nativeMainTabController(in: presenter))
                 let initialTabs = nativeMainTabState(tabController)
-                XCTAssertEqual(initialTabs.titles, ["语聊", "动态", "消息", "我"])
-                XCTAssertEqual(initialTabs.selectedIndex, 1)
+                XCTAssertEqual(initialTabs.titles, ["语聊", "消息", "我"])
+                XCTAssertEqual(initialTabs.selectedIndex, 0)
                 let initialTabFrame = nativeMainTabVisibleFrame(tabController, in: window)
                 let profile: UIViewController
                 if name == "375" {
@@ -1466,7 +1466,9 @@ extension KikiConsentTests {
                     XCTAssertEqual(tabs.profile?.id, person.id)
                     XCTAssertEqual(tabs.profileDismissals, 0)
                 } else {
-                    let nativeProfile = UIHostingController(rootView: KikiPublicProfileView(userID: peer, store: store)
+                    let nativeProfile = UIHostingController(rootView: KikiPublicProfileView(userID: peer, store: store,
+                        leadingAction: AnyView(KikiProfileSeatInviteButton(title: "邀请", isBusy: false, isEnabled: true,
+                            action: { XCTFail("Rendering a room's profile action must not send an invitation") })))
                         .dynamicTypeSize(typeSize).environment(\.scenePhase, .active).preferredColorScheme(.light))
                     nativeProfile.modalPresentationStyle = .pageSheet
                     nativeProfile.sheetPresentationController?.detents = [.medium(), .large()]
@@ -1525,13 +1527,13 @@ extension KikiConsentTests {
                 try await self.waitUntil { writes.values == ["PUT"] && store.isFollowing(person) && follow.isEnabled && follow.configuration?.title == "已关注" }
                 let depth = presentedChain(presenter).count
                 XCTAssertEqual(depth, name == "375" ? 1 : 2)
-                XCTAssertEqual(tabs.selectedTab, 1)
+                XCTAssertEqual(tabs.selectedTab, 0)
                 direct.sendActions(for: .touchUpInside)
                 do {
                     try await self.waitUntil {
                         presentedChain(presenter).isEmpty && tabs.selectedTab == 2
                             && store.directConversationPath.map(\.person.id) == [peer]
-                            && !directReads.values.isEmpty && !self.momentEditableViews(window).isEmpty
+                            && !directReads.values.isEmpty && !self.socialEditableViews(window).isEmpty
                     }
                 } catch {
                     func allControllers(_ value: UIViewController) -> [UIViewController] { [value] + value.children.flatMap(allControllers) }
@@ -1539,7 +1541,7 @@ extension KikiConsentTests {
                     print("Navigation fixture diagnostic", name, "pending", store.pendingDirectConversation != nil,
                           "path", store.directConversationPath.map(\.person.id), "tab", tabs.selectedTab,
                           "modalDepth", presentedChain(presenter).count, "reads", directReads.values.count,
-                          "inputs", self.momentEditableViews(window).count, "hosts", hosts.count,
+                          "inputs", self.socialEditableViews(window).count, "hosts", hosts.count,
                           "hostWindows", hosts.map { $0.viewIfLoaded?.window != nil },
                           "cachedWindows", hosts.map { $0.hostingWindow != nil },
                           "parentDepths", hosts.map { host in var depth = 0; var current = host.parent; while let value = current { depth += 1; current = value.parent }; return depth })
@@ -1571,7 +1573,7 @@ extension KikiConsentTests {
 
                 // A preserved navigation path in another resident tab must not
                 // suppress foreground notices for this conversation.
-                tabs.selectedTab = 1
+                tabs.selectedTab = 0
                 try await self.waitUntil {
                     store.foregroundNotificationContext.conversationPersonID == nil && !nativeMainTabIsHidden(tabController)
                 }
@@ -1594,8 +1596,8 @@ extension KikiConsentTests {
                 }
                 XCTAssertEqual(tabs.selectedTab, 2, "Back returns to the messages list")
                 let restoredTabs = nativeMainTabState(tabController)
-                XCTAssertEqual(restoredTabs.titles, ["语聊", "动态", "消息", "我"])
-                XCTAssertEqual(restoredTabs.selectedIndex, 2)
+                XCTAssertEqual(restoredTabs.titles, ["语聊", "消息", "我"])
+                XCTAssertEqual(restoredTabs.selectedIndex, 1)
                 XCTAssertNil(presenter.presentedViewController, "The old profile sheet must not revive after navigation and tab updates")
                 if name == "375" { XCTAssertEqual(tabs.profileDismissals, 1) }
                 try capture("messages-after-back")
@@ -1625,8 +1627,8 @@ extension KikiConsentTests {
         let docs = try XCTUnwrap(KikiLegalBundle.bundled)
         for invalidatesSession in [false, true] {
             let mock = KikiAPIMockServer { try p1VisualResponse($0, documents: docs) }
-            let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
-            let person = momentFixturePerson(following: false)
+            let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+            let person = socialFixturePerson(following: false)
             store.requestDirectConversation(person)
             let first = try XCTUnwrap(store.pendingDirectConversation)
             store.requestDirectConversation(person)
@@ -1666,7 +1668,7 @@ extension KikiConsentTests {
 
 @MainActor
 private final class KikiDirectNavigationFixtureTabs: ObservableObject {
-    @Published var selectedTab = 1
+    @Published var selectedTab = 0
     @Published var profile: KikiPerson?
     @Published var profileDismissals = 0
 }
@@ -1681,9 +1683,7 @@ private struct KikiDirectNavigationFixture: View {
     var body: some View {
         KikiMainTabs(selection: $tabs.selectedTab, unreadCount: store.unreadMessageCount,
                      hidesTabBar: tabs.selectedTab == 2 && !store.directConversationPath.isEmpty) {
-            Color.clear
-        } moments: {
-            NavigationStack { KikiPalette.background.ignoresSafeArea() }
+            NavigationStack { Color.clear }
         } messages: {
             KikiMessagesView(store: store, isActive: tabs.selectedTab == 2)
         } profile: {
@@ -1735,30 +1735,7 @@ extension KikiConsentTests {
         await store.logout()
     }
 
-    func testExperienceRefreshStillShowsGenuineServiceFailure() async throws {
-        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
-        let phase = TestRequests()
-        let message = "体验服务暂不可用"
-        let mock = KikiAPIMockServer { request in
-            if request.url?.path == "/v1/auth/refresh", !phase.values.isEmpty {
-                return (503, try JSONSerialization.data(withJSONObject: ["detail": message]))
-            }
-            return try consentResponse(request, documents: docs)
-        }
-        let identity = TestIdentity(values: ["sessionToken": "existing-session", "appleSubject": "apple-subject", "appleSessionVersion": "2"])
-        let consent = KikiConsentStore(documents: docs, defaults: defaults(), identity: identity, apiProvider: { mock.client }, requiresRemoteDocuments: false)
-        try consent.accept()
-        let rtc = TestRTC()
-        let store = KikiAppStore(consent: consent, identity: identity, apiProvider: { mock.client }, voiceAPIProvider: { mock.voiceClient }, rtcProvider: { rtc }, appleProvider: { TestApple() })
-        await store.start()
-        XCTAssertTrue(store.isAuthenticated)
-        rtc.isLoggedIn = false
-        phase.append("renewal-fails")
-        await store.refreshExperience()
-        XCTAssertEqual(store.toast, message)
-        XCTAssertTrue(store.isAuthenticated)
-        await store.logout()
-    }
+
 }
 
 /// Correlates cancellation to the one library request deliberately suspended
@@ -2089,20 +2066,19 @@ extension KikiConsentTests {
         await store.start(); await store.refreshRooms(); await store.refreshSocialSummary()
         XCTAssertTrue(store.isAuthenticated)
         let person = try await store.socialPerson("kiki_fixture0002")
-        let momentPage = try await store.socialMoments(kind: .all)
-        let moment = try XCTUnwrap(momentPage.moments.first)
         let inboxPage = try await store.socialInbox()
         XCTAssertEqual(inboxPage.entries.count, 2, "The main inbox fixture must contain a private conversation and an individual interaction")
         let screens: [(String, AnyView)] = [
             ("rooms-light", mainTabVisualScreen(AnyView(KikiDiscoverView().environmentObject(store).preferredColorScheme(.light)))),
             ("create-room-light", AnyView(KikiCreateRoomView(isLive: false, onCreate: { _ in XCTFail("Visual fixtures must not create a room") }).environmentObject(store).preferredColorScheme(.light))),
-            ("moments-light", mainTabVisualScreen(AnyView(KikiMomentsView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.light)))),
             ("messages-unified-light", mainTabVisualScreen(AnyView(KikiMessagesView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.light)))),
             ("person-light", AnyView(KikiPublicProfileView(userID: person.id, store: store).preferredColorScheme(.light))),
-            ("comments-dark", AnyView(KikiMomentCommentsView(moment: moment, store: store).preferredColorScheme(.dark))),
             ("direct-light", AnyView(NavigationStack {
                 KikiDirectConversationView(person: person, store: store)
             }.preferredColorScheme(.light))),
+            ("profile-light", mainTabVisualScreen(AnyView(KikiProfileView().environmentObject(store).preferredColorScheme(.light)))),
+            ("profile-dark", mainTabVisualScreen(AnyView(KikiProfileView().environmentObject(store).preferredColorScheme(.dark)))),
+            ("create-room-dark", AnyView(KikiCreateRoomView(isLive: false, onCreate: { _ in XCTFail("Visual fixtures must not create a room") }).environmentObject(store).preferredColorScheme(.dark))),
             ("profile-large-text", mainTabVisualScreen(AnyView(KikiProfileView().environmentObject(store).preferredColorScheme(.light).dynamicTypeSize(.accessibility1))))
         ]
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })
@@ -2171,13 +2147,6 @@ extension KikiConsentTests {
                     room["id"] = "lk_" + String(format: "%032x", index + 1)
                     return room
                 }
-            case "/v1/social/moments":
-                let original = try XCTUnwrap((body["moments"] as? [[String: Any]])?.first)
-                body["moments"] = (0..<16).map { index -> [String: Any] in
-                    var moment = original
-                    moment["id"] = String(format: "%08x-0000-4000-8000-%012x", index + 1, index + 1)
-                    return moment
-                }
             case "/v1/social/inbox":
                 let originals = try XCTUnwrap(body["entries"] as? [[String: Any]])
                 body["entries"] = try (0..<24).map { index -> [String: Any] in
@@ -2203,7 +2172,6 @@ extension KikiConsentTests {
         XCTAssertTrue(store.isAuthenticated)
         let pages: [(String, AnyView)] = [
             ("rooms", AnyView(KikiDiscoverView().environmentObject(store))),
-            ("moments", AnyView(KikiMomentsView(store: store).environment(\.scenePhase, .active))),
             ("messages", AnyView(KikiMessagesView(store: store).environment(\.scenePhase, .active))),
             ("profile", AnyView(KikiProfileView().environmentObject(store)))
         ]
@@ -2231,10 +2199,14 @@ extension KikiConsentTests {
         }
         func checkTabItems(_ controller: UITabBarController) {
             let state = nativeMainTabState(controller)
-            XCTAssertEqual(state.titles, ["语聊", "动态", "消息", "我"])
-            XCTAssertEqual(state.selectedIndex, 1)
-            guard state.badges.count == 4 else { XCTFail("The native tabs must expose all four badge values"); return }
-            XCTAssertEqual(state.badges[2], "", "Unread messages use the native empty-string red badge")
+            XCTAssertEqual(state.titles, ["语聊", "消息", "我"])
+            XCTAssertEqual(state.selectedIndex, 0)
+            guard state.badges.count == 3 else { XCTFail("The native tabs must expose all three badge values"); return }
+            if #available(iOS 18.0, *), UIDevice.current.userInterfaceIdiom == .pad {
+                XCTAssertEqual(state.badges[1], "", "Text-only iPad tabs retain an unread badge")
+            } else {
+                XCTAssertNil(state.badges[1], "Unread messages use the compact dot in the tab icon")
+            }
             XCTAssertFalse(nativeMainTabIsHidden(controller), "Scrolling the main pages must retain the system tab interface")
         }
         @discardableResult
@@ -2267,9 +2239,9 @@ extension KikiConsentTests {
                 host.safeAreaRegions = .all
                 window.rootViewController = host
                 // A compact real scene window keeps every production page,
-                // including Profile, genuinely scrollable on both device idioms.
+                // including the shorter Profile, genuinely scrollable on both device idioms.
                 window.frame = CGRect(origin: originalFrame.origin,
-                                      size: CGSize(width: originalFrame.width, height: min(originalFrame.height, 640)))
+                                      size: CGSize(width: originalFrame.width, height: min(originalFrame.height, name == "profile" ? 320 : 640)))
                 window.makeKeyAndVisible(); host.view.frame = window.bounds
                 try await Task.sleep(nanoseconds: 750_000_000)
                 window.layoutIfNeeded()
@@ -2277,14 +2249,14 @@ extension KikiConsentTests {
                 XCTAssertGreaterThan(topInset, 0, "The fixture must preserve the scene's real status safe area")
                 XCTAssertFalse(descendants(host.view).contains { $0.accessibilityIdentifier == "main.statusBackdrop" },
                                "The native tab container must not restore a custom status-area blur")
-                let tabController = try XCTUnwrap(nativeMainTabController(in: host), "The four destinations must use the system UITabBarController")
+                let tabController = try XCTUnwrap(nativeMainTabController(in: host), "The three destinations must use the system UITabBarController")
                 checkTabItems(tabController)
                 let tabFrame = nativeMainTabVisibleFrame(tabController, in: window)
                 if let tabFrame { XCTAssertTrue(window.bounds.insetBy(dx: -1, dy: -1).contains(tabFrame)) }
                 let prefix = device + "-" + name + "-" + schemeName
                 try capture(prefix + "-initial", topInset: topInset)
                 do {
-                    let scroll = try XCTUnwrap(momentScrollViews(host.view).filter {
+                    let scroll = try XCTUnwrap(socialScrollViews(host.view).filter {
                         !($0 is UITextView) && $0.bounds.height > 100
                             && $0.contentSize.height + $0.adjustedContentInset.top + $0.adjustedContentInset.bottom > $0.bounds.height + 100
                     }.max { $0.contentSize.height < $1.contentSize.height }, "\(name) must display real scrollable fixture content")
@@ -2447,9 +2419,7 @@ private func nativeMainTabContentFrame(_ controller: UITabBarController, in wind
 
 @MainActor
 private func mainTabVisualScreen(_ page: AnyView) -> AnyView {
-    AnyView(KikiMainTabs(selection: .constant(1), unreadCount: 3) {
-        Color.clear
-    } moments: {
+    AnyView(KikiMainTabs(selection: .constant(0), unreadCount: 3) {
         page
     } messages: {
         Color.clear
@@ -2458,590 +2428,15 @@ private func mainTabVisualScreen(_ page: AnyView) -> AnyView {
     })
 }
 
-extension KikiConsentTests {
-    func testExperienceWalletStoreAndGiftPanelFixtureScreenshots() async throws {
-        let identity = TestIdentity(values: ["sessionToken": "fixture-session", "appleSubject": "apple-subject", "appleSessionVersion": "2"])
-        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
-        let requests = TestRequests()
-        let mock = KikiAPIMockServer { request in
-            requests.append("\(request.httpMethod ?? "GET") \(request.url!.path)")
-            return try p1VisualResponse(request, documents: docs)
-        }
-        let consent = KikiConsentStore(documents: docs, defaults: defaults(), identity: identity, apiProvider: { mock.client }, requiresRemoteDocuments: false)
-        try consent.accept()
-        let rtc = TestRTC()
-        let store = KikiAppStore(consent: consent, identity: identity, apiProvider: { mock.client }, voiceAPIProvider: { mock.voiceClient }, rtcProvider: { rtc }, appleProvider: { TestApple() })
-        await store.start()
-        await store.gifts.refresh()
-        XCTAssertTrue(store.isAuthenticated)
-        XCTAssertTrue(store.gifts.isAvailable)
-        XCTAssertNil(store.gifts.errorMessage)
-        XCTAssertEqual(store.gifts.wallet?.balance, 100_000_000)
-        XCTAssertEqual(store.gifts.giftItems.count, 5)
-        XCTAssertEqual(store.gifts.giftCount("heart"), 10)
-        XCTAssertEqual(store.gifts.giftCount("flower_rain"), 3)
-        XCTAssertEqual(store.gifts.giftCount("aurora_car"), 1)
-        XCTAssertEqual(store.gifts.giftCount("galaxy_rocket"), 0)
-        XCTAssertEqual(store.gifts.decorationItems.count, 12)
-        XCTAssertEqual(store.gifts.inventory.ownedIDs.count, 6)
-        for kind in KikiDecorationKind.allCases {
-            let equippedID = try XCTUnwrap(store.gifts.inventory.equipped.id(for: kind))
-            XCTAssertTrue(store.gifts.inventory.ownedIDs.contains(equippedID))
-        }
-        let names = ["小岛", "夏日海风", "阿澈", "星光慢慢", "想聊聊今天的小确幸", "云朵"]
-        let members = names.enumerated().map { index, name in
-            KikiRoomMember(userID: String(format: "kiki_fixture%04d", index + 2), name: name,
-                           avatarIndex: index + 2, avatarURL: nil, role: index == 0 ? .owner : .member,
-                           seatIndex: index < 4 ? index + 1 : nil, audioMuted: false, chatMuted: false,
-                           online: true, canPublishAudio: index < 4, canPublishData: true)
-        }
-        await store.gifts.refreshDecorations(userIDs: members.map(\.userID))
-        XCTAssertNil(store.gifts.errorMessage)
-        XCTAssertNotNil(store.gifts.appearance(for: members[0].userID).avatarFrame)
-        let roomID = "lk_" + String(repeating: "a", count: 32)
-        let screens: [(String, AnyView)] = [
-            ("experience-wallet-store", AnyView(KikiExperienceCenterView(gifts: store.gifts).preferredColorScheme(.light))),
-            ("experience-gift-panel", AnyView(KikiGiftPanel(gifts: store.gifts, roomID: roomID, members: members, hostID: members[0].userID).preferredColorScheme(.light))),
-            ("experience-profile", AnyView(KikiProfileView().environmentObject(store).preferredColorScheme(.light))),
-            ("experience-equipped-previews", AnyView(KikiExperienceDecorationVisualFixture(gifts: store.gifts).preferredColorScheme(.dark)))
-        ]
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })
-        let previous = scene.windows.first { $0.isKeyWindow }
-        let window = UIWindow(windowScene: scene)
-        let originalFrame = window.frame
-        defer { window.frame = originalFrame; window.isHidden = true; previous?.makeKeyAndVisible() }
-        let folder = URL(fileURLWithPath: "/tmp/kiki-experience-screenshots", isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
-
-        func capture(_ name: String, screen: AnyView, size: CGSize) async throws {
-            window.rootViewController = UIHostingController(rootView: screen)
-            window.makeKeyAndVisible()
-            window.frame = CGRect(origin: originalFrame.origin, size: size)
-            window.rootViewController?.view.frame = window.bounds
-            try await Task.sleep(nanoseconds: 500_000_000)
-            window.layoutIfNeeded()
-            XCTAssertEqual(window.frame.width, size.width, accuracy: 0.5, name)
-            XCTAssertEqual(window.frame.height, size.height, accuracy: 0.5, name)
-            XCTAssertEqual(window.rootViewController?.view.bounds.size, size, name)
-            XCTAssertNil(store.gifts.errorMessage, "The actual view's startup refresh must use the fixture API")
-            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
-            }
-            let attachment = XCTAttachment(image: image)
-            attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
-            try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(device + "-" + name + ".png"))
-        }
-
-        let sizes = [CGSize(width: 375, height: 812), CGSize(width: 1133, height: 744)]
-        for size in sizes {
-            for (name, screen) in screens {
-                try await capture("\(name)-\(Int(size.width))x\(Int(size.height))", screen: screen, size: size)
-            }
-        }
-        let narrow = sizes[0]
-        try await capture("experience-wallet-store-large-text-375x812", screen: AnyView(KikiExperienceCenterView(gifts: store.gifts).preferredColorScheme(.light).dynamicTypeSize(.accessibility1)), size: narrow)
-        try await capture("experience-gift-panel-large-text-375x812", screen: AnyView(KikiGiftPanel(gifts: store.gifts, roomID: roomID, members: members, hostID: members[0].userID).preferredColorScheme(.light).dynamicTypeSize(.accessibility1)), size: narrow)
-        // Exercise the production SwiftUI sheet, not a shortened full-screen
-        // window. Large text gives the iPad form the same meaningful overflow.
-        window.frame = originalFrame
-        let sheetFixture = KikiGiftSheetVisualFixture(gifts: store.gifts, roomID: roomID, members: members,
-            hostID: members[0].userID)
-            .dynamicTypeSize(UIDevice.current.userInterfaceIdiom == .pad ? .accessibility1 : .large)
-            .preferredColorScheme(.light)
-        let sheetHost = UIHostingController(rootView: sheetFixture)
-        window.rootViewController = sheetHost
-        window.makeKeyAndVisible()
-        try await waitUntil { sheetHost.presentedViewController?.viewIfLoaded?.window != nil }
-        let presented = try XCTUnwrap(sheetHost.presentedViewController)
-        let sheet = try XCTUnwrap(presented.sheetPresentationController)
-        try await Task.sleep(nanoseconds: 500_000_000)
-        window.layoutIfNeeded()
-        XCTAssertEqual(sheet.selectedDetentIdentifier, .medium)
-        XCTAssertLessThan(presented.view.bounds.height, window.bounds.height - 20)
-        let scroll = try XCTUnwrap(momentScrollViews(presented.view).filter {
-            $0.bounds.height > 100 && $0.contentSize.height + $0.adjustedContentInset.top + $0.adjustedContentInset.bottom > $0.bounds.height + 30
-        }.max { $0.bounds.height < $1.bounds.height }, "The real medium gift sheet must contain a scrollable gift grid")
-        func giftSheetViews(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(giftSheetViews) }
-        let navigationBar = try XCTUnwrap(giftSheetViews(presented.view).compactMap { $0 as? UINavigationBar }.first)
-        let beforeBar = navigationBar.convert(navigationBar.bounds, to: window)
-        func captureGiftSheet(_ phase: String) throws {
-            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
-            }
-            let name = device + "-experience-gift-medium-" + phase
-            let attachment = XCTAttachment(image: image); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
-            try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(name + ".png"))
-        }
-        try captureGiftSheet("initial")
-        let beforeOffset = scroll.contentOffset.y
-        let bottom = scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
-        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: bottom), animated: false)
-        try await Task.sleep(nanoseconds: 200_000_000)
-        window.layoutIfNeeded()
-        XCTAssertGreaterThan(scroll.contentOffset.y, beforeOffset + 30)
-        XCTAssertEqual(scroll.contentOffset.y, bottom, accuracy: 1, "The gift grid's real bottom must remain reachable at medium height")
-        XCTAssertEqual(sheet.selectedDetentIdentifier, .medium, "Scrolling content must not require expanding the sheet")
-        XCTAssertEqual(navigationBar.convert(navigationBar.bounds, to: window), beforeBar, "Balance and Done remain fixed while gift content scrolls")
-        try captureGiftSheet("scrolled")
-        sheetHost.dismiss(animated: false)
-        XCTAssertTrue(requests.values.contains("GET /v1/gifts/catalog"))
-        XCTAssertTrue(requests.values.contains("GET /v1/me/experience"))
-        XCTAssertTrue(requests.values.contains("GET /v1/decorations/users"))
-        XCTAssertFalse(requests.values.contains { $0.hasPrefix("POST /v1/rooms/") || $0.hasPrefix("GET /v1/rooms/" + roomID + "/gifts") }, "Screenshots must never join a real room, send gifts or poll room events")
-        XCTAssertEqual(rtc.loginCount, 1)
-        await store.logout()
-    }
-}
-
-extension KikiConsentTests {
-    func testGiftBackpackSingleSendComboFixtureScreenshots() async throws {
-        let userID = "kiki_fixture0001", hostID = "kiki_fixture0002"
-        let roomID = "lk_" + String(repeating: "b", count: 32)
-        let fixture = KikiGiftBackpackVisualState(userID: userID, roomID: roomID)
-        let mock = KikiAPIMockServer { request in try fixture.respond(to: request) }
-        let gifts = KikiGiftStore()
-        gifts.configure(api: mock.voiceClient, token: "voice-backpack-fixture", userID: userID)
-        defer { gifts.reset() }
-        await gifts.refresh()
-        XCTAssertNil(gifts.errorMessage)
-        XCTAssertEqual(gifts.giftCount("heart"), 2)
-        XCTAssertEqual(gifts.giftCount("flower_rain"), 3)
-        XCTAssertEqual(gifts.giftCount("aurora_car"), 1)
-        XCTAssertEqual(gifts.giftCount("galaxy_rocket"), 0)
-        XCTAssertEqual(gifts.orderedGiftItems.prefix(3).map(\.id), ["heart", "flower_rain", "aurora_car"])
-        let names = ["小岛", "夏日海风", "星光慢慢", "云朵", "想聊聊今天的小确幸", "阿澈"]
-        let members = names.enumerated().map { index, name in
-            KikiRoomMember(userID: String(format: "kiki_fixture%04d", index + 2), name: name,
-                           avatarIndex: index + 2, avatarURL: nil, role: index == 0 ? .owner : .member,
-                           seatIndex: index < 4 ? index + 1 : nil, audioMuted: false, chatMuted: false,
-                           online: true, canPublishAudio: index < 4, canPublishData: true)
-        }
-        let queue = gifts.sendQueue(for: roomID)
-        let heart = try XCTUnwrap(gifts.giftItems.first { $0.id == "heart" })
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })
-        let previous = scene.windows.first { $0.isKeyWindow }
-        let window = UIWindow(windowScene: scene)
-        let originalFrame = window.frame
-        defer { window.frame = originalFrame; window.isHidden = true; previous?.makeKeyAndVisible() }
-        let output = URL(fileURLWithPath: "/tmp/kiki-gift-bag-screenshots", isDirectory: true)
-        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
-        let sizes: [(String, CGSize, DynamicTypeSize)] = [
-            ("375x812", CGSize(width: 375, height: 812), .large),
-            ("1133x744", CGSize(width: 1133, height: 744), .large),
-            ("large-text-375x812", CGSize(width: 375, height: 812), .accessibility1)
-        ]
-
-        // Retain each actual hosting controller across phases so the gift
-        // selected before exhaustion stays selected when the catalog reorders.
-        var hosts: [String: UIHostingController<AnyView>] = [:]
-        func capture(_ phase: String, label: String, size: CGSize, typeSize: DynamicTypeSize) async throws {
-            let host: UIHostingController<AnyView>
-            if let existing = hosts[label] { host = existing }
-            else {
-                let panel = KikiGiftPanel(gifts: gifts, roomID: roomID, members: members, hostID: hostID)
-                    .preferredColorScheme(.dark).dynamicTypeSize(typeSize)
-                host = UIHostingController(rootView: AnyView(panel))
-                hosts[label] = host
-            }
-            window.rootViewController = host
-            window.makeKeyAndVisible()
-            window.frame = CGRect(origin: originalFrame.origin, size: size)
-            host.view.frame = window.bounds
-            try await Task.sleep(nanoseconds: 500_000_000)
-            window.layoutIfNeeded()
-            XCTAssertEqual(window.bounds.size, size)
-            XCTAssertEqual(host.view.bounds.size, size)
-            XCTAssertNil(gifts.errorMessage, "The real panel's startup refresh must stay on the mock API")
-            XCTAssertNil(queue.errorMessage)
-            XCTAssertFalse(queue.isPaused)
-            func UIKitTexts(_ view: UIView) -> [String] {
-                let own = [view.accessibilityLabel, (view as? UILabel)?.text, (view as? UIButton)?.titleLabel?.text].compactMap { $0 }
-                return own + view.subviews.flatMap { UIKitTexts($0) }
-            }
-            let labels = UIKitTexts(host.view)
-            XCTAssertFalse(labels.contains { $0 == "每人数量" || $0 == "× 10" || $0 == "× 99" || $0 == "已有礼物优先" || $0.contains("每次每人 1 份") || $0.hasPrefix("已送达 ") }, "Quantity summaries and duplicate combo feedback must not be rendered")
-            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
-            }
-            let name = device + "-gift-backpack-" + phase + "-" + label
-            let attachment = XCTAttachment(image: image)
-            attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
-            try XCTUnwrap(image.pngData()).write(to: output.appendingPathComponent(name + ".png"))
-        }
-
-        for (label, size, typeSize) in sizes {
-            try await capture("initial", label: label, size: size, typeSize: typeSize)
-        }
-        XCTAssertTrue(fixture.records.isEmpty, "Rendering the panel must never send automatically")
-        XCTAssertTrue(queue.enqueue(gift: heart, recipientIDs: [hostID]))
-        XCTAssertTrue(queue.enqueue(gift: heart, recipientIDs: [hostID]))
-        XCTAssertTrue(queue.enqueue(gift: heart, recipientIDs: [hostID]))
-        try await waitUntil { queue.pendingCount == 0 && !queue.isSending && queue.lastCombo?.count == 3 }
-        XCTAssertNil(queue.errorMessage)
-        XCTAssertEqual(gifts.giftCount("heart"), 0)
-        XCTAssertEqual(gifts.wallet?.balance, 99_999_999)
-        XCTAssertEqual(queue.lastCombo?.inventoryUsed, 2)
-        XCTAssertEqual(queue.lastCombo?.totalCost, 1)
-        XCTAssertEqual(queue.lastCombo?.recipientIDs, [hostID])
-        XCTAssertEqual(gifts.orderedGiftItems.map(\.id), ["flower_rain", "aurora_car", "heart", "galaxy_rocket", "cosmic_heart"])
-        let records = fixture.records
-        XCTAssertEqual(records.count, 3)
-        XCTAssertEqual(Set(records.map(\.requestID)).count, 3, "Each separate Send has a unique idempotency UUID")
-        XCTAssertTrue(records.allSatisfy { UUID(uuidString: $0.requestID) != nil })
-        XCTAssertEqual(records.map(\.quantity), [1, 1, 1])
-        XCTAssertEqual(records.map(\.inventoryUsed), [1, 1, 0])
-        XCTAssertEqual(records.map(\.cost), [0, 0, 1])
-        for (label, size, typeSize) in sizes {
-            try await capture("confirmed-x3", label: label, size: size, typeSize: typeSize)
-        }
-        XCTAssertEqual(queue.lastCombo?.count, 3, "Reopening the panel preserves the server-confirmed combo without sending again")
-        XCTAssertEqual(fixture.records.count, 3)
-        XCTAssertEqual(fixture.requestPaths.filter { $0 == "POST /v1/rooms/" + roomID + "/gifts" }.count, 3)
-        XCTAssertFalse(fixture.requestPaths.contains { $0.contains("/join") || $0.contains("/lease") || $0.hasPrefix("GET /v1/rooms/") }, "The fixture must not join, poll or use RTC")
-    }
-}
-
-@MainActor
-private struct KikiGiftSheetVisualFixture: View {
-    let gifts: KikiGiftStore
-    let roomID: String
-    let members: [KikiRoomMember]
-    let hostID: String
-    @State private var isPresented = false
-
-    var body: some View {
-        KikiPalette.background.ignoresSafeArea()
-            .onAppear { isPresented = true }
-            .sheet(isPresented: $isPresented) {
-                KikiGiftPanel(gifts: gifts, roomID: roomID, members: members, hostID: hostID).kikiRoomSheet()
-            }
-    }
-}
-
-/// A deterministic, URLProtocol-only gift backpack for real SwiftUI screenshot fixtures.
-private final class KikiGiftBackpackVisualState: @unchecked Sendable {
-    struct Record {
-        let requestID: String
-        let quantity: Int
-        let inventoryUsed: Int
-        let cost: Int
-    }
-    private let lock = NSLock()
-    private let userID: String
-    private let roomID: String
-    private var heartCount = 2
-    private var balance = 100_000_000
-    private var storedRecords: [Record] = []
-    private var paths: [String] = []
-    private var receipts: [String: Data] = [:]
-    init(userID: String, roomID: String) { self.userID = userID; self.roomID = roomID }
-    var records: [Record] { lock.lock(); defer { lock.unlock() }; return storedRecords }
-    var requestPaths: [String] { lock.lock(); defer { lock.unlock() }; return paths }
-    private var giftInventory: [[String: Any]] {
-        [("heart", heartCount), ("flower_rain", 3), ("aurora_car", 1)]
-            .filter { $0.1 > 0 }.map { ["giftID": $0.0, "quantity": $0.1] }
-    }
-    private var wallet: [String: Any] { ["balance": balance, "initialGrant": 100_000_000, "currency": "diamond"] }
-
-    func respond(to request: URLRequest) throws -> (Int, Data) {
-        lock.lock(); defer { lock.unlock() }
-        let path = request.url?.path ?? "", method = request.httpMethod ?? "GET"
-        paths.append(method + " " + path)
-        XCTAssertTrue(request.url?.host?.hasSuffix(".example.invalid") == true, "Every screenshot request must remain in URLProtocol fixtures")
-        if method == "POST", path == "/v1/rooms/" + roomID + "/gifts" {
-            let body = try requestBody(request)
-            let requestID = try XCTUnwrap(body["requestID"] as? String)
-            XCTAssertNotNil(UUID(uuidString: requestID))
-            XCTAssertEqual(body["giftID"] as? String, "heart")
-            XCTAssertEqual(body["quantity"] as? Int, 1)
-            XCTAssertEqual(body["recipientIDs"] as? [String], ["kiki_fixture0002"])
-            if let receipt = receipts[requestID] { return (200, receipt) }
-            let used = min(1, heartCount), cost = 1 - used
-            heartCount -= used; balance -= cost
-            storedRecords.append(Record(requestID: requestID, quantity: try XCTUnwrap(body["quantity"] as? Int), inventoryUsed: used, cost: cost))
-            let sequence = storedRecords.count
-            let event: [String: Any] = ["id": "fixture-backpack-event-\(sequence)", "roomID": roomID,
-                "batchID": "fixture-backpack-batch-\(sequence)", "senderUserID": userID, "senderName": "穷奇",
-                "recipientUserID": "kiki_fixture0002", "recipientName": "小岛", "giftID": "heart", "giftName": "初见心动",
-                "seq": sequence, "quantity": 1, "unitPrice": 1, "batchRecipientCount": 1, "createdAt": 1_792_422_000 + sequence]
-            let response: [String: Any] = ["events": [event], "wallet": wallet, "totalCost": cost,
-                "giftInventory": giftInventory, "inventoryUsed": used, "diamondQuantity": 1 - used, "totalQuantity": 1]
-            let receipt = try JSONSerialization.data(withJSONObject: response)
-            receipts[requestID] = receipt
-            return (200, receipt)
-        }
-        guard let (status, raw) = try experienceVisualResponse(request, userID: userID) else {
-            XCTFail("Unexpected backpack fixture request: \(method) \(path)")
-            return (404, Data())
-        }
-        if path == "/v1/me/experience" {
-            var body = try XCTUnwrap(JSONSerialization.jsonObject(with: raw) as? [String: Any])
-            body["wallet"] = wallet; body["giftInventory"] = giftInventory
-            return (status, try JSONSerialization.data(withJSONObject: body))
-        }
-        if path == "/v1/me/wallet" { return (status, try JSONSerialization.data(withJSONObject: wallet)) }
-        return (status, raw)
-    }
-}
-
-extension KikiConsentTests {
-    func testConfirmedExperienceGiftOverlayFixtureScreenshot() async throws {
-        guard !UIAccessibility.isReduceMotionEnabled else { throw XCTSkip("Real GIF playback requires a simulator with Reduce Motion disabled") }
-        let userID = "kiki_fixture0001"
-        let roomID = "lk_" + String(repeating: "a", count: 32)
-        let roomPolls = TestRequests()
-        let batchID = "fixture-rocket-batch"
-        let events = [
-            KikiGiftEvent(id: "fixture-rocket-recipient-1", roomID: roomID, batchID: batchID,
-                          senderUserID: "kiki_fixture0002", senderName: "小岛", recipientUserID: userID,
-                          recipientName: "穷奇", giftID: "galaxy_rocket", giftName: "星河火箭", seq: 1,
-                          quantity: 10, unitPrice: 4_999, batchRecipientCount: 2, createdAt: 1_792_422_000),
-            KikiGiftEvent(id: "fixture-rocket-recipient-2", roomID: roomID, batchID: batchID,
-                          senderUserID: "kiki_fixture0002", senderName: "小岛", recipientUserID: "kiki_fixture0003",
-                          recipientName: "云朵", giftID: "galaxy_rocket", giftName: "星河火箭", seq: 2,
-                          quantity: 10, unitPrice: 4_999, batchRecipientCount: 2, createdAt: 1_792_422_000)
-        ]
-        let comboEvents = [
-            KikiGiftEvent(id: "fixture-rocket-combo-1", roomID: roomID, batchID: "fixture-rocket-next-batch",
-                          senderUserID: "kiki_fixture0002", senderName: "小岛", recipientUserID: userID,
-                          recipientName: "穷奇", giftID: "galaxy_rocket", giftName: "星河火箭", seq: 3,
-                          quantity: 3, unitPrice: 4_999, batchRecipientCount: 2, createdAt: 1_792_422_001),
-            KikiGiftEvent(id: "fixture-rocket-combo-2", roomID: roomID, batchID: "fixture-rocket-next-batch",
-                          senderUserID: "kiki_fixture0002", senderName: "小岛", recipientUserID: "kiki_fixture0003",
-                          recipientName: "云朵", giftID: "galaxy_rocket", giftName: "星河火箭", seq: 4,
-                          quantity: 3, unitPrice: 4_999, batchRecipientCount: 2, createdAt: 1_792_422_001)
-        ]
-        let nextEvent = KikiGiftEvent(id: "fixture-heart-next-batch", roomID: roomID, batchID: "fixture-heart-batch",
-                                     senderUserID: "kiki_fixture0003", senderName: "云朵", recipientUserID: userID,
-                                     recipientName: "穷奇", giftID: "heart", giftName: "初见心动", seq: 5,
-                                     quantity: 1, unitPrice: 1, batchRecipientCount: 1, createdAt: 1_792_422_002)
-        let mock = KikiAPIMockServer { request in
-            if request.url?.path == "/v1/rooms/" + roomID + "/gifts" {
-                XCTAssertEqual(request.httpMethod, "GET", "The overlay consumes confirmed server events and never sends a gift")
-                let after = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "after" }?.value
-                roomPolls.append(after ?? "baseline")
-                let page: KikiGiftEventPage
-                switch after {
-                case nil: page = KikiGiftEventPage(events: [], cursor: 0, hasMore: false)
-                case "0": page = KikiGiftEventPage(events: events, cursor: 2, hasMore: false)
-                case "2" where roomPolls.values.filter({ $0 == "2" }).count == 1:
-                    page = KikiGiftEventPage(events: events, cursor: 2, hasMore: false)
-                case "2": page = KikiGiftEventPage(events: comboEvents, cursor: 4, hasMore: false)
-                case "4": page = KikiGiftEventPage(events: [nextEvent], cursor: 5, hasMore: false)
-                default: page = KikiGiftEventPage(events: [], cursor: 5, hasMore: false)
-                }
-                return (200, try JSONEncoder().encode(page))
-            }
-            if let response = try experienceVisualResponse(request, userID: userID) { return response }
-            XCTFail("Unexpected overlay fixture request: \(request.url?.path ?? "nil")")
-            return (404, Data())
-        }
-        let gifts = KikiGiftStore()
-        gifts.configure(api: mock.voiceClient, token: "voice-fixture-session", userID: userID)
-        defer { gifts.reset() }
-        await gifts.refresh()
-        XCTAssertNil(gifts.errorMessage)
-        XCTAssertEqual(gifts.wallet?.balance, 100_000_000)
-        XCTAssertEqual(gifts.giftItems.count, 5)
-
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })
-        let previous = scene.windows.first { $0.isKeyWindow }
-        let window = UIWindow(windowScene: scene)
-        defer { window.isHidden = true; previous?.makeKeyAndVisible() }
-        let screen = ZStack {
-            KikiRoomDecorationBackground(decorationID: "background_violet").ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 22) {
-                HStack(spacing: 12) {
-                    KikiAvatar(index: 4, size: 48)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("今晚聊点轻松的").font(.title3.bold())
-                        Text("房主 小岛 · 6 人在线").font(.caption).foregroundStyle(.white.opacity(0.65))
-                    }
-                    Spacer()
-                    Image(systemName: "ellipsis.circle").font(.title2)
-                }
-                HStack(spacing: 24) {
-                    ForEach(0..<4) { index in
-                        VStack(spacing: 9) {
-                            KikiAvatar(index: index + 1, size: 52)
-                            Text(["小岛", "穷奇", "云朵", "夏日海风"][index]).font(.caption)
-                        }
-                    }
-                }.frame(maxWidth: .infinity)
-                Spacer()
-                Text("房间聊天").font(.headline)
-                Text("云朵  晚上好，一起听听歌吧 ✨").font(.subheadline).padding(13)
-                    .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
-                Text("穷奇  这份心意，大家都收到了。").font(.subheadline).foregroundStyle(.white.opacity(0.8))
-                Button { XCTFail("The screenshot must not invoke a gift send") } label: {
-                    Label("送一份心意", systemImage: "gift.fill").font(.headline)
-                        .frame(maxWidth: .infinity).padding(15).background(KikiPalette.action, in: RoundedRectangle(cornerRadius: 16))
-                }.buttonStyle(.plain)
-            }.padding(24).frame(maxWidth: 800).frame(maxWidth: .infinity).foregroundStyle(.white)
-            KikiGiftPresentationOverlay(gifts: gifts)
-        }.preferredColorScheme(.dark)
-        let host = UIHostingController(rootView: screen)
-        window.rootViewController = host
-        window.makeKeyAndVisible()
-        try await Task.sleep(nanoseconds: 250_000_000)
-        window.layoutIfNeeded()
-
-        func animatedImages(in view: UIView) -> [UIImageView] {
-            var images: [UIImageView] = []
-            if let imageView = view as? UIImageView, imageView.image?.images?.isEmpty == false { images.append(imageView) }
-            for child in view.subviews { images.append(contentsOf: animatedImages(in: child)) }
-            return images
-        }
-        await gifts.pollRoom(roomID: roomID)
-        XCTAssertTrue(gifts.events.isEmpty, "Entering a room establishes a cursor without historical playback")
-        XCTAssertTrue(animatedImages(in: host.view).isEmpty)
-        await gifts.pollRoom(roomID: roomID)
-        XCTAssertNil(gifts.errorMessage)
-        XCTAssertEqual(gifts.events.count, 2)
-        XCTAssertEqual(Set(gifts.events.map(\.batchID)), [batchID])
-        try await waitUntil { animatedImages(in: host.view).count == 1 }
-        let animation = try XCTUnwrap(animatedImages(in: host.view).first)
-        XCTAssertGreaterThan(animation.image?.images?.count ?? 0, 1, "A real packaged GIF must be decoded for the confirmed event")
-        XCTAssertFalse(animation.isUserInteractionEnabled, "The visible gift animation must pass touches through")
-        try await Task.sleep(nanoseconds: 350_000_000)
-        window.layoutIfNeeded()
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
-        }
-        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
-        let name = device + "-experience-confirmed-gift-overlay"
-        let folder = URL(fileURLWithPath: "/tmp/kiki-experience-screenshots", isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(name + ".png"))
-        let attachment = XCTAttachment(image: image)
-        attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
-
-        await gifts.pollRoom(roomID: roomID)
-        XCTAssertEqual(gifts.events.count, 2, "Repeating the confirmed page cannot duplicate event IDs")
-        await gifts.pollRoom(roomID: roomID)
-        XCTAssertEqual(gifts.events.count, 4)
-        try await Task.sleep(nanoseconds: 300_000_000)
-        window.layoutIfNeeded()
-        XCTAssertTrue(animatedImages(in: host.view).first === animation, "A confirmed combo updates its counter without replacing or restarting the gift animation")
-        let comboImage = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
-        }
-        let comboName = device + "-experience-confirmed-gift-combo"
-        try XCTUnwrap(comboImage.pngData()).write(to: folder.appendingPathComponent(comboName + ".png"))
-        let comboAttachment = XCTAttachment(image: comboImage); comboAttachment.name = comboName; comboAttachment.lifetime = .keepAlways; add(comboAttachment)
-        try await Task.sleep(nanoseconds: 4_200_000_000)
-        XCTAssertTrue(animatedImages(in: host.view).isEmpty, "Two recipients in one batch produce one presentation, with no second animation queued")
-        await gifts.pollRoom(roomID: roomID)
-        XCTAssertEqual(gifts.events.count, 5)
-        try await waitUntil { animatedImages(in: host.view).count == 1 }
-        gifts.stopRoom()
-        try await waitUntil { animatedImages(in: host.view).isEmpty }
-        XCTAssertTrue(gifts.events.isEmpty, "Stopping the room must immediately clear confirmed events and the active presentation")
-        XCTAssertEqual(gifts.wallet?.balance, 100_000_000, "Stopping room presentation keeps the account wallet")
-        XCTAssertEqual(roomPolls.values, ["baseline", "0", "2", "2", "4"])
-    }
-}
-
-/// These are real renderers with the equipped IDs returned by the mock service.
-private struct KikiExperienceDecorationVisualFixture: View {
-    @ObservedObject var gifts: KikiGiftStore
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("当前装扮效果").font(.title2.bold())
-                    Text("头像、麦位、聊天与房间共用账号的装备状态。")
-                        .font(.subheadline).foregroundStyle(KikiPalette.secondary)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 145, maximum: 300), spacing: 12)], spacing: 12) {
-                        ForEach(KikiDecorationKind.allCases) { kind in
-                            VStack(spacing: 12) {
-                                preview(kind).frame(height: 120).frame(maxWidth: .infinity)
-                                Text(kind.title).font(.subheadline.weight(.semibold))
-                            }.padding(13).background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 20))
-                        }
-                    }
-                }.padding(20).frame(maxWidth: 840).frame(maxWidth: .infinity)
-            }.background(KikiPalette.background).foregroundStyle(KikiPalette.text)
-                .navigationTitle("装扮预览").navigationBarTitleDisplayMode(.inline)
-        }
-    }
-
-    @ViewBuilder
-    private func preview(_ kind: KikiDecorationKind) -> some View {
-        let appearance = gifts.inventory.equipped
-        switch kind {
-        case .avatarFrame:
-            KikiAvatar(index: 0, size: 65).overlay { KikiAvatarDecoration(decorationID: appearance.avatarFrame, size: 77) }
-        case .micEffect:
-            KikiAvatar(index: 1, size: 58).overlay { KikiMicDecoration(decorationID: appearance.micEffect, isSpeaking: false, size: 92) }
-        case .chatBubble:
-            Text("你好，很高兴认识你 ✨").font(.caption).foregroundStyle(.white).padding(12)
-                .background { KikiChatDecorationBackground(decorationID: appearance.chatBubble) }
-        case .roomBackground:
-            ZStack {
-                KikiRoomDecorationBackground(decorationID: appearance.roomBackground)
-                VStack(spacing: 12) {
-                    Text("今晚聊点轻松的").font(.caption.weight(.medium)).foregroundStyle(.white)
-                    HStack(spacing: 8) { ForEach(0..<3) { index in KikiAvatar(index: index, size: 25) } }
-                }.padding(10)
-            }.clipShape(RoundedRectangle(cornerRadius: 15))
-        }
-    }
-}
-
-private func experienceVisualResponse(_ request: URLRequest, userID: String) throws -> (Int, Data)? {
-    let path = request.url?.path ?? ""
-    guard request.httpMethod == nil || request.httpMethod == "GET",
-          ["/v1/gifts/catalog", "/v1/me/experience", "/v1/me/wallet", "/v1/decorations/users"].contains(path) else { return nil }
-    let styles = [("violet", "紫夜", 1_999), ("aurora", "极光", 4_999), ("gold", "鎏金", 9_999)]
-    let categories = [("frame", "avatarFrame", "头像框", "环绕头像的星光，让每次相遇更有辨识度。"),
-                      ("mic", "micEffect", "麦位特效", "开口说话时点亮麦位，跟着声音泛起光环。"),
-                      ("bubble", "chatBubble", "聊天气泡", "为房间里的每一句问候加一点色彩。"),
-                      ("background", "roomBackground", "房间背景", "装点自己的语聊房间，营造轻松的相聚氛围。")]
-    let decorations: [[String: Any]] = categories.flatMap { prefix, kind, title, summary in
-        styles.map { style, name, price in
-            ["id": "\(prefix)_\(style)", "name": "\(name)·\(title)", "summary": summary,
-             "style": style, "kind": kind, "price": price] as [String: Any]
-        }
-    }
-    let gifts: [[String: Any]] = [("heart", "初见心动", 1), ("flower_rain", "星光花雨", 99),
-                                 ("aurora_car", "极光跑车", 999), ("galaxy_rocket", "星河火箭", 4_999),
-                                 ("cosmic_heart", "宇宙之心", 10_000)].map { id, name, price in
-        ["id": id, "name": name, "price": price, "animationAsset": "\(id).gif", "posterAsset": "\(id).png"] as [String: Any]
-    }
-    let wallet: [String: Any] = ["balance": 100_000_000, "initialGrant": 100_000_000, "currency": "diamond"]
-    let equipped: [String: Any] = ["avatarFrame": "frame_violet", "micEffect": "mic_aurora", "chatBubble": "bubble_gold", "roomBackground": "background_violet"]
-    let inventory: [String: Any] = ["ownedIDs": ["frame_violet", "frame_aurora", "mic_aurora", "bubble_gold", "background_violet", "background_gold"], "equipped": equipped]
-    let body: [String: Any]
-    switch path {
-    case "/v1/gifts/catalog": body = ["gifts": gifts, "decorations": decorations, "initialGrant": 100_000_000]
-    case "/v1/me/experience":
-        body = ["wallet": wallet, "inventory": inventory,
-                "giftInventory": [["giftID": "heart", "quantity": 10], ["giftID": "flower_rain", "quantity": 3], ["giftID": "aurora_car", "quantity": 1]],
-                "entries": [["id": "fixture-initial-grant", "kind": "initial_grant", "title": "首次体验钻石赠送", "amount": 100_000_000, "balanceAfter": 100_000_000, "createdAt": 1_792_422_000]]]
-    case "/v1/me/wallet": body = wallet
-    default:
-        let ids = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "ids" }?.value?.split(separator: ",").map(String.init) ?? [userID]
-        body = ["users": ids.map { ["userID": $0, "equipped": equipped] as [String: Any] }]
-    }
-    return (200, try JSONSerialization.data(withJSONObject: body))
-}
-
 private func p1VisualResponse(_ request: URLRequest, documents: KikiLegalBundle, expandsRoomList: Bool = false) throws -> (Int, Data) {
     let me = "kiki_fixture0001", other = "kiki_fixture0002"
-    if let response = try experienceVisualResponse(request, userID: me) { return response }
     let person: [String: Any] = ["id": other, "name": "小岛", "bio": "喜欢散步和音乐，来聊聊今天的小事。", "avatarIndex": 4, "avatarURL": NSNull(), "following": true, "followsYou": true, "mutual": true, "followingCount": 12, "followerCount": 18, "currentRoomID": "lk_" + String(repeating: "a", count: 32)]
     var myself = person; myself["id"] = me; myself["name"] = "穷奇"; myself["bio"] = "听见，同频的你。"; myself["followingCount"] = 12; myself["followerCount"] = 18
     let time = Date().timeIntervalSince1970
     let room: [String: Any] = ["id": "lk_" + String(repeating: "a", count: 32), "title": "今晚聊点轻松的", "host": "小岛", "hostID": other, "category": "生活", "audience": 6, "isLive": false, "theme": 0, "isCreatedByMe": false, "status": "live", "createdAt": Int(time - 3600), "hostAvatarIndex": 4]
-    let postID = "11111111-1111-4111-8111-111111111111"
-    let moment: [String: Any] = ["id": postID, "author": person, "text": "今天绕着公园走了一圈，风很舒服。\n你们最近有什么开心的小事？", "media": [], "createdAt": time - 900, "likeCount": 8, "commentCount": 2, "liked": false, "canDelete": false]
     let message: [String: Any] = ["id": "22222222-2222-4222-8222-222222222222", "seq": 1, "senderID": other, "text": "晚上好，刚刚房间里聊得很开心。", "createdAt": time - 120]
-    let comment: [String: Any] = ["id": "33333333-3333-4333-8333-333333333333", "momentID": postID, "author": person, "text": "散步的时候，心情也会慢慢变轻松。", "createdAt": time - 500, "canDelete": false]
     let notice: [String: Any] = ["id": "44444444-4444-4444-8444-444444444444", "kind": "follow", "actor": person,
-                                "text": "小岛关注了你", "createdAt": time - 500, "readAt": NSNull(), "roomID": NSNull(), "momentID": NSNull()]
+                                "text": "小岛关注了你", "createdAt": time - 500, "readAt": NSNull(), "roomID": NSNull()]
     let conversation: [String: Any] = ["id": "55555555-5555-4555-8555-555555555555", "person": person,
                                       "lastMessage": message, "unreadCount": 1, "canSend": true]
     let path = request.url!.path
@@ -3075,9 +2470,6 @@ private func p1VisualResponse(_ request: URLRequest, documents: KikiLegalBundle,
     case "/v1/social/inbox/read", "/v1/social/inbox/clear": body = ["ok": true]
     case "/v1/social/conversations/" + other + "/messages": body = ["conversationID": "55555555-5555-4555-8555-555555555555", "messages": [message], "nextCursor": NSNull(), "canSend": true, "unreadCount": 1]
     case "/v1/social/conversations/" + other + "/read", "/v1/social/notifications/read": body = ["unreadCount": 0]
-    case "/v1/social/moments": body = ["moments": [moment], "nextCursor": NSNull()]
-    case "/v1/social/moments/" + postID: body = ["moment": moment]
-    case "/v1/social/moments/" + postID + "/comments": body = ["comments": [comment], "nextCursor": NSNull()]
     default:
         let (status, raw) = try consentResponse(request, documents: documents)
         var fallback = try XCTUnwrap(JSONSerialization.jsonObject(with: raw) as? [String: Any])
@@ -3138,37 +2530,6 @@ extension KikiConsentTests {
         await store.logout()
     }
 
-    func testBlockPrivacyRevisionPreventsLateImageFromEnteringAccountCache() async throws {
-        let identity = TestIdentity(values: ["sessionToken": "existing-session", "appleSubject": "apple-subject", "appleSessionVersion": "2"])
-        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
-        let arrived = expectation(description: "Image request is in flight")
-        let gate = DispatchSemaphore(value: 0)
-        let calls = TestRequests()
-        let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in UIColor.purple.setFill(); context.fill(CGRect(x: 0, y: 0, width: 8, height: 8)) }
-        let jpeg = try XCTUnwrap(image.jpegData(compressionQuality: 0.8))
-        let id = UUID().uuidString.lowercased()
-        let mock = KikiAPIMockServer(contentType: "image/jpeg") { request in
-            if request.url?.path == "/v1/social/media/\(id).jpg" {
-                calls.append("image")
-                if calls.values.count == 1 { arrived.fulfill(); _ = gate.wait(timeout: .now() + 5) }
-                return (200, jpeg)
-            }
-            return try consentResponse(request, documents: docs)
-        }
-        let consent = KikiConsentStore(documents: docs, defaults: defaults(), identity: identity, apiProvider: { mock.client }, requiresRemoteDocuments: false)
-        try consent.accept()
-        let store = KikiAppStore(consent: consent, identity: identity, apiProvider: { mock.client }, voiceAPIProvider: { mock.voiceClient }, rtcProvider: { TestRTC() }, appleProvider: { TestApple() })
-        await store.start()
-        let media = KikiSocialMedia(id: id, path: "/v1/social/media/\(id).jpg", width: 8, height: 8)
-        let pending = Task { try await store.socialImage(media) }
-        await fulfillment(of: [arrived], timeout: 3)
-        store.socialPolicyChanged(userID: "kiki_target0000", blocked: true)
-        gate.signal()
-        do { _ = try await pending.value; XCTFail("Late private pixels must be discarded") } catch { XCTAssertTrue(error is CancellationError) }
-        _ = try await store.socialImage(media)
-        XCTAssertEqual(calls.values.count, 2, "A fresh authenticated request is required after privacy revision")
-        await store.logout()
-    }
 }
 
 extension KikiConsentTests {
@@ -3496,6 +2857,12 @@ extension KikiConsentTests {
             try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(device + "-" + name + ".png"))
         }
 
+        try await capture("silent-startup-light", screen: AnyView(KikiStartupView().preferredColorScheme(.light)))
+        try await capture("silent-startup-dark", screen: AnyView(KikiStartupView().preferredColorScheme(.dark)))
+        try await capture("startup-legal-error-light", screen: AnyView(KikiStartupView(errorMessage: "暂时无法获取最新协议，请检查网络后重试。", showsOfflineDocuments: true)
+            .environmentObject(consent).preferredColorScheme(.light)))
+        try await capture("startup-legal-error-short-320x568", screen: AnyView(KikiStartupView(errorMessage: "暂时无法获取最新协议，请检查网络后重试。", showsOfflineDocuments: true)
+            .environmentObject(consent).preferredColorScheme(.light)), size: CGSize(width: 320, height: 568))
         try await capture("consent-page-light", screen: AnyView(KikiConsentGateView().environmentObject(consent).preferredColorScheme(.light)))
         try await capture("consent-page-dark", screen: AnyView(KikiConsentGateView().environmentObject(consent).preferredColorScheme(.dark)))
         try await capture("consent-page-large-text", screen: AnyView(KikiConsentGateView().environmentObject(consent).preferredColorScheme(.light).dynamicTypeSize(.accessibility2)))
@@ -3688,7 +3055,7 @@ extension KikiConsentTests {
 }
 
 extension KikiConsentTests {
-    func testPushGenericRouteReplacesExistingDestinationAndWaitsForActualDismissal() async throws {
+    func testPushGenericRouteReplacesExistingDestinationAndCanBeConsumedImmediately() async throws {
         let state = TestPushServer()
         let (store, push, _) = try await pushFixture(state)
         func tap() throws -> KikiPushTap { try XCTUnwrap(KikiPushTap(payload: ["deliveryID": UUID().uuidString, "accountTag": "fixture-account-tag"])) }
@@ -3700,10 +3067,6 @@ extension KikiConsentTests {
         try await waitForPush { push.pendingInboxRequest != nil }
         XCTAssertNil(push.navigation, "A generic reminder must explicitly replace the prior APNs private-chat destination")
         let request = try XCTUnwrap(push.pendingInboxRequest)
-        XCTAssertFalse(push.inboxPresentationReady)
-        XCTAssertFalse(push.consumeInboxRequest(request), "A published nil target is not yet the old sheet's dismissal completion")
-        push.navigationDidDismiss()
-        XCTAssertTrue(push.inboxPresentationReady)
         XCTAssertTrue(push.consumeInboxRequest(request))
         XCTAssertFalse(push.consumeInboxRequest(request), "One reminder is consumed once")
         await store.logout()
@@ -3715,7 +3078,6 @@ extension KikiConsentTests {
         push.receiveTap(try XCTUnwrap(KikiPushTap(payload: ["deliveryID": UUID().uuidString, "accountTag": "fixture-account-tag"])))
         try await waitForPush { push.pendingInboxRequest != nil }
         let request = try XCTUnwrap(push.pendingInboxRequest)
-        XCTAssertTrue(push.inboxPresentationReady)
         _ = KikiMessagesView(store: store)
         XCTAssertEqual(push.pendingInboxRequest, request, "Constructing the message tab must not claim a cold-start reminder before its view handles it")
         XCTAssertTrue(push.consumeInboxRequest(request))
@@ -4224,6 +3586,7 @@ extension KikiConsentTests {
         XCTAssertTrue(consent.requiresDocumentRefresh)
         XCTAssertFalse(consent.requiresAppUpdate)
         XCTAssertFalse(consent.canAccept)
+        XCTAssertEqual(consent.presentation, .checking)
         XCTAssertThrowsError(try consent.accept())
 
         await consent.refreshDocuments()
@@ -4233,6 +3596,7 @@ extension KikiConsentTests {
         XCTAssertFalse(consent.requiresDocumentRefresh)
         XCTAssertTrue(consent.canAccept)
         XCTAssertFalse(consent.hasCurrentConsent, "Downloading a replacement agreement must not accept it")
+        XCTAssertEqual(consent.presentation, .acceptanceRequired)
         XCTAssertEqual(consent.receipt, pending, "An update must preserve the prior decision until the user acts")
         XCTAssertEqual(preferences.string(forKey: "cover-install-marker"), "preserved-login-preference")
         XCTAssertEqual(identity.readCount, 0)
@@ -4244,6 +3608,7 @@ extension KikiConsentTests {
 
         XCTAssertTrue(consent.hasCurrentConsent)
         XCTAssertEqual(consent.receipt?.status, .accepted)
+        XCTAssertEqual(consent.presentation, .accepted)
         XCTAssertEqual(try consent.acceptance().documentHash, current.documentHash)
         XCTAssertEqual(preferences.string(forKey: "cover-install-marker"), "preserved-login-preference")
     }
@@ -4267,12 +3632,14 @@ extension KikiConsentTests {
         let consent = KikiConsentStore(defaults: preferences, identity: identity, apiProvider: { mock.client })
         XCTAssertFalse(consent.hasVerifiedRemoteDocuments)
         XCTAssertFalse(consent.hasCurrentConsent)
+        XCTAssertEqual(consent.presentation, .checking, "Cold launch must keep the launch screen visible instead of flashing a signature page")
         XCTAssertEqual(consent.receipt, existing)
 
         await consent.refreshDocuments()
 
         XCTAssertTrue(consent.hasVerifiedRemoteDocuments)
         XCTAssertTrue(consent.hasCurrentConsent, "Verifying the same agreement must restore the user's existing decision without another button action")
+        XCTAssertEqual(consent.presentation, .accepted, "A verified existing signature routes directly to account restoration")
         XCTAssertEqual(try consent.acceptance(), KikiLegalAcceptance(versions: server.versions,
             accepted: true, adultConfirmed: true))
         XCTAssertEqual(consent.receipt, existing)
@@ -4340,6 +3707,7 @@ extension KikiConsentTests {
         XCTAssertFalse(restarted.hasVerifiedRemoteDocuments)
         XCTAssertFalse(restarted.hasCurrentConsent)
         XCTAssertFalse(restarted.canAccept)
+        XCTAssertEqual(restarted.presentation, .checking)
         XCTAssertThrowsError(try restarted.acceptance())
         await restarted.refreshDocuments()
         XCTAssertEqual(restarted.documents?.documents.first?.sections.first?.paragraphs,
@@ -4348,6 +3716,7 @@ extension KikiConsentTests {
         XCTAssertFalse(restarted.hasCurrentConsent)
         XCTAssertFalse(restarted.canAccept)
         XCTAssertNotNil(restarted.documentError)
+        XCTAssertEqual(restarted.presentation, .checking, "A failed check offers retry without asking the user to sign again")
         XCTAssertEqual(identity.readCount, 0)
         let mock = KikiAPIMockServer { _ in XCTFail("An unverified cache must not activate account or room services"); return (500, Data()) }
         var sdkCreated = 0
@@ -4403,6 +3772,7 @@ extension KikiConsentTests {
         XCTAssertFalse(consent.canAccept)
         XCTAssertNotNil(consent.documentError)
         XCTAssertFalse(consent.isRefreshingDocuments)
+        XCTAssertEqual(consent.presentation, .checking)
         XCTAssertThrowsError(try consent.accept())
         await consent.refreshDocuments()
 
@@ -4410,6 +3780,7 @@ extension KikiConsentTests {
         XCTAssertTrue(consent.hasVerifiedRemoteDocuments)
         XCTAssertTrue(consent.canAccept)
         XCTAssertNil(consent.documentError)
+        XCTAssertEqual(consent.presentation, .acceptanceRequired, "Only a completed check with no current decision opens the signature page")
         XCTAssertFalse(consent.isRefreshingDocuments)
         XCTAssertNil(consent.receipt)
         XCTAssertEqual(identity.readCount, 0)
@@ -4478,7 +3849,7 @@ private func assertPublicLegalRequest(_ request: URLRequest, file: StaticString 
 private func remoteLegalFixture(version: String) throws -> Data {
     let documents: [[String: Any]] = ["privacy", "terms", "sdk", "permissions"].map { id in
         ["id": id, "title": "服务器完整协议 \(id)", "version": version,
-         "sections": [["title": "动态协议正文", "paragraphs": ["完整的 \(version) 正文，可以离线阅读。", "https://kiki.group/legal/\(id)"]]]]
+         "sections": [["title": "最新协议正文", "paragraphs": ["完整的 \(version) 正文，可以离线阅读。", "https://kiki.group/legal/\(id)"]]]]
     }
     var object: [String: Any] = [
         "schemaVersion": 1, "privacyVersion": version, "termsVersion": version,
@@ -4632,7 +4003,7 @@ extension KikiConsentTests {
 }
 
 extension KikiConsentTests {
-    func testMomentFollowFallbackBecomesAuthoritativeAfterSummaryLoads() async throws {
+    func testRelationshipFollowFallbackBecomesAuthoritativeAfterSummaryLoads() async throws {
         let docs = try XCTUnwrap(KikiLegalBundle.bundled)
         let mock = KikiAPIMockServer { request in
             if request.url?.path == "/v1/social/relationships/ids" {
@@ -4640,20 +4011,20 @@ extension KikiConsentTests {
             }
             return try p1VisualResponse(request, documents: docs)
         }
-        let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
-        let followedSnapshot = momentFixturePerson(following: true)
-        XCTAssertTrue(store.isFollowing(followedSnapshot), "The first feed render must use the author relationship before the summary finishes")
-        XCTAssertFalse(store.isFollowing(momentFixturePerson(following: false)))
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        let followedSnapshot = socialFixturePerson(following: true)
+        XCTAssertTrue(store.isFollowing(followedSnapshot), "The first profile render must use the author relationship before the summary finishes")
+        XCTAssertFalse(store.isFollowing(socialFixturePerson(following: false)))
         await store.refreshSocialSummary()
-        XCTAssertFalse(store.isFollowing(followedSnapshot), "A loaded authoritative ID set overrides stale feed author data")
+        XCTAssertFalse(store.isFollowing(followedSnapshot), "A loaded authoritative ID set overrides stale person data")
         await store.logout()
     }
 
-    func testMomentSuccessfulFollowOrUnfollowSurvivesSummaryFailureAndThenReconciles() async throws {
+    func testRelationshipSuccessfulFollowOrUnfollowSurvivesSummaryFailureAndThenReconciles() async throws {
         for enabled in [true, false] {
             let docs = try XCTUnwrap(KikiLegalBundle.bundled)
             let mode = TestRequests(), mutations = TestRequests()
-            let person = momentFixturePerson(following: !enabled)
+            let person = socialFixturePerson(following: !enabled)
             var confirmed = person; confirmed.following = enabled
             let response = try JSONSerialization.data(withJSONObject: ["person": JSONSerialization.jsonObject(with: JSONEncoder().encode(confirmed))])
             let mock = KikiAPIMockServer { request in
@@ -4671,7 +4042,7 @@ extension KikiConsentTests {
                 }
                 return try p1VisualResponse(request, documents: docs)
             }
-            let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+            let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
             let result = try await store.setFollowing(person, enabled: enabled)
             XCTAssertEqual(result.following, enabled)
             XCTAssertEqual(store.isFollowing(person), enabled, "A confirmed mutation cannot revert merely because the subsequent summary fails")
@@ -4681,16 +4052,16 @@ extension KikiConsentTests {
             await store.refreshSocialSummary()
             XCTAssertEqual(store.isFollowing(person), !enabled, "A later successful summary reconciles the relationship across devices")
             await store.logout()
-            XCTAssertFalse(store.isFollowing(momentFixturePerson(following: true)), "A logged-out view cannot retain a relationship from an old feed object")
+            XCTAssertFalse(store.isFollowing(socialFixturePerson(following: true)), "A logged-out view cannot retain a relationship from an old profile object")
             XCTAssertTrue(store.followingUserIDs.isEmpty)
         }
     }
 
-    func testMomentBlockOverridesStaleAuthorFollowingWithoutChangingOtherPeople() async throws {
+    func testRelationshipBlockOverridesStaleAuthorFollowingWithoutChangingOtherPeople() async throws {
         let docs = try XCTUnwrap(KikiLegalBundle.bundled)
         let mock = KikiAPIMockServer { try p1VisualResponse($0, documents: docs) }
-        let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
-        let author = momentFixturePerson(following: true)
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        let author = socialFixturePerson(following: true)
         let unrelated = KikiPerson(id: "kiki_fixture0003", name: author.name, bio: author.bio,
             avatarIndex: author.avatarIndex, avatarURL: nil, following: true, followsYou: false, mutual: false,
             followingCount: 0, followerCount: 0, currentRoomID: nil)
@@ -4704,9 +4075,9 @@ extension KikiConsentTests {
         XCTAssertFalse(store.isFollowing(unrelated))
     }
 
-    func testMomentLateFollowResponseCannotRestoreRelationshipAfterLogout() async throws {
+    func testRelationshipLateFollowResponseCannotRestoreRelationshipAfterLogout() async throws {
         let docs = try XCTUnwrap(KikiLegalBundle.bundled)
-        let author = momentFixturePerson(following: false)
+        let author = socialFixturePerson(following: false)
         var followed = author; followed.following = true
         let response = try JSONSerialization.data(withJSONObject: ["person": JSONSerialization.jsonObject(with: JSONEncoder().encode(followed))])
         let arrived = expectation(description: "Follow request has reached the local fixture")
@@ -4719,7 +4090,7 @@ extension KikiConsentTests {
             }
             return try p1VisualResponse(request, documents: docs)
         }
-        let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
         let action = Task { try await store.setFollowing(author, enabled: true) }
         await fulfillment(of: [arrived], timeout: 3)
         await store.logout(); let revision = store.socialRevision
@@ -4731,13 +4102,13 @@ extension KikiConsentTests {
         XCTAssertEqual(store.socialRevision, revision, "An old account response cannot publish a relationship update after logout")
     }
 
-    private func momentFixturePerson(following: Bool) -> KikiPerson {
+    private func socialFixturePerson(following: Bool) -> KikiPerson {
         KikiPerson(id: "kiki_fixture0002", name: "小岛", bio: "喜欢散步和音乐。", avatarIndex: 4, avatarURL: nil,
                    following: following, followsYou: false, mutual: false, followingCount: 12, followerCount: 18, currentRoomID: nil)
     }
 
-    private func momentFixtureStore(docs: KikiLegalBundle, api: KikiAccountAPIClient, voice: KikiAPIClient) async throws -> KikiAppStore {
-        let identity = TestIdentity(values: ["sessionToken": "moment-fixture-session", "appleSubject": "apple-subject", "appleSessionVersion": "2"])
+    private func socialFixtureStore(docs: KikiLegalBundle, api: KikiAccountAPIClient, voice: KikiAPIClient) async throws -> KikiAppStore {
+        let identity = TestIdentity(values: ["sessionToken": "social-fixture-session", "appleSubject": "apple-subject", "appleSessionVersion": "2"])
         let consent = KikiConsentStore(documents: docs, defaults: defaults(), identity: identity, apiProvider: { api }, requiresRemoteDocuments: false)
         try consent.accept()
         let store = KikiAppStore(consent: consent, identity: identity, apiProvider: { api }, voiceAPIProvider: { voice },
@@ -4749,69 +4120,15 @@ extension KikiConsentTests {
 }
 
 extension KikiConsentTests {
-    func testMomentDetailCommentRouteFocusesNativeInputOnlyOnce() async throws {
-        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
-        let mock = try momentPresentationMock(documents: docs)
-        let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
-        let page = try await store.socialMoments(kind: .all)
-        let moment = try XCTUnwrap(page.moments.first)
-        try await withMomentWindow { window in
-            window.rootViewController = UIHostingController(rootView: KikiMomentCommentsView(moment: moment, store: store))
-            window.makeKeyAndVisible()
-            try await Task.sleep(nanoseconds: 700_000_000)
-            let view = try XCTUnwrap(window.rootViewController?.view)
-            XCTAssertFalse(self.momentEditableViews(view).isEmpty, "The detail composer must use a native system text input")
-            XCTAssertNil(self.momentEditableViews(view).first { $0.isFirstResponder }, "Opening content or all comments must not force the keyboard open")
-
-            window.rootViewController = UIHostingController(rootView: KikiMomentCommentsView(moment: moment, store: store, focusComment: true))
-            window.makeKeyAndVisible()
-            try await self.waitUntil {
-                self.momentEditableViews(window).contains { $0.isFirstResponder }
-            }
-            let input = try XCTUnwrap(self.momentEditableViews(window).first { $0.isFirstResponder })
-            let draft = "准备评论，系统 Emoji 😀\n第二行继续输入\n第三行保留草稿\n第四行检查发送按钮"
-            if let field = input as? UITextField {
-                field.insertText(draft); field.sendActions(for: .editingChanged)
-            } else if let textView = input as? UITextView { textView.insertText(draft) }
-            else { XCTFail("Expected a public UIKit text input") }
-            try await Task.sleep(nanoseconds: 750_000_000)
-            XCTAssertEqual(self.momentInputText(input), draft)
-            window.layoutIfNeeded()
-            let composer = input.convert(input.bounds, to: window)
-            XCTAssertGreaterThan(composer.height, 50, "The real multiline comment input must grow with the draft")
-            if let native = input as? UITextView {
-                print("CommentComposer bounds=\(native.bounds) contentSize=\(native.contentSize) inset=\(native.textContainerInset)")
-                XCTAssertGreaterThanOrEqual(native.bounds.height, (native.font?.lineHeight ?? 20) * 4 - 1,
-                                            "The four-line comment must be readable without clipping its third and fourth lines")
-            }
-            XCTAssertGreaterThanOrEqual(composer.minX, window.bounds.minX)
-            XCTAssertLessThanOrEqual(composer.maxX, window.bounds.maxX)
-            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
-            }
-            let attachment = XCTAttachment(image: image); attachment.name = "comment-multiline-composer"
-            attachment.lifetime = .keepAlways; self.add(attachment)
-            let folder = URL(fileURLWithPath: "/tmp/kiki-moment-presentation-screenshots", isDirectory: true)
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent("comment-multiline-composer.png"))
-            XCTAssertTrue(window.endEditing(true))
-            store.notify("本地测试重绘")
-            try await Task.sleep(nanoseconds: 400_000_000)
-            XCTAssertNil(self.momentEditableViews(window).first { $0.isFirstResponder }, "A store or draft redraw must not steal focus again after the user dismisses the keyboard")
-            XCTAssertEqual(self.momentInputText(input), draft, "Dismissing input must preserve an unsent comment")
-        }
-        await store.logout()
-    }
-
     func testInboxNotificationDeletionReloadsToCenteredEmptyStateWithNativeRefresh() async throws {
         let docs = try XCTUnwrap(KikiLegalBundle.bundled)
-        let fixture = InboxDeleteUIFixture(person: momentFixturePerson(following: false))
+        let fixture = InboxDeleteUIFixture(person: socialFixturePerson(following: false))
         let mock = KikiAPIMockServer { request in
             if let response = try fixture.response(request) { return response }
             return try p1VisualResponse(request, documents: docs)
         }
-        let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
-        try await withMomentWindow { window in
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        try await withSocialWindow { window in
             let original = window.frame
             let host = UIHostingController(rootView: mainTabVisualScreen(AnyView(
                 KikiMessagesView(store: store).environment(\.scenePhase, .active))).preferredColorScheme(.light))
@@ -4820,7 +4137,7 @@ extension KikiConsentTests {
             try await Task.sleep(nanoseconds: 250_000_000)
             let initialPage = try await store.socialInbox()
             let entry = try XCTUnwrap(initialPage.entries.first)
-            XCTAssertEqual(entry.preview, "评论了你的动态")
+            XCTAssertEqual(entry.preview, "关注了你")
             let before = fixture.pageReads
             try await store.clearInboxEntry(entry, throughID: fixture.notificationID, requestID: UUID())
             try await self.waitUntil { fixture.pageReads > before }
@@ -4843,7 +4160,7 @@ extension KikiConsentTests {
                 window.rootViewController?.view.frame = window.bounds; window.makeKeyAndVisible()
                 try await Task.sleep(nanoseconds: 500_000_000)
                 window.layoutIfNeeded()
-                let scroll = try XCTUnwrap(self.momentScrollViews(window).first { $0.refreshControl != nil })
+                let scroll = try XCTUnwrap(self.socialScrollViews(window).first { $0.refreshControl != nil })
                 XCTAssertNotNil(scroll.refreshControl, "Centering the empty overlay must preserve the native pull refresh control")
                 let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                     XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
@@ -4857,254 +4174,20 @@ extension KikiConsentTests {
         await store.logout()
     }
 
-    func testRemoteCommentUpdatesVisibleFeedAndNativePullRefreshWithoutOpeningDetails() async throws {
-        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
-        let fixture = MomentRefreshFixture(person: momentFixturePerson(following: false))
-        let mock = KikiAPIMockServer { request in
-            if let response = try fixture.response(request) { return response }
-            return try p1VisualResponse(request, documents: docs)
-        }
-        let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
-        _ = try await store.socialNotifications() // Seed the ordinary inbox poll before a remote event.
-        try await withMomentWindow { window in
-            let host = UIHostingController(rootView: KikiMomentsView(store: store).environment(\.scenePhase, .active))
-            window.rootViewController = host; window.makeKeyAndVisible()
-            try await self.waitUntil { fixture.pageReads >= 1 && !self.momentScrollViews(window).isEmpty }
-            try await Task.sleep(nanoseconds: 250_000_000)
-            let initialReads = fixture.pageReads
-            let revision = store.momentContentRevision
-            fixture.setComments(1, notify: true)
-            _ = try await store.socialNotifications()
-            XCTAssertGreaterThan(store.momentContentRevision, revision, "Real system notifications with momentID must invalidate the visible feed")
-            try await self.waitUntil { fixture.pageReads > initialReads }
-            try await Task.sleep(nanoseconds: 250_000_000)
-            XCTAssertEqual(fixture.lastReadCount, 1)
-            XCTAssertEqual(fixture.detailReads, 0, "A received comment must update without opening or fetching details")
-            try self.captureMomentRefresh(window, name: "remote-comment")
-
-            let scroll = try XCTUnwrap(self.momentScrollViews(window).first { $0.refreshControl != nil })
-            let refresh = try XCTUnwrap(scroll.refreshControl, "The production ScrollView must expose its native pull refresh control")
-            let beforePull = fixture.pageReads
-            fixture.setComments(2, notify: false)
-            refresh.beginRefreshing(); refresh.sendActions(for: .valueChanged)
-            try await self.waitUntil { fixture.pageReads > beforePull && !refresh.isRefreshing }
-            try await Task.sleep(nanoseconds: 250_000_000)
-            XCTAssertEqual(fixture.lastReadCount, 2)
-            XCTAssertEqual(fixture.detailReads, 0)
-            try self.captureMomentRefresh(window, name: "native-pull")
-        }
-        await store.logout()
-    }
-
-    private func captureMomentRefresh(_ window: UIWindow, name: String) throws {
-        window.layoutIfNeeded()
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
-        }
-        let attachment = XCTAttachment(image: image); attachment.name = "moment-refresh-" + name
-        attachment.lifetime = .keepAlways; add(attachment)
-        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
-        let folder = URL(fileURLWithPath: "/tmp/kiki-moment-refresh-screenshots/" + device, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(name + ".png"))
-    }
-
-    func testMomentFeedAndDetailFixtureScreenshots() async throws {
-        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
-        let mock = try momentPresentationMock(documents: docs)
-        let store = try await momentFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
-        let page = try await store.socialMoments(kind: .all)
-        let moment = try XCTUnwrap(page.moments.first)
-        XCTAssertEqual(moment.media.count, 3)
-        XCTAssertEqual(moment.commentPreview.count, 3)
-        XCTAssertEqual(moment.commentCount, 6)
-        let comments = try await store.socialComments(moment.id)
-        XCTAssertEqual(comments.comments.count, 6)
-        let folder = URL(fileURLWithPath: "/tmp/kiki-moment-presentation-screenshots", isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
-        try await withMomentWindow { window in
-            let originalFrame = window.frame
-            @MainActor
-            func capture(_ name: String, size: CGSize, screen: AnyView, scrollToBottom: Bool = false) async throws {
-                window.endEditing(true)
-                window.rootViewController = UIHostingController(rootView: screen)
-                window.makeKeyAndVisible()
-                window.frame = CGRect(origin: originalFrame.origin, size: size)
-                window.rootViewController?.view.frame = window.bounds
-                try await Task.sleep(nanoseconds: 750_000_000)
-                window.layoutIfNeeded()
-                if scrollToBottom {
-                    let scroll = self.momentScrollViews(window).filter { $0.contentSize.height > $0.bounds.height + 20 }
-                        .max { $0.contentSize.height < $1.contentSize.height }
-                    let scrolling = try XCTUnwrap(scroll, "The full detail must expose a scrollable comment timeline")
-                    scrolling.setContentOffset(CGPoint(x: 0, y: max(0, scrolling.contentSize.height - scrolling.bounds.height + scrolling.adjustedContentInset.bottom)), animated: false)
-                    try await Task.sleep(nanoseconds: 150_000_000)
-                }
-                XCTAssertEqual(window.bounds.width, size.width, accuracy: 0.5)
-                XCTAssertEqual(window.bounds.height, size.height, accuracy: 0.5)
-                let outerScroll = try XCTUnwrap(self.momentScrollViews(window).first { candidate in
-                    guard !(candidate is UITextView), candidate.bounds.height > 200 else { return false }
-                    var ancestor = candidate.superview
-                    while let parent = ancestor {
-                        if parent is UIScrollView { return false }
-                        ancestor = parent.superview
-                    }
-                    return true
-                }, "The feed or detail must have a native vertical scroll viewport")
-                XCTAssertLessThanOrEqual(outerScroll.contentSize.width, outerScroll.bounds.width + 1,
-                                         "\(name): media must not widen the vertical timeline into horizontal overflow")
-                let viewport = outerScroll.convert(outerScroll.bounds, to: window)
-                let inputFrames = name.hasPrefix("detail") ? self.momentEditableViews(window).map { $0.convert($0.bounds, to: window) } : []
-                XCTAssertTrue(([viewport] + inputFrames).allSatisfy { $0.minX >= window.bounds.minX - 1 && $0.maxX <= window.bounds.maxX + 1 },
-                              "\(name): the scroll viewport and native comment composer must remain within the device width")
-                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                    XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
-                }
-                let attachment = XCTAttachment(image: image); attachment.name = device + "-" + name; attachment.lifetime = .keepAlways; self.add(attachment)
-                try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(device + "-" + name + ".png"))
-            }
-            let phone = CGSize(width: 375, height: 812), tablet = CGSize(width: 1133, height: 744)
-            try await capture("feed-light", size: phone, screen: AnyView(KikiMomentsView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.light)))
-            try await capture("feed-dark", size: phone, screen: AnyView(KikiMomentsView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.dark)))
-            try await capture("feed-large-text", size: phone, screen: AnyView(KikiMomentsView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.light).dynamicTypeSize(.accessibility1)))
-            try await capture("detail-light", size: phone, screen: AnyView(KikiMomentCommentsView(moment: moment, store: store).preferredColorScheme(.light)))
-            try await capture("detail-comments", size: phone, screen: AnyView(KikiMomentCommentsView(moment: moment, store: store).preferredColorScheme(.light)), scrollToBottom: true)
-            try await capture("profile-light", size: phone, screen: AnyView(KikiPublicProfileView(userID: moment.author.id, store: store).preferredColorScheme(.light)), scrollToBottom: true)
-            try await capture("profile-dark", size: phone, screen: AnyView(KikiPublicProfileView(userID: moment.author.id, store: store).preferredColorScheme(.dark)), scrollToBottom: true)
-            try await capture("feed-ipad-landscape", size: tablet, screen: AnyView(KikiMomentsView(store: store).environment(\.scenePhase, .active).preferredColorScheme(.light)))
-            try await capture("detail-ipad-dark", size: tablet, screen: AnyView(KikiMomentCommentsView(moment: moment, store: store).preferredColorScheme(.dark)))
-            window.frame = originalFrame
-        }
-        await store.logout()
-    }
-
-    private func momentPresentationMock(documents: KikiLegalBundle) throws -> KikiAPIMockServer {
-        let momentID = "11111111-1111-4111-8111-111111111111"
-        let time = Date().timeIntervalSince1970
-        let person = momentFixturePerson(following: false)
-        let personJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(person)) as? [String: Any])
-        let texts = ["海风很舒服，照片也好看 😀", "喜欢这样的慢生活。周末也想出去走走，换一个心情。", "今天的小确幸，是和朋友喝了一杯咖啡。", "第四条评论只在详情显示", "第五条完整评论", "第六条完整评论"]
-        let comments: [[String: Any]] = texts.enumerated().map { index, text in
-            var author = personJSON
-            author["name"] = ["小鹿", "星空", "海盐", "晚风", "可可", "小雨"][index]
-            author["avatarIndex"] = index
-            return ["id": "33333333-3333-4333-8333-33333333333\(index)", "momentID": momentID,
-                    "author": author, "text": text, "createdAt": time - Double(3600 - index * 60), "canDelete": false]
-        }
-        var jpegByPath: [String: Data] = [:]
-        var media: [[String: Any]] = []
-        for (index, color) in [UIColor.systemTeal, UIColor.systemPurple, UIColor.systemOrange].enumerated() {
-            let image = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 240)).image { context in
-                color.withAlphaComponent(0.23).setFill(); context.fill(CGRect(x: 0, y: 0, width: 300, height: 240))
-                color.withAlphaComponent(0.65).setFill(); UIBezierPath(ovalIn: CGRect(x: 130, y: 28, width: 100, height: 100)).fill()
-                color.setFill(); UIBezierPath(roundedRect: CGRect(x: -15, y: 152, width: 330, height: 110), cornerRadius: 80).fill()
-                UIColor.white.withAlphaComponent(0.55).setStroke()
-                let line = UIBezierPath(); line.lineWidth = 8; line.move(to: CGPoint(x: 0, y: 178)); line.addQuadCurve(to: CGPoint(x: 300, y: 180), controlPoint: CGPoint(x: 140, y: 133)); line.stroke()
-            }
-            let id = "66666666-6666-4666-8666-66666666666\(index)"
-            let path = "/v1/social/media/\(id).jpg"
-            jpegByPath[path] = try XCTUnwrap(image.jpegData(compressionQuality: 0.8))
-            media.append(["id": id, "path": path, "width": 300, "height": 240])
-        }
-        let moment: [String: Any] = ["id": momentID, "author": personJSON,
-            "text": "今天沿着海边走了一圈，风很舒服。\n你们最近有什么开心的小事？ 😀", "media": media,
-            "createdAt": time - 900, "likeCount": 8, "commentCount": comments.count, "liked": false,
-            "canDelete": false, "commentPreview": Array(comments.prefix(3))]
-        let shortID = "11111111-1111-4111-8111-111111111112"
-        var short = moment
-        let shortComments = Array(comments.prefix(3)).map { value -> [String: Any] in
-            var item = value; item["momentID"] = shortID; return item
-        }
-        short["id"] = shortID; short["text"] = "三条评论的动态：直接展开预览即可。"
-        short["media"] = []; short["createdAt"] = time - 1800
-        short["commentCount"] = 3; short["commentPreview"] = shortComments
-        var empty = short; empty["id"] = "11111111-1111-4111-8111-111111111113"
-        empty["text"] = "没有评论的动态"; empty["commentCount"] = 0; empty["createdAt"] = time - 2700
-        empty["commentPreview"] = shortComments.map { value -> [String: Any] in
-            var item = value; item["momentID"] = empty["id"]; return item
-        }
-        let shortMoment = short
-        let listData = try JSONSerialization.data(withJSONObject: ["moments": [moment, short, empty], "nextCursor": NSNull()])
-        let momentData = try JSONSerialization.data(withJSONObject: ["moment": moment])
-        let commentsData = try JSONSerialization.data(withJSONObject: ["comments": comments, "nextCursor": NSNull()])
-        return KikiAPIMockServer(contentType: "image/jpeg") { request in
-            let path = request.url?.path ?? ""
-            if let jpeg = jpegByPath[path] { return (200, jpeg) }
-            if path == "/v1/social/moments" { return (200, listData) }
-            if path == "/v1/social/moments/" + momentID { return (200, momentData) }
-            if path == "/v1/social/moments/" + momentID + "/comments" { return (200, commentsData) }
-            if path == "/v1/social/moments/" + momentID + "/like" {
-                var liked = moment; let enabled = request.httpMethod == "PUT"
-                liked["liked"] = enabled; liked["likeCount"] = enabled ? 9 : 8
-                return (200, try JSONSerialization.data(withJSONObject: ["moment": liked]))
-            }
-            if path == "/v1/social/moments/" + shortID { return (200, try JSONSerialization.data(withJSONObject: ["moment": shortMoment])) }
-            if path == "/v1/social/moments/" + shortID + "/comments" { return (200, try JSONSerialization.data(withJSONObject: ["comments": shortComments, "nextCursor": NSNull()])) }
-            return try p1VisualResponse(request, documents: documents)
-        }
-    }
-
-    private func withMomentWindow(_ action: (UIWindow) async throws -> Void) async throws {
+    private func withSocialWindow(_ action: (UIWindow) async throws -> Void) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })
         let previous = scene.windows.first { $0.isKeyWindow }
         let window = UIWindow(windowScene: scene)
         defer { window.endEditing(true); window.rootViewController = nil; window.isHidden = true; previous?.makeKeyAndVisible() }
         try await action(window)
     }
-    private func momentEditableViews(_ view: UIView) -> [UIView] {
+    private func socialEditableViews(_ view: UIView) -> [UIView] {
         let own: [UIView] = (view is UITextField || view is UITextView) ? [view] : []
-        return own + view.subviews.flatMap(momentEditableViews)
+        return own + view.subviews.flatMap(socialEditableViews)
     }
-    private func momentInputText(_ view: UIView) -> String? {
-        if let field = view as? UITextField { return field.text }
-        return (view as? UITextView)?.text
-    }
-    private func momentScrollViews(_ view: UIView) -> [UIScrollView] {
+    private func socialScrollViews(_ view: UIView) -> [UIScrollView] {
         let own = (view as? UIScrollView).map { [$0] } ?? []
-        return own + view.subviews.flatMap(momentScrollViews)
-    }
-}
-
-// A second user's server changes are independent of this client's presentation.
-private final class MomentRefreshFixture {
-    private let lock = NSLock()
-    private let person: KikiPerson
-    private let momentID = "88888888-8888-4888-8888-888888888888"
-    private var comments = 0
-    private var notice = false
-    private var pages = 0
-    private var details = 0
-    private var readCount = -1
-    init(person: KikiPerson) { self.person = person }
-    var pageReads: Int { lock.lock(); defer { lock.unlock() }; return pages }
-    var detailReads: Int { lock.lock(); defer { lock.unlock() }; return details }
-    var lastReadCount: Int { lock.lock(); defer { lock.unlock() }; return readCount }
-    func setComments(_ count: Int, notify: Bool) { lock.lock(); defer { lock.unlock() }; comments = count; notice = notify }
-    func response(_ request: URLRequest) throws -> (Int, Data)? {
-        lock.lock(); defer { lock.unlock() }
-        let path = request.url?.path ?? ""
-        guard path == "/v1/social/moments" || path == "/v1/social/notifications" || path == "/v1/social/moments/" + momentID else { return nil }
-        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer moment-fixture-session")
-        let author = try JSONSerialization.jsonObject(with: JSONEncoder().encode(person))
-        let now = Date().timeIntervalSince1970
-        if path == "/v1/social/notifications" {
-            let notifications: [[String: Any]] = notice ? [["id": "comment-notice", "seq": 1, "kind": "system", "actor": author,
-                "text": "评论了你的动态", "createdAt": now, "readAt": now, "momentID": momentID]] : []
-            return (200, try JSONSerialization.data(withJSONObject: ["notifications": notifications, "unreadCount": 0, "nextCursor": NSNull()]))
-        }
-        let preview: [[String: Any]] = (0..<comments).map { index in
-            ["id": "remote-comment-\(index)", "momentID": momentID, "author": author,
-             "text": "另一位用户的新评论 \(index + 1)", "createdAt": now, "canDelete": false]
-        }
-        let moment: [String: Any] = ["id": momentID, "author": author, "text": "动态同步测试：收到评论后直接更新这里。", "media": [],
-            "createdAt": now - 60, "likeCount": 0, "commentCount": comments, "liked": false, "canDelete": false, "commentPreview": preview]
-        if path == "/v1/social/moments" {
-            pages += 1; readCount = comments
-            return (200, try JSONSerialization.data(withJSONObject: ["moments": [moment], "nextCursor": NSNull()]))
-        }
-        details += 1
-        return (200, try JSONSerialization.data(withJSONObject: ["moment": moment]))
+        return own + view.subviews.flatMap(socialScrollViews)
     }
 }
 
@@ -5123,7 +4206,7 @@ private final class InboxDeleteUIFixture {
         let path = request.url?.path ?? ""
         let routes = ["/v1/social/inbox", "/v1/social/notifications", "/v1/social/notifications/" + notificationID]
         guard routes.contains(path) else { return nil }
-        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer moment-fixture-session")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer social-fixture-session")
         if path == routes[2] {
             XCTAssertEqual(request.httpMethod, "DELETE")
             let body = try requestBody(request)
@@ -5133,9 +4216,8 @@ private final class InboxDeleteUIFixture {
             return (200, Data("{\"ok\":true}".utf8))
         }
         let actor = try JSONSerialization.jsonObject(with: JSONEncoder().encode(person))
-        let notice: [String: Any] = ["id": notificationID, "seq": 1, "kind": "system", "actor": actor,
-            "text": "评论了你的动态", "createdAt": Date().timeIntervalSince1970, "readAt": NSNull(),
-            "momentID": "88888888-8888-4888-8888-888888888888"]
+        let notice: [String: Any] = ["id": notificationID, "seq": 1, "kind": "follow", "actor": actor,
+            "text": "关注了你", "createdAt": Date().timeIntervalSince1970, "readAt": NSNull(), "roomID": NSNull()]
         let body: [String: Any]
         if path == "/v1/social/inbox" {
             reads += 1
@@ -5225,7 +4307,7 @@ extension KikiConsentTests {
             await fulfillment(of: [arrived], timeout: 3)
             if boundary == "privacy-during-destination" { store.socialPolicyChanged(userID: "kiki_fixture0002", blocked: true) }
             else if boundary == "session-during-rooms" { await store.logout(); try await store.loginWithApple() }
-            else { store.requestDirectConversation(momentFixturePerson(following: true)) }
+            else { store.requestDirectConversation(socialFixturePerson(following: true)) }
             let replacement = store.pendingDirectConversation?.id
             gate.signal()
             if case .success = await old.result { XCTFail("A superseded response must not finish the old room intent") }
@@ -5293,17 +4375,17 @@ extension KikiConsentTests {
     func testRoomNotificationNativePresenterDismissesProfileThenSelectsVoiceTabBeforeRTC() async throws {
         let fixture = try await RoomNotificationNavigationFixture(defaults: defaults())
         let store = fixture.store, state = fixture.state
-        try await withMomentWindow { window in
+        try await withSocialWindow { window in
             let tabs = KikiDirectNavigationFixtureTabs()
             let root = UIHostingController(rootView: KikiDirectNavigationFixture(store: store, tabs: tabs)
                 .environment(\.scenePhase, .active))
             window.rootViewController = root; window.makeKeyAndVisible()
             try await self.waitUntil { nativeMainTabController(in: root) != nil }
-            tabs.profile = self.momentFixturePerson(following: true)
+            tabs.profile = self.socialFixturePerson(following: true)
             try await self.waitUntil { root.presentedViewController != nil }
             let profile = try XCTUnwrap(root.presentedViewController)
             try await self.waitUntil { !profile.isBeingPresented && profile.transitionCoordinator == nil }
-            XCTAssertEqual(tabs.selectedTab, 1)
+            XCTAssertEqual(tabs.selectedTab, 0)
             var verifiedPresentation = false
             fixture.rtc.onPresentRoom = { roomID in
                 XCTAssertEqual(roomID, state.roomID)
@@ -5398,5 +4480,899 @@ private final class RoomNotificationNavigationState: @unchecked Sendable {
         }
         if path.hasPrefix("/v1/push/devices/") { return (200, Data(#"{"ok":true}"#.utf8)) }
         return try p1VisualResponse(request, documents: documents)
+    }
+}
+
+extension KikiConsentTests {
+    func testMutualRelationshipActionRequestsChatWithoutConfirmationOrFollowMutation() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let fixture = KikiRelationshipActionFixture()
+        let mock = KikiConcurrentConsentServer { request in
+            if let response = try fixture.response(request) { return response }
+            return try p1VisualResponse(request, documents: docs)
+        }
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        try await withSocialWindow { window in
+            let host = UIHostingController(rootView: KikiRelationshipsView(store: store, initialKind: .mutual))
+            window.rootViewController = host; window.makeKeyAndVisible()
+            try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.mutualID) != nil }
+            let button = try XCTUnwrap(self.relationshipButton(in: window, userID: fixture.mutualID))
+            XCTAssertEqual(button.titleLabel?.text, "聊天")
+            button.sendActions(for: .touchUpInside)
+            try await self.waitUntil { store.pendingDirectConversation?.person.id == fixture.mutualID }
+            XCTAssertEqual(fixture.mutations.count, 0, "Chat must only emit the existing direct-conversation intent")
+            XCTAssertFalse(self.relationshipHasAlert(host), "Chat opens directly without a confirmation sheet")
+        }
+        await store.logout()
+    }
+
+    func testFollowingRelationshipButtonsKeepBothUnfollowedRowsAndAllowImmediateRefollow() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let fixture = KikiRelationshipActionFixture()
+        let mock = KikiConcurrentConsentServer { request in
+            if let response = try fixture.response(request) { return response }
+            return try p1VisualResponse(request, documents: docs)
+        }
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        try await withSocialWindow { window in
+            let host = UIHostingController(rootView: KikiRelationshipsView(store: store, initialKind: .following))
+            window.rootViewController = host; window.makeKeyAndVisible()
+            try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.followingID) != nil }
+            let initialReads = fixture.readCount(for: .following)
+            for (userID, label) in [(fixture.followingID, "已关注"), (fixture.mutualID, "互相关注")] {
+                let button = try XCTUnwrap(self.relationshipButton(in: window, userID: userID))
+                XCTAssertEqual(button.titleLabel?.text, label)
+                button.sendActions(for: .touchUpInside)
+                try await self.waitUntil {
+                    guard let current = self.relationshipButton(in: window, userID: userID) else { return false }
+                    return fixture.mutations.contains { $0.personID == userID && $0.method == "DELETE" }
+                        && current.isEnabled && current.titleLabel?.text == "关注"
+                }
+                XCTAssertFalse(self.relationshipHasAlert(host), "DELETE takes effect without an unfollow dialog")
+            }
+            XCTAssertFalse(store.isFollowing(fixture.initialFollowing))
+            XCTAssertFalse(store.isFollowing(fixture.initialMutual))
+            for (userID, label) in [(fixture.followingID, "已关注"), (fixture.mutualID, "互相关注")] {
+                let refollow = try XCTUnwrap(self.relationshipButton(in: window, userID: userID))
+                refollow.sendActions(for: .touchUpInside)
+                try await self.waitUntil {
+                    guard let current = self.relationshipButton(in: window, userID: userID) else { return false }
+                    return current.isEnabled && current.titleLabel?.text == label
+                }
+            }
+            XCTAssertEqual(fixture.mutations.map(\.method), ["DELETE", "DELETE", "PUT", "PUT"])
+            XCTAssertEqual(fixture.readCount(for: .following), initialReads,
+                           "Successful mutations update the buttons without refreshing the session's following membership")
+            XCTAssertTrue(store.isFollowing(fixture.initialFollowing))
+            XCTAssertTrue(store.isFollowing(fixture.initialMutual))
+            XCTAssertFalse(self.relationshipHasAlert(host))
+        }
+        await store.logout()
+    }
+
+    func testFollowingUnfollowedRowSurvivesRelationshipTabSwitches() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let fixture = KikiRelationshipActionFixture()
+        let mock = KikiConcurrentConsentServer { request in
+            if let response = try fixture.response(request) { return response }
+            return try p1VisualResponse(request, documents: docs)
+        }
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        try await withSocialWindow { window in
+            let host = UIHostingController(rootView: KikiRelationshipsView(store: store, initialKind: .following))
+            window.rootViewController = host; window.makeKeyAndVisible()
+            try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.followingID) != nil }
+            let initialReads = fixture.readCount(for: .following)
+            try XCTUnwrap(self.relationshipButton(in: window, userID: fixture.followingID)).sendActions(for: .touchUpInside)
+            try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.followingID)?.titleLabel?.text == "关注" }
+            for kind in [KikiRelationshipKind.mutual, .followers, .following] {
+                let control = try XCTUnwrap(self.relationshipSegmentedControls(window).first)
+                control.selectedSegmentIndex = try XCTUnwrap(KikiRelationshipKind.allCases.firstIndex(of: kind))
+                control.sendActions(for: .valueChanged)
+                if kind == .following {
+                    try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.followingID)?.titleLabel?.text == "关注" }
+                } else {
+                    try await self.waitUntil {
+                        fixture.readCount(for: kind) > 0
+                            && self.relationshipButton(in: window, userID: fixture.followingID) == nil
+                            && self.relationshipButton(in: window, userID: fixture.mutualID) != nil
+                    }
+                }
+            }
+            XCTAssertEqual(fixture.readCount(for: .following), initialReads,
+                           "Switching tabs remains within the same following/fans module session")
+            let refollow = try XCTUnwrap(self.relationshipButton(in: window, userID: fixture.followingID))
+            refollow.sendActions(for: .touchUpInside)
+            try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.followingID)?.titleLabel?.text == "已关注" }
+            XCTAssertEqual(fixture.mutations.map(\.method), ["DELETE", "PUT"])
+        }
+        await store.logout()
+    }
+
+    func testFollowingUnfollowedRowSurvivesViewingAndDismissingPublicProfile() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let fixture = KikiRelationshipActionFixture()
+        let mock = KikiConcurrentConsentServer { request in
+            if let response = try fixture.response(request) { return response }
+            return try p1VisualResponse(request, documents: docs)
+        }
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        do {
+            try await withSocialWindow { window in
+                let host = UIHostingController(rootView: KikiRelationshipsView(store: store, initialKind: .following))
+                window.rootViewController = host; window.makeKeyAndVisible()
+                try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.followingID) != nil }
+                try XCTUnwrap(self.relationshipButton(in: window, userID: fixture.followingID)).sendActions(for: .touchUpInside)
+                try await self.waitUntil {
+                    guard let current = self.relationshipButton(in: window, userID: fixture.followingID) else { return false }
+                    return current.isEnabled && current.titleLabel?.text == "关注"
+                }
+                let readsBeforeProfile = fixture.readCount(for: .following)
+                guard let row = self.relationshipAccessibilityNodes(in: host.view).first(where: {
+                    ($0 as? UIAccessibilityIdentification)?.accessibilityIdentifier == "relationships.person." + fixture.followingID
+                }) else {
+                    throw XCTSkip("This runtime does not expose the SwiftUI person row through public in-process accessibility containers.")
+                }
+                guard row.accessibilityActivate() else {
+                    throw XCTSkip("This runtime does not support public accessibility activation of the SwiftUI person row.")
+                }
+                try await self.waitUntil {
+                    guard let profile = host.presentedViewController else { return false }
+                    return self.relationshipNativeButtons(profile.view).contains { $0.accessibilityIdentifier == "social.follow" }
+                }
+                let profile = try XCTUnwrap(host.presentedViewController)
+                XCTAssertEqual(self.relationshipNativeButtons(profile.view).first { $0.accessibilityIdentifier == "social.follow" }?.titleLabel?.text,
+                               "关注", "The retained row must open the current unfollowed profile")
+                try await self.waitUntil { !profile.isBeingPresented && profile.transitionCoordinator == nil }
+                await withCheckedContinuation { continuation in
+                    profile.dismiss(animated: false) { continuation.resume() }
+                }
+                try await self.waitUntil {
+                    host.presentedViewController == nil
+                        && self.relationshipButton(in: window, userID: fixture.followingID)?.titleLabel?.text == "关注"
+                }
+                XCTAssertEqual(fixture.readCount(for: .following), readsBeforeProfile,
+                               "Returning from a profile sheet must retain this module session's following membership")
+                try XCTUnwrap(self.relationshipButton(in: window, userID: fixture.followingID)).sendActions(for: .touchUpInside)
+                try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.followingID)?.titleLabel?.text == "已关注" }
+                XCTAssertEqual(fixture.mutations.map(\.method), ["DELETE", "PUT"])
+            }
+        } catch {
+            await store.logout()
+            throw error
+        }
+        await store.logout()
+    }
+
+    func testFollowingListFetchesAuthoritativeMembershipAfterLeavingAndReenteringModule() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let fixture = KikiRelationshipActionFixture()
+        let mock = KikiConcurrentConsentServer { request in
+            if let response = try fixture.response(request) { return response }
+            return try p1VisualResponse(request, documents: docs)
+        }
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        try await withSocialWindow { window in
+            window.rootViewController = UIHostingController(rootView: KikiRelationshipsView(store: store, initialKind: .following))
+            window.makeKeyAndVisible()
+            try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.followingID) != nil }
+            try XCTUnwrap(self.relationshipButton(in: window, userID: fixture.followingID)).sendActions(for: .touchUpInside)
+            try await self.waitUntil {
+                guard let current = self.relationshipButton(in: window, userID: fixture.followingID) else { return false }
+                return current.isEnabled && current.titleLabel?.text == "关注"
+            }
+            let readsBeforeExit = fixture.readCount(for: .following)
+            window.rootViewController = UIViewController()
+            try await Task.sleep(nanoseconds: 100_000_000)
+            window.rootViewController = UIHostingController(rootView: KikiRelationshipsView(store: store, initialKind: .following))
+            window.makeKeyAndVisible()
+            try await self.waitUntil {
+                fixture.readCount(for: .following) > readsBeforeExit
+                    && self.relationshipButton(in: window, userID: fixture.mutualID) != nil
+            }
+            XCTAssertNil(self.relationshipButton(in: window, userID: fixture.followingID),
+                         "Reentering the module must discard the old membership snapshot")
+            XCTAssertEqual(fixture.mutations.map(\.method), ["DELETE"])
+        }
+        await store.logout()
+    }
+
+    func testFollowingSessionSnapshotIsClearedImmediatelyAfterPrivacyChange() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let fixture = KikiRelationshipActionFixture()
+        let mock = KikiConcurrentConsentServer { request in
+            if let response = try fixture.response(request) { return response }
+            return try p1VisualResponse(request, documents: docs)
+        }
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        try await withSocialWindow { window in
+            window.rootViewController = UIHostingController(rootView: KikiRelationshipsView(store: store, initialKind: .following))
+            window.makeKeyAndVisible()
+            try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.followingID) != nil }
+            try XCTUnwrap(self.relationshipButton(in: window, userID: fixture.followingID)).sendActions(for: .touchUpInside)
+            try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.followingID)?.titleLabel?.text == "关注" }
+            let readsBeforePrivacyChange = fixture.readCount(for: .following)
+            store.socialPolicyChanged(userID: fixture.followingID, blocked: true)
+            try await self.waitUntil {
+                fixture.readCount(for: .following) > readsBeforePrivacyChange
+                    && self.relationshipButton(in: window, userID: fixture.followingID) == nil
+                    && self.relationshipButton(in: window, userID: fixture.mutualID) != nil
+            }
+            XCTAssertFalse(store.isFollowing(fixture.initialFollowing))
+        }
+        await store.logout()
+    }
+
+    func testFollowerRelationshipActionFollowsDirectlyAndRefreshesToMutualLabel() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let fixture = KikiRelationshipActionFixture()
+        let mock = KikiConcurrentConsentServer { request in
+            if let response = try fixture.response(request) { return response }
+            return try p1VisualResponse(request, documents: docs)
+        }
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        try await withSocialWindow { window in
+            let host = UIHostingController(rootView: KikiRelationshipsView(store: store, initialKind: .followers))
+            window.rootViewController = host; window.makeKeyAndVisible()
+            try await self.waitUntil {
+                self.relationshipButton(in: window, userID: fixture.followerID) != nil
+                    && self.relationshipButton(in: window, userID: fixture.mutualID) != nil
+            }
+            XCTAssertEqual(self.relationshipButton(in: window, userID: fixture.mutualID)?.titleLabel?.text, "互相关注")
+            let button = try XCTUnwrap(self.relationshipButton(in: window, userID: fixture.followerID))
+            XCTAssertEqual(button.titleLabel?.text, "关注")
+            button.sendActions(for: .touchUpInside)
+            try await self.waitUntil {
+                self.relationshipButton(in: window, userID: fixture.followerID)?.titleLabel?.text == "互相关注"
+            }
+            XCTAssertEqual(fixture.mutations.map(\.method), ["PUT"])
+            XCTAssertEqual(fixture.mutations.first?.personID, fixture.followerID)
+            XCTAssertTrue(store.isFollowing(fixture.initialFollower))
+            XCTAssertFalse(self.relationshipHasAlert(host), "Following must take effect without a confirmation dialog")
+        }
+        await store.logout()
+    }
+
+    func testRelationshipMutationFailureKeepsRowAndAllowsOneRetryAfterDuplicateTaps() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let fixture = KikiRelationshipActionFixture()
+        let gate = fixture.holdNextMutation(status: 503)
+        defer { gate.signal() }
+        let mock = KikiConcurrentConsentServer { request in
+            if let response = try fixture.response(request) { return response }
+            return try p1VisualResponse(request, documents: docs)
+        }
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        try await withSocialWindow { window in
+            let host = UIHostingController(rootView: KikiRelationshipsView(store: store, initialKind: .followers))
+            window.rootViewController = host; window.makeKeyAndVisible()
+            try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.followerID) != nil }
+            let button = try XCTUnwrap(self.relationshipButton(in: window, userID: fixture.followerID))
+            button.sendActions(for: .touchUpInside)
+            button.sendActions(for: .touchUpInside)
+            try await self.waitUntil {
+                guard let current = self.relationshipButton(in: window, userID: fixture.followerID) else { return false }
+                return fixture.mutations.count == 1 && !current.isEnabled
+                    && current.configuration?.showsActivityIndicator == true
+            }
+            let busyButton = try XCTUnwrap(self.relationshipButton(in: window, userID: fixture.followerID))
+            busyButton.sendActions(for: .touchUpInside)
+            try await Task.sleep(nanoseconds: 100_000_000)
+            XCTAssertEqual(fixture.mutations.count, 1, "Rapid and disabled-button taps cannot duplicate an in-flight follow")
+            XCTAssertFalse(self.relationshipHasAlert(host), "An in-flight follow never requires confirmation")
+            gate.signal()
+            try await self.waitUntil {
+                guard let current = self.relationshipButton(in: window, userID: fixture.followerID) else { return false }
+                return current.isEnabled && current.titleLabel?.text == "关注"
+            }
+            XCTAssertFalse(store.isFollowing(fixture.initialFollower), "A failed write must not create a local following override")
+            let retry = try XCTUnwrap(self.relationshipButton(in: window, userID: fixture.followerID))
+            retry.sendActions(for: .touchUpInside)
+            try await self.waitUntil {
+                self.relationshipButton(in: window, userID: fixture.followerID)?.titleLabel?.text == "互相关注"
+            }
+            XCTAssertEqual(fixture.mutations.map(\.method), ["PUT", "PUT"])
+            XCTAssertEqual(Set(fixture.mutations.map(\.requestID)).count, 2,
+                           "A new user retry after an explicit rejection is a separate mutation")
+            XCTAssertTrue(store.isFollowing(fixture.initialFollower))
+            XCTAssertFalse(self.relationshipHasAlert(host))
+        }
+        await store.logout()
+    }
+
+    func testFollowingUnfollowFailureRetainsOriginalLabelAndBlocksDuplicateTaps() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let fixture = KikiRelationshipActionFixture()
+        let gate = fixture.holdNextMutation(status: 503)
+        defer { gate.signal() }
+        let mock = KikiConcurrentConsentServer { request in
+            if let response = try fixture.response(request) { return response }
+            return try p1VisualResponse(request, documents: docs)
+        }
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        try await withSocialWindow { window in
+            let host = UIHostingController(rootView: KikiRelationshipsView(store: store, initialKind: .following))
+            window.rootViewController = host; window.makeKeyAndVisible()
+            try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.followingID) != nil }
+            let button = try XCTUnwrap(self.relationshipButton(in: window, userID: fixture.followingID))
+            button.sendActions(for: .touchUpInside); button.sendActions(for: .touchUpInside)
+            try await self.waitUntil {
+                guard let current = self.relationshipButton(in: window, userID: fixture.followingID) else { return false }
+                return fixture.mutations.count == 1 && !current.isEnabled
+                    && current.configuration?.showsActivityIndicator == true
+            }
+            try XCTUnwrap(self.relationshipButton(in: window, userID: fixture.followingID)).sendActions(for: .touchUpInside)
+            try await Task.sleep(nanoseconds: 100_000_000)
+            XCTAssertEqual(fixture.mutations.count, 1)
+            gate.signal()
+            try await self.waitUntil {
+                guard let current = self.relationshipButton(in: window, userID: fixture.followingID) else { return false }
+                return current.isEnabled && current.titleLabel?.text == "已关注"
+            }
+            XCTAssertTrue(store.isFollowing(fixture.initialFollowing), "A failed DELETE cannot mark a person unfollowed")
+            XCTAssertFalse(self.relationshipHasAlert(host))
+            try XCTUnwrap(self.relationshipButton(in: window, userID: fixture.followingID)).sendActions(for: .touchUpInside)
+            try await self.waitUntil {
+                guard let current = self.relationshipButton(in: window, userID: fixture.followingID) else { return false }
+                return current.isEnabled && current.titleLabel?.text == "关注"
+            }
+            XCTAssertEqual(fixture.mutations.map(\.method), ["DELETE", "DELETE"])
+            XCTAssertEqual(Set(fixture.mutations.map(\.requestID)).count, 2)
+            XCTAssertFalse(store.isFollowing(fixture.initialFollowing))
+        }
+        await store.logout()
+    }
+
+    func testRelationshipListsNativeOrderAndLightDarkLargeTextScreenshots() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let fixture = KikiRelationshipActionFixture()
+        let mock = KikiConcurrentConsentServer { request in
+            if let response = try fixture.response(request) { return response }
+            return try p1VisualResponse(request, documents: docs)
+        }
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        try await withSocialWindow { window in
+            let folder = URL(fileURLWithPath: "/tmp/kiki-relationships-screenshots", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+            for kind in KikiRelationshipKind.allCases {
+                for (name, scheme, size) in [("light", ColorScheme.light, DynamicTypeSize.large),
+                                             ("dark", ColorScheme.dark, .large),
+                                             ("large-text", ColorScheme.light, .accessibility1)] {
+                    let host = UIHostingController(rootView: KikiRelationshipsView(store: store, initialKind: kind)
+                        .preferredColorScheme(scheme).dynamicTypeSize(size))
+                    window.rootViewController = host; window.makeKeyAndVisible()
+                    try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.mutualID) != nil }
+                    try await Task.sleep(nanoseconds: 180_000_000)
+                    window.layoutIfNeeded()
+                    let control = try XCTUnwrap(self.relationshipSegmentedControls(window).first)
+                    XCTAssertEqual((0..<control.numberOfSegments).compactMap { control.titleForSegment(at: $0) },
+                                   ["互相关注", "正在关注", "粉丝"])
+                    XCTAssertEqual(control.selectedSegmentIndex, KikiRelationshipKind.allCases.firstIndex(of: kind))
+                    let buttons = self.relationshipNativeButtons(window).filter {
+                        $0.accessibilityIdentifier?.hasPrefix("relationships.action.") == true
+                    }
+                    XCTAssertFalse(buttons.isEmpty)
+                    for button in buttons {
+                        let frame = button.convert(button.bounds, to: window)
+                        XCTAssertGreaterThanOrEqual(frame.width, 44)
+                        XCTAssertGreaterThanOrEqual(frame.height, 44)
+                        XCTAssertTrue(window.bounds.insetBy(dx: -1, dy: -1).contains(frame),
+                                      "Native relationship actions must remain on screen in large text")
+                        XCTAssertFalse(button.titleLabel?.text?.isEmpty ?? true)
+                    }
+                    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                        XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                    }
+                    let filename = device + "-" + kind.rawValue + "-" + name
+                    let attachment = XCTAttachment(image: image); attachment.name = filename; attachment.lifetime = .keepAlways
+                    self.add(attachment)
+                    try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(filename + ".png"))
+                }
+            }
+        }
+        await store.logout()
+    }
+
+    private func relationshipNativeButtons(_ view: UIView) -> [UIButton] {
+        (view as? UIButton).map { [$0] } ?? view.subviews.flatMap(relationshipNativeButtons)
+    }
+    private func relationshipButton(in view: UIView, userID: String) -> UIButton? {
+        relationshipNativeButtons(view).first { $0.accessibilityIdentifier == "relationships.action." + userID }
+    }
+    private func relationshipSegmentedControls(_ view: UIView) -> [UISegmentedControl] {
+        (view as? UISegmentedControl).map { [$0] } ?? view.subviews.flatMap(relationshipSegmentedControls)
+    }
+    private func relationshipAccessibilityNodes(in root: UIView) -> [NSObject] {
+        var nodes: [NSObject] = [], visited = Set<ObjectIdentifier>()
+        func visit(_ object: NSObject) {
+            guard nodes.count < 2_000, visited.insert(ObjectIdentifier(object)).inserted else { return }
+            nodes.append(object)
+            if let view = object as? UIView { view.subviews.forEach(visit) }
+            if let elements = object.accessibilityElements {
+                for case let element as NSObject in elements { visit(element) }
+            }
+            let count = object.accessibilityElementCount()
+            if count > 0, count < 500 {
+                for index in 0..<count {
+                    if let element = object.accessibilityElement(at: index) as? NSObject { visit(element) }
+                }
+            }
+        }
+        visit(root)
+        return nodes
+    }
+    private func relationshipHasAlert(_ controller: UIViewController) -> Bool {
+        if controller is UIAlertController { return true }
+        if let presented = controller.presentedViewController, relationshipHasAlert(presented) { return true }
+        return controller.children.contains(where: relationshipHasAlert)
+    }
+}
+
+private final class KikiRelationshipActionFixture: @unchecked Sendable {
+    struct Mutation { let personID: String; let method: String; let requestID: String }
+    let mutualID = "kiki_fixture0002", followingID = "kiki_fixture0003", followerID = "kiki_fixture0004"
+    private let lock = NSLock()
+    private var writes: [Mutation] = []
+    private var relationshipReads: [String: Int] = [:]
+    private var people: [KikiPerson]
+    private var nextMutation: (status: Int, gate: DispatchSemaphore)?
+    var mutations: [Mutation] { lock.lock(); defer { lock.unlock() }; return writes }
+    func readCount(for kind: KikiRelationshipKind) -> Int {
+        lock.lock(); defer { lock.unlock() }; return relationshipReads[kind.rawValue, default: 0]
+    }
+    var initialMutual: KikiPerson { Self.person(id: mutualID, name: "同频小岛", following: true, followsYou: true) }
+    var initialFollowing: KikiPerson { Self.person(id: followingID, name: "正在关注的朋友", following: true, followsYou: false) }
+    var initialFollower: KikiPerson { Self.person(id: followerID, name: "等你关注的小星星", following: false, followsYou: true) }
+    init() {
+        people = [Self.person(id: "kiki_fixture0002", name: "同频小岛", following: true, followsYou: true),
+                  Self.person(id: "kiki_fixture0003", name: "正在关注的朋友", following: true, followsYou: false),
+                  Self.person(id: "kiki_fixture0004", name: "等你关注的小星星", following: false, followsYou: true)]
+    }
+    func holdNextMutation(status: Int) -> DispatchSemaphore {
+        let gate = DispatchSemaphore(value: 0)
+        lock.lock(); nextMutation = (status, gate); lock.unlock()
+        return gate
+    }
+    func response(_ request: URLRequest) throws -> (Int, Data)? {
+        let path = request.url?.path ?? ""
+        if path.hasPrefix("/v1/social/people/") {
+            lock.lock(); let person = people.first { $0.id == request.url?.lastPathComponent }; lock.unlock()
+            guard let person else { return nil }
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer social-fixture-session")
+            return (200, try JSONSerialization.data(withJSONObject: ["person": JSONSerialization.jsonObject(with: JSONEncoder().encode(person))]))
+        }
+        guard path == "/v1/social/relationships" || path == "/v1/social/relationships/ids"
+                || path.hasPrefix("/v1/social/follows/") else { return nil }
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer social-fixture-session")
+        if path.hasPrefix("/v1/social/follows/") {
+            let body = try requestBody(request)
+            let method = try XCTUnwrap(request.httpMethod)
+            let requestID = try XCTUnwrap(body["requestID"] as? String)
+            XCTAssertNotNil(UUID(uuidString: requestID)); XCTAssertEqual(Set(body.keys), ["requestID"])
+            XCTAssertTrue(["PUT", "DELETE"].contains(method))
+            let personID = request.url!.lastPathComponent
+            lock.lock()
+            writes.append(.init(personID: personID, method: method, requestID: requestID))
+            let held = nextMutation; nextMutation = nil
+            lock.unlock()
+            if let held { _ = held.gate.wait(timeout: .now() + 5) }
+            if let held, held.status != 200 {
+                return (held.status, Data(#"{"detail":"关注操作暂时不可用，请重试。"}"#.utf8))
+            }
+            lock.lock()
+            let index = try XCTUnwrap(people.firstIndex { $0.id == personID })
+            people[index].following = method == "PUT"
+            people[index].mutual = people[index].following && people[index].followsYou
+            let person = people[index]
+            lock.unlock()
+            return (200, try JSONSerialization.data(withJSONObject: ["person": JSONSerialization.jsonObject(with: JSONEncoder().encode(person))]))
+        }
+        lock.lock(); let snapshot = people; lock.unlock()
+        if path == "/v1/social/relationships/ids" {
+            let ids = snapshot.filter(\.following).map(\.id)
+            return (200, try JSONSerialization.data(withJSONObject: ["followingIDs": ids, "followingCount": ids.count,
+                                                                    "followerCount": snapshot.filter(\.followsYou).count]))
+        }
+        let kind = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "kind" }?.value
+        lock.lock(); relationshipReads[kind ?? "", default: 0] += 1; lock.unlock()
+        let visible = snapshot.filter { person in
+            switch kind { case "mutual": return person.mutual; case "following": return person.following; case "followers": return person.followsYou; default: return false }
+        }
+        return (200, try JSONSerialization.data(withJSONObject: ["people": JSONSerialization.jsonObject(with: JSONEncoder().encode(visible)), "nextCursor": NSNull()]))
+    }
+    private static func person(id: String, name: String, following: Bool, followsYou: Bool) -> KikiPerson {
+        KikiPerson(id: id, name: name, bio: "喜欢散步和音乐，一起分享生活中的小事。", avatarIndex: following ? 4 : 2,
+                   avatarURL: nil, following: following, followsYou: followsYou, mutual: following && followsYou,
+                   followingCount: 12, followerCount: 18, currentRoomID: nil)
+    }
+}
+
+extension KikiConsentTests {
+    /// Renders the real DM view against URLProtocol fixtures. No account, photo
+    /// URL, or outgoing message is read from or written to the live service.
+    func testDirectSenderIdentityProductionLayoutAndOfflineProfileRouting() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let peer = "kiki_identity0002", me = "legal_qa"
+        let peerName = "小岛 · 一个很长很长的昵称用来检查消息旁边名称是否会正确截断 🌊"
+        let myName = "离线验收 · 我自己的很长昵称也需要保持一行显示 ✨"
+        let person = KikiPerson(id: peer, name: peerName, bio: "离线资料验收", avatarIndex: 4, avatarURL: nil,
+                                following: true, followsYou: true, mutual: true,
+                                followingCount: 12, followerCount: 18, currentRoomID: nil)
+        let myself = KikiPerson(id: me, name: myName, bio: "离线自己的资料", avatarIndex: 1, avatarURL: nil,
+                               following: false, followsYou: false, mutual: false,
+                               followingCount: 12, followerCount: 18, currentRoomID: nil)
+        let people = [peer: person, me: myself]
+        let pages = TestRequests(), writes = TestRequests(), profileReads = TestRequests()
+        let messages: [[String: Any]] = [
+            ["id": "identity-peer", "seq": 1, "senderID": peer,
+             "text": "晚风很舒服，刚刚的房间里聊得很开心。长消息也应该保持自然换行，头像和昵称都要清晰。", "createdAt": 1_792_600_000],
+            ["id": "identity-mine", "seq": 2, "senderID": me,
+             "text": "收到啦 😀\n" + String(repeating: "Kiki", count: 16), "createdAt": 1_792_600_030]
+        ]
+        let mock = KikiAPIMockServer { request in
+            let path = request.url?.path ?? ""
+            if path == "/v1/social/conversations/" + peer + "/messages" {
+                if request.httpMethod != "GET" {
+                    writes.append(request.httpMethod ?? "unknown")
+                    XCTFail("Identity layout validation must never send a message")
+                    return (405, Data())
+                }
+                pages.append("page")
+                return (200, try JSONSerialization.data(withJSONObject: [
+                    "conversationID": "11111111-1111-4111-8111-111111111111", "messages": messages,
+                    "nextCursor": NSNull(), "canSend": true, "replyEstablished": true, "unreadCount": 0
+                ]))
+            }
+            if path == "/v1/social/conversations/" + peer + "/read" {
+                return (200, Data(#"{"unreadCount":0}"#.utf8))
+            }
+            if path == "/v1/social/conversations" {
+                return (200, Data(#"{"conversations":[],"nextCursor":null,"unreadCount":0}"#.utf8))
+            }
+            if path.hasPrefix("/v1/social/people/"), let id = request.url?.lastPathComponent, let target = people[id] {
+                XCTAssertEqual(request.httpMethod, "GET")
+                profileReads.append(id)
+                return (200, try JSONSerialization.data(withJSONObject: [
+                    "person": JSONSerialization.jsonObject(with: JSONEncoder().encode(target))
+                ]))
+            }
+            let (status, raw) = try consentResponse(request, documents: docs)
+            var body = try XCTUnwrap(JSONSerialization.jsonObject(with: raw) as? [String: Any])
+            if var user = body["user"] as? [String: Any] {
+                user["name"] = myName; user["avatarIndex"] = 1; body["user"] = user
+            }
+            return (status, try JSONSerialization.data(withJSONObject: body))
+        }
+        let store = try await directIntroductionStore(documents: docs, api: mock.client, voice: mock.voiceClient)
+        XCTAssertEqual(store.userID, me); XCTAssertEqual(store.profileName, myName)
+        store.updateDirectDraft("离线验收草稿，不发送", personID: peer)
+        let folder = URL(fileURLWithPath: "/tmp/kiki-direct-identity-screenshots", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        var checks: [[String: Any]] = []
+        try await withSocialWindow { window in
+            for (name, scheme, size) in [("light", ColorScheme.light, DynamicTypeSize.large),
+                                          ("dark", ColorScheme.dark, .large),
+                                          ("large-text", ColorScheme.light, .accessibility1)] {
+                let baseline = pages.values.count
+                let host = UIHostingController(rootView: NavigationStack {
+                    KikiDirectConversationView(person: person, store: store)
+                }.environment(\.scenePhase, .active).preferredColorScheme(scheme).dynamicTypeSize(size))
+                window.rootViewController = host; window.makeKeyAndVisible()
+                try await self.waitUntil { pages.values.count > baseline && !self.socialEditableViews(window).isEmpty }
+                try await Task.sleep(nanoseconds: 300_000_000)
+                window.layoutIfNeeded()
+                let input = try XCTUnwrap(self.socialEditableViews(window).first {
+                    !$0.isHidden && $0.bounds.width > 100 && $0.bounds.height > 15
+                })
+                var enabled = true, ancestor: UIView? = input
+                while let view = ancestor { enabled = enabled && view.isUserInteractionEnabled; ancestor = view.superview }
+                if let field = input as? UITextField { enabled = enabled && field.isEnabled }
+                if let text = input as? UITextView { enabled = enabled && text.isEditable }
+                XCTAssertTrue(enabled, "Identity rows must preserve composer admission")
+                let inputFrame = input.convert(input.bounds, to: window)
+                XCTAssertGreaterThan(inputFrame.width, 100)
+                XCTAssertGreaterThanOrEqual(inputFrame.minX, -1)
+                XCTAssertLessThanOrEqual(inputFrame.maxX, window.bounds.width + 1)
+                let nodes = self.relationshipAccessibilityNodes(in: window)
+                let exposed = nodes.filter { (self.directSenderIdentifier($0) ?? "").hasPrefix("social.direct.") }
+                let identifiers = Set(exposed.compactMap { self.directSenderIdentifier($0) })
+                let hasSenderNodes = identifiers.contains("social.direct.sender.avatar.identity-peer")
+                if hasSenderNodes {
+                    for id in ["identity-peer", "identity-mine"] {
+                        for kind in ["sender.avatar.", "sender.name.", "message."] {
+                            XCTAssertTrue(identifiers.contains("social.direct." + kind + id))
+                        }
+                        if let avatar = exposed.first(where: { self.directSenderIdentifier($0) == "social.direct.sender.avatar." + id }) {
+                            XCTAssertGreaterThanOrEqual(avatar.accessibilityFrame.width, 44)
+                            XCTAssertGreaterThanOrEqual(avatar.accessibilityFrame.height, 44)
+                            XCTAssertEqual(avatar.accessibilityLabel,
+                                           id == "identity-mine" ? "查看我的个人主页" : "查看\(peerName)的个人主页")
+                        }
+                        if let name = exposed.first(where: { self.directSenderIdentifier($0) == "social.direct.sender.name." + id }) {
+                            XCTAssertEqual(name.accessibilityLabel, id == "identity-mine" ? myName : peerName)
+                        }
+                    }
+                    XCTAssertTrue(identifiers.contains("social.direct.profile"))
+                }
+                checks.append(["state": name, "nativeInputEnabled": enabled, "inputWidth": inputFrame.width,
+                               "viewportWidth": window.bounds.width, "senderAccessibilityInspected": hasSenderNodes,
+                               "exposedDirectIdentifiers": identifiers.sorted()])
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                }
+                let attachment = XCTAttachment(image: image); attachment.name = "direct-identity-" + device + "-" + name
+                attachment.lifetime = .keepAlways; self.add(attachment)
+                try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(device + "-" + name + ".png"))
+                XCTAssertTrue(input.becomeFirstResponder(), "The native composer remains focusable")
+                XCTAssertTrue(input.isFirstResponder)
+                window.endEditing(true); window.rootViewController = nil
+            }
+            for (identifier, expectedID) in [("social.direct.profile", peer),
+                                             ("social.direct.sender.avatar.identity-peer", peer),
+                                             ("social.direct.sender.avatar.identity-mine", me)] {
+                let baseline = pages.values.count
+                let host = UIHostingController(rootView: NavigationStack {
+                    KikiDirectConversationView(person: person, store: store)
+                }.environment(\.scenePhase, .active))
+                window.rootViewController = host; window.makeKeyAndVisible()
+                try await self.waitUntil { pages.values.count > baseline }
+                try await Task.sleep(nanoseconds: 250_000_000)
+                let node = self.relationshipAccessibilityNodes(in: window).first { self.directSenderIdentifier($0) == identifier }
+                let before = profileReads.values.count
+                let activated: Bool
+                if node?.accessibilityActivate() == true { activated = true }
+                else if let control = node as? UIControl, !control.allTargets.isEmpty {
+                    control.sendActions(for: .touchUpInside); activated = true
+                } else { activated = false }
+                if activated {
+                    try await self.waitUntil { profileReads.values.count > before }
+                    XCTAssertEqual(profileReads.values.last, expectedID, "Every avatar must open its own identity")
+                }
+                checks.append(["action": identifier, "activationSupported": activated,
+                               "expectedProfileID": expectedID, "profileRouteVerified": activated && profileReads.values.last == expectedID])
+                host.presentedViewController?.dismiss(animated: false)
+                window.rootViewController = nil
+            }
+        }
+        XCTAssertTrue(writes.values.isEmpty)
+        XCTAssertEqual(store.directDrafts[peer], "离线验收草稿，不发送")
+        let manifest: [String: Any] = ["device": device, "checks": checks, "messageWrites": writes.values.count,
+            "scope": "Production DM view with offline API fixtures and seeded avatars; no outgoing DM, real identity, photo download, or live account"]
+        try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
+            .write(to: folder.appendingPathComponent(device + "-validation.json"))
+        await store.logout()
+    }
+    private func directSenderIdentifier(_ object: NSObject) -> String? {
+        (object as? UIAccessibilityIdentification)?.accessibilityIdentifier
+    }
+
+}
+
+extension KikiConsentTests {
+    /// A paused first GET separates the mounted, loading, and confirmed states
+    /// of the real conversation view without sending a message or adding a
+    /// production-only testing hook.
+    func testDirectEntryDefersEmptyStateUntilConfirmedResponse() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let peer = "kiki_entry0002"
+        let person = KikiPerson(id: peer, name: "小岛 · 离线进入验收", bio: "", avatarIndex: 4, avatarURL: nil,
+                                following: true, followsYou: true, mutual: true,
+                                followingCount: 12, followerCount: 18, currentRoomID: nil)
+        let folder = URL(fileURLWithPath: "/tmp/kiki-direct-entry-screenshots", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        var checks: [[String: Any]] = []
+        for populated in [false, true] {
+            let name = populated ? "existing-chat" : "new-chat"
+            let arrived = expectation(description: name + " first page is loading")
+            let release = DispatchSemaphore(value: 0)
+            defer { release.signal() }
+            let pages = TestRequests(), writes = TestRequests()
+            let mock = KikiConcurrentConsentServer { request in
+                let path = request.url?.path ?? ""
+                if path == "/v1/social/conversations/" + peer + "/messages" {
+                    guard request.httpMethod == "GET" else {
+                        writes.append(request.httpMethod ?? "unknown")
+                        return (405, Data())
+                    }
+                    pages.append("page")
+                    if pages.values.count == 1 {
+                        arrived.fulfill()
+                        _ = release.wait(timeout: .now() + 5)
+                    }
+                    let messages: [[String: Any]] = populated ? [[
+                        "id": "entry-message", "seq": 1, "senderID": peer,
+                        "text": "已有的聊天消息应该直接显示。", "createdAt": 1_792_600_000
+                    ]] : []
+                    return (200, try JSONSerialization.data(withJSONObject: [
+                        "conversationID": "11111111-1111-4111-8111-111111111111", "messages": messages,
+                        "nextCursor": NSNull(), "canSend": true, "replyEstablished": true, "unreadCount": 0
+                    ]))
+                }
+                if path == "/v1/social/conversations/" + peer + "/read" {
+                    return (200, Data(#"{"unreadCount":0}"#.utf8))
+                }
+                if path == "/v1/social/conversations" {
+                    return (200, Data(#"{"conversations":[],"nextCursor":null,"unreadCount":0}"#.utf8))
+                }
+                return try consentResponse(request, documents: docs)
+            }
+            let store = try await directIntroductionStore(documents: docs, api: mock.client, voice: mock.voiceClient)
+            let activation = DirectEntryActivation()
+            try await withSocialWindow { window in
+                window.rootViewController = UIHostingController(rootView:
+                    DirectEntryView(person: person, store: store, activation: activation)
+                        .environment(\.scenePhase, .active).preferredColorScheme(.dark))
+                window.makeKeyAndVisible()
+                try await self.waitUntil {
+                    self.directEntryScroll(window) != nil && !self.socialEditableViews(window).isEmpty
+                }
+                try await Task.sleep(nanoseconds: 150_000_000)
+                let unloaded = try self.directEntrySnapshot(window, folder: folder, name: device + "-" + name + "-unloaded")
+                XCTAssertEqual(pages.values.count, 0, "An inactive destination must not start a request")
+                XCTAssertLessThan(unloaded, 80, "An unconfirmed conversation must not contain the tall empty-state placeholder")
+                checks.append(["chat": name, "phase": "unloaded", "contentHeight": unloaded])
+
+                activation.isActive = true
+                await self.fulfillment(of: [arrived], timeout: 2)
+                try await Task.sleep(nanoseconds: 100_000_000)
+                let loading = try self.directEntrySnapshot(window, folder: folder, name: device + "-" + name + "-loading")
+                XCTAssertLessThan(loading, 190, "Loading must not display the confirmed-empty illustration")
+                XCTAssertNil(store.directMessageAccess[peer], "The first response remains paused while loading is captured")
+                checks.append(["chat": name, "phase": "loading", "contentHeight": loading])
+
+                release.signal()
+                try await self.waitUntil { store.directMessageAccess[peer]?.canSend == true }
+                try await Task.sleep(nanoseconds: 200_000_000)
+                let phase = populated ? "loaded-messages" : "confirmed-empty"
+                let confirmed = try self.directEntrySnapshot(window, folder: folder, name: device + "-" + name + "-" + phase)
+                XCTAssertGreaterThan(confirmed, populated ? 80 : 180, "The confirmed production content must now render")
+                let input = try XCTUnwrap(self.socialEditableViews(window).first {
+                    !$0.isHidden && $0.bounds.width > 100 && $0.bounds.height > 15
+                })
+                var enabled = true, ancestor: UIView? = input
+                while let view = ancestor { enabled = enabled && view.isUserInteractionEnabled; ancestor = view.superview }
+                if let field = input as? UITextField { enabled = enabled && field.isEnabled }
+                if let text = input as? UITextView { enabled = enabled && text.isEditable }
+                XCTAssertTrue(enabled, "A completed initial load must enable the native composer")
+                checks.append(["chat": name, "phase": phase, "contentHeight": confirmed, "nativeInputEnabled": enabled])
+            }
+            XCTAssertTrue(writes.values.isEmpty, "This regression only loads offline messages")
+            await store.logout()
+        }
+        try JSONSerialization.data(withJSONObject: ["device": device, "checks": checks], options: [.prettyPrinted, .sortedKeys])
+            .write(to: folder.appendingPathComponent(device + "-validation.json"))
+    }
+
+    private func directEntryScroll(_ window: UIWindow) -> UIScrollView? {
+        socialScrollViews(window).first { !($0 is UITextView) && $0.bounds.width > 200 && $0.bounds.height > 200 }
+    }
+    private func directEntrySnapshot(_ window: UIWindow, folder: URL, name: String) throws -> CGFloat {
+        window.layoutIfNeeded()
+        let scroll = try XCTUnwrap(directEntryScroll(window))
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+        }
+        let attachment = XCTAttachment(image: image); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+        try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(name + ".png"))
+        return scroll.contentSize.height
+    }
+    @MainActor private final class DirectEntryActivation: ObservableObject {
+        @Published var isActive = false
+    }
+    @MainActor private struct DirectEntryView: View {
+        let person: KikiPerson
+        @ObservedObject var store: KikiAppStore
+        @ObservedObject var activation: DirectEntryActivation
+        var body: some View {
+            NavigationStack { KikiDirectConversationView(person: person, store: store, isActive: activation.isActive) }
+        }
+    }
+}
+
+extension KikiConsentTests {
+    func testPublicAccountNumberIsDisplayedWithoutChangingSessionIdentityAndClearsAtLogout() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let mock = KikiAPIMockServer { request in
+            let (status, data) = try consentResponse(request, documents: docs)
+            var body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            if var user = body["user"] as? [String: Any] {
+                user["displayID"] = "kiki_000001"; body["user"] = user
+            }
+            return (status, try JSONSerialization.data(withJSONObject: body))
+        }
+        let store = try await directIntroductionStore(documents: docs, api: mock.client, voice: mock.voiceClient)
+        XCTAssertEqual(store.userID, "legal_qa")
+        XCTAssertEqual(store.displayID, "kiki_000001")
+        XCTAssertTrue(store.pushSessionKey?.hasSuffix(":legal_qa") == true)
+        await store.logout()
+        XCTAssertTrue(store.userID.isEmpty)
+        XCTAssertTrue(store.displayID.isEmpty)
+    }
+}
+
+extension KikiConsentTests {
+    func testProfileTextSaveKeepsUploadedPhotoAndOnlyANewUploadReplacesIt() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let state = KikiProfileUploadFixture()
+        let mock = KikiAPIMockServer { request in
+            if let response = try state.response(request, documents: docs) { return response }
+            return try consentResponse(request, documents: docs)
+        }
+        let store = try await directIntroductionStore(documents: docs, api: mock.client, voice: mock.voiceClient)
+        XCTAssertTrue(store.isAuthenticated)
+        XCTAssertEqual(store.customAvatarURL, KikiProfileUploadFixture.originalURL)
+
+        try await store.updateProfile(name: "新昵称", bio: "新的自我介绍")
+        XCTAssertEqual(store.profileName, "新昵称")
+        XCTAssertEqual(store.bio, "新的自我介绍")
+        XCTAssertEqual(store.customAvatarURL, KikiProfileUploadFixture.originalURL)
+        XCTAssertEqual(state.mutations, ["text"])
+
+        try await store.updateProfile(name: "新昵称", bio: "新的自我介绍", jpegData: state.jpeg)
+        XCTAssertEqual(store.customAvatarURL, KikiProfileUploadFixture.uploadedURL)
+        XCTAssertEqual(state.mutations, ["text", "text", "photo"])
+        await store.logout()
+    }
+}
+
+/// Models the account server retaining an uploaded photo across text edits and
+/// returning the latest photo when the app renews its authenticated voice card.
+private final class KikiProfileUploadFixture: @unchecked Sendable {
+    static let originalURL = "https://kiki.group/v1/avatars/original.jpg"
+    static let uploadedURL = "https://kiki.group/v1/avatars/uploaded.jpg"
+    let jpeg = Data([0xff, 0xd8, 0xff, 0xd9])
+    private let lock = NSLock()
+    private var recordedMutations: [String] = []
+    private var user: [String: Any] = [
+        "id": "legal_qa", "sdkUserID": "sdk_qa", "name": "测试昵称", "bio": "",
+        "avatarIndex": 5, "avatarURL": KikiProfileUploadFixture.originalURL, "notificationsEnabled": false, "needsNickname": false
+    ]
+    var mutations: [String] { lock.lock(); defer { lock.unlock() }; return recordedMutations }
+
+    private func uploadedPhotoData(_ request: URLRequest) throws -> Data {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return Data() }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 1024)
+        while true {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count < 0 { throw stream.streamError ?? URLError(.cannotDecodeRawData) }
+            if count == 0 { return data }
+            data.append(contentsOf: buffer.prefix(count))
+        }
+    }
+
+    func response(_ request: URLRequest, documents: KikiLegalBundle) throws -> (Int, Data)? {
+        lock.lock(); defer { lock.unlock() }
+        switch (request.url?.path, request.httpMethod) {
+        case ("/v1/me", "PATCH"):
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer existing-session")
+            let body = try requestBody(request)
+            XCTAssertEqual(Set(body.keys), ["name", "bio"])
+            user["name"] = try XCTUnwrap(body["name"] as? String)
+            user["bio"] = try XCTUnwrap(body["bio"] as? String)
+            recordedMutations.append("text")
+            return (200, try JSONSerialization.data(withJSONObject: user))
+        case ("/v1/me/avatar", "POST"):
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer existing-session")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "image/jpeg")
+            XCTAssertEqual(try uploadedPhotoData(request), jpeg)
+            user["avatarURL"] = Self.uploadedURL
+            recordedMutations.append("photo")
+            return (200, try JSONSerialization.data(withJSONObject: user))
+        case ("/v1/auth/refresh", _), ("/v1/voice/session", _):
+            let (status, data) = try consentResponse(request, documents: documents)
+            var body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            body["user"] = user
+            return (status, try JSONSerialization.data(withJSONObject: body))
+        default:
+            return nil
+        }
     }
 }

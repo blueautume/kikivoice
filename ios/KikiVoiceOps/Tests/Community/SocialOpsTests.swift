@@ -5,18 +5,29 @@ import XCTest
 @testable import KikiVoiceOps
 
 final class SocialOpsTests: XCTestCase {
-    func testSocialEvidenceEndpointsStayOnAccountAndRequireExactMethodAndUUID() {
-        let id = "11111111-2222-4333-8444-555555555555"
-        let api = OpsIdentityAPI()
-        XCTAssertNoThrow(try api.request(path: "/admin/v2/services/account/social/media/\(id).jpg", method: "GET", session: testSession()))
-        for path in ["https://furby.top/admin/v2/services/account/social/media/\(id).jpg",
-                     "/admin/v2/services/account/social/media/\(id).jpg?token=x",
-                     "/admin/v2/services/account/social/media/%2e%2e.jpg",
-                     "/admin/v2/services/account/social/media/not-a-uuid.jpg"] {
-            XCTAssertThrowsError(try api.request(path: path, method: "GET", session: testSession()))
+    func testSocialPublicNumbersRemainSeparateFromStableUserIDs() throws {
+        let legacy = try JSONDecoder().decode(OpsSocialModerationPage.self, from: socialOpsFixture())
+        try legacy.validate()
+        XCTAssertEqual(legacy.reports.first?.targetLabel, "kiki_fixture_target00")
+        var value = try XCTUnwrap(JSONSerialization.jsonObject(with: socialOpsFixture()) as? [String: Any])
+        var reports = try XCTUnwrap(value["reports"] as? [[String: Any]])
+        reports[0]["reporterDisplayID"] = "kiki_000001"; reports[0]["targetDisplayID"] = "kiki_000002"
+        value["reports"] = reports
+        value["activeRestrictions"] = [["userID": "kiki_fixture_target00", "userDisplayID": "kiki_000002", "userName": "示例成员", "sourceReportID": "report_fixture", "until": 1794975600]]
+        let page = try JSONDecoder().decode(OpsSocialModerationPage.self, from: JSONSerialization.data(withJSONObject: value))
+        try page.validate()
+        XCTAssertEqual(page.reports.first?.targetLabel, "kiki_000002")
+        XCTAssertEqual(page.reports.first?.reporterLabel, "kiki_000001")
+        XCTAssertEqual(page.reports.first?.targetUserID, "kiki_fixture_target00")
+        XCTAssertEqual(page.activeRestrictions.first?.id, "kiki_fixture_target00")
+        XCTAssertEqual(page.activeRestrictions.first?.accountLabel, "kiki_000002")
+        for bad in ["kiki_000000", "kiki_12345", "kiki_1234567"] {
+            reports[0]["targetDisplayID"] = bad; value["reports"] = reports
+            let invalid = try JSONDecoder().decode(OpsSocialModerationPage.self, from: JSONSerialization.data(withJSONObject: value))
+            XCTAssertThrowsError(try invalid.validate())
         }
-        XCTAssertThrowsError(try api.request(path: "/admin/v2/services/account/social/media/\(id).jpg", method: "POST", session: testSession()))
     }
+
     func testSocialQueryUsesCommunityRouteAndAction422IsNotNameError() async throws {
         let transport = ScriptedTransport { req in
             XCTAssertEqual(req.url?.host, "kiki.group")
@@ -31,7 +42,7 @@ final class SocialOpsTests: XCTestCase {
         }
         let api = OpsIdentityAPI(transport: transport)
         let result = try await api.socialModeration(session: testSession(), filter: .pending, cursor: nil)
-        XCTAssertEqual(result.reports.first?.targetType, "moment")
+        XCTAssertEqual(result.reports.first?.targetType, "direct_message")
         do { _ = try await api.socialModerate(socialAction(), session: testSession()); XCTFail("invalid action must fail") }
         catch { XCTAssertEqual(error as? OpsError, .invalidModeration) }
     }
@@ -44,6 +55,17 @@ final class SocialOpsTests: XCTestCase {
         value["retentionDays"] = 365
         let page = try JSONDecoder().decode(OpsSocialModerationPage.self, from: JSONSerialization.data(withJSONObject: value))
         XCTAssertThrowsError(try page.validate())
+    }
+    func testReportTargetsOnlyAcceptProfilesAndDirectMessages() throws {
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: socialOpsFixture()) as? [String: Any])
+        let reports = try XCTUnwrap(fixture["reports"] as? [[String: Any]])
+        for target in ["profile", "direct_message", "moment", "comment"] {
+            var report = reports[0]
+            report["targetType"] = target
+            let value = try JSONDecoder().decode(OpsSocialReport.self, from: JSONSerialization.data(withJSONObject: report))
+            if ["profile", "direct_message"].contains(target) { XCTAssertNoThrow(try value.validate()) }
+            else { XCTAssertThrowsError(try value.validate()) }
+        }
     }
     @MainActor func testCommunityPermissionWorksWithoutEitherDashboardButReadOnlyGrantsDoNot() async throws {
         for allowed in [false, true] {
@@ -95,7 +117,7 @@ final class SocialOpsTests: XCTestCase {
         XCTAssertNil(restored.pending); XCTAssertTrue(vault.values.isEmpty)
         parent.setActive(false)
     }
-    @MainActor func testActionRejectionAfterFreshIdentityClearsEvidenceButPreservesUnconfirmedReceipt() async throws {
+    @MainActor func testActionRejectionAfterFreshIdentityClearsReportsButPreservesUnconfirmedReceipt() async throws {
         for rejection in [OpsError.unauthenticated, .forbidden] {
             let api = SocialOpsFixtureAPI(allowed: true)
             let vault = SocialMemoryVault()
@@ -103,40 +125,18 @@ final class SocialOpsTests: XCTestCase {
             parent.selectService(.community); parent.setActive(true)
             await waitFor { parent.authenticated && !parent.isRefreshing }
             let store = OpsSocialModerationStore(parent: parent, api: api, vault: vault)
-            await store.load(); await store.loadImage("44444444-5555-4666-8777-888888888888")
-            XCTAssertNotNil(store.page); XCTAssertEqual(store.images.count, 1)
+            await store.load()
+            XCTAssertNotNil(store.page)
             await api.rejectNextAction(rejection)
             let request = socialAction()
             let accepted = await store.act(request)
-            XCTAssertFalse(accepted); XCTAssertNil(store.page); XCTAssertTrue(store.images.isEmpty)
+            XCTAssertFalse(accepted); XCTAssertNil(store.page)
             XCTAssertEqual(vault.values["ops_fixture_social"]?.request, request)
             let requests = await api.requests; XCTAssertEqual(requests, [request])
             let commits = await api.commits; XCTAssertEqual(commits, [request.requestID])
             if rejection == .unauthenticated { XCTAssertFalse(parent.authenticated) }
             else { XCTAssertFalse(parent.canAccessSelectedService) }
             store.invalidate(); XCTAssertEqual(vault.values["ops_fixture_social"]?.request, request)
-            parent.setActive(false)
-        }
-    }
-    @MainActor func testImageRejectionClearsExistingEvidenceAndKeepsEarlierUnknownAction() async throws {
-        for rejection in [OpsError.unauthenticated, .forbidden] {
-            let api = SocialOpsFixtureAPI(allowed: true)
-            let vault = SocialMemoryVault()
-            let parent = OpsStore(api: api, vault: MemoryVault(session: testSession()), authorizer: FixturePasskeyAuthorizer())
-            parent.selectService(.community); parent.setActive(true)
-            await waitFor { parent.authenticated && !parent.isRefreshing }
-            let store = OpsSocialModerationStore(parent: parent, api: api, vault: vault)
-            await store.load(); await store.loadImage("44444444-5555-4666-8777-888888888888")
-            await api.failAfterCommit()
-            let request = socialAction()
-            let accepted = await store.act(request); XCTAssertFalse(accepted)
-            XCTAssertNotNil(store.page); XCTAssertEqual(store.images.count, 1)
-            await api.rejectNextImage(rejection)
-            await store.loadImage("55555555-6666-4777-8888-999999999999")
-            XCTAssertNil(store.page); XCTAssertTrue(store.images.isEmpty)
-            XCTAssertEqual(vault.values["ops_fixture_social"]?.request, request)
-            if rejection == .unauthenticated { XCTAssertFalse(parent.authenticated) }
-            else { XCTAssertFalse(parent.canAccessSelectedService) }
             parent.setActive(false)
         }
     }
@@ -201,7 +201,7 @@ private func socialAction() -> OpsSocialActionRequest {
     OpsSocialActionRequest(requestID: "11111111-2222-4333-8444-555555555555", reportID: "22222222-3333-4444-8555-666666666666", action: .warn, durationSeconds: nil, note: "请停止骚扰，遵守社区交流规则。")
 }
 private func socialOpsFixture() -> Data {
-    Data(#"{"schemaVersion":1,"retentionDays":30,"nextCursor":null,"activeRestrictions":[],"reports":[{"id":"22222222-3333-4444-8555-666666666666","reporterID":"kiki_fixture_reporter","reporterName":"示例用户","targetUserID":"kiki_fixture_target00","targetName":"示例成员","targetType":"moment","contentID":"33333333-4444-4555-8666-777777777777","reason":"harassment","details":"这条动态对其他成员进行了人身攻击，请核查。","evidence":{"text":"用于截图验收的模拟动态正文，不是真实用户内容。","media":[]},"status":"pending","createdAt":1792411800,"resolvedAt":null,"lastAction":null}]}"#.utf8)
+    Data(#"{"schemaVersion":1,"retentionDays":30,"nextCursor":null,"activeRestrictions":[],"reports":[{"id":"22222222-3333-4444-8555-666666666666","reporterID":"kiki_fixture_reporter","reporterName":"示例用户","targetUserID":"kiki_fixture_target00","targetName":"示例成员","targetType":"direct_message","contentID":"33333333-4444-4555-8666-777777777777","reason":"harassment","details":"这条私聊消息对其他成员进行了人身攻击，请核查。","evidence":{"text":"用于截图验收的模拟私聊正文，不是真实用户内容。","media":[]},"status":"pending","createdAt":1792411800,"resolvedAt":null,"lastAction":null}]}"#.utf8)
 }
 private final class SocialMemoryVault: OpsSocialPendingVault {
     var values: [String: OpsSocialPendingAction] = [:]
@@ -219,14 +219,12 @@ private actor SocialOpsFixtureAPI: OpsAPI {
     private var continuation: CheckedContinuation<Void, Never>?
     private var throwAfterCommit = false
     private var actionRejection: OpsError?
-    private var imageRejection: OpsError?
     init(allowed: Bool) { self.allowed = allowed }
     func revoke() { allowed = false }
     func deferQuery() { holdQuery = true }
     func releaseQuery() { continuation?.resume(); continuation = nil }
     func failAfterCommit() { throwAfterCommit = true }
     func rejectNextAction(_ value: OpsError) { actionRejection = value }
-    func rejectNextImage(_ value: OpsError) { imageRejection = value }
     func registrationOptions() async throws -> OpsRegistrationOptions { try KikiVoiceOpsTestsRegistration() }
     func authenticationOptions() async throws -> OpsAuthenticationOptions { try KikiVoiceOpsTestsAuthentication() }
     func finishRegistration(transactionID: String, credential: OpsPasskeyCredential) async throws -> OpsLoginResult { throw OpsError.forbidden }
@@ -251,11 +249,6 @@ private actor SocialOpsFixtureAPI: OpsAPI {
         if let failure = actionRejection { actionRejection = nil; allowed = false; throw failure }
         if throwAfterCommit { throwAfterCommit = false; throw OpsError.server(status: 503) }
         return OpsSocialActionResult(ok: true, requestID: request.requestID, reportID: request.reportID, action: request.action.rawValue)
-    }
-    func socialEvidenceImage(id: String, session: OpsSession) async throws -> Data {
-        guard allowed else { throw OpsError.forbidden }
-        if let failure = imageRejection { imageRejection = nil; allowed = false; throw failure }
-        return Data([0xff, 0xd8, 0xff, 0xd9])
     }
     func logout(session: OpsSession) async throws { }
 }

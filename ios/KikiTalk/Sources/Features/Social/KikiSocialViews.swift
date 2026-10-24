@@ -39,7 +39,6 @@ struct KikiPersonRow: View {
                 Text(person.bio.isEmpty ? "还没有填写简介" : person.bio)
                     .font(.subheadline).foregroundStyle(KikiPalette.secondary).lineLimit(1)
             }.frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(KikiPalette.muted)
         }.padding(.vertical, 10).contentShape(Rectangle())
     }
 }
@@ -117,26 +116,15 @@ struct KikiPeopleDirectoryView: View {
 struct KikiPublicProfileView: View {
     let userID: String
     @ObservedObject var store: KikiAppStore
+    var leadingAction: AnyView? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var person: KikiPerson?
     @State private var error: String?
     @State private var isLoading = false
     @State private var isFollowing = false
-    @State private var destination: Destination?
+    @State private var reportTarget: KikiSocialReportTarget?
     @State private var confirmsBlock = false
     @State private var isBlocking = false
-    @State private var moments: [KikiMoment] = []
-    @State private var confirmsUnfollow = false
-    private enum Destination: Identifiable {
-        case report(KikiSocialReportTarget), moment(KikiMoment)
-        var id: String {
-            switch self {
-            case .report(let report): return "report:" + report.id
-            case .moment(let moment): return "moment:" + moment.id
-            }
-        }
-    }
-
     private var room: KikiRoom? {
         guard let verifiedRoomID = person?.currentRoomID else { return nil }
         return store.rooms.first { $0.id == verifiedRoomID && $0.hostID == userID && $0.status == "live" }
@@ -149,11 +137,11 @@ struct KikiPublicProfileView: View {
                     if isLoading && person == nil { ProgressView().padding(45) }
                     if let person {
                         VStack(spacing: 14) {
-                            KikiDecoratedAvatar(gifts: store.gifts, userID: person.id, index: person.avatarIndex, size: 88, customURL: person.avatarURL)
+                            KikiAvatar(index: person.avatarIndex, size: 88, customURL: person.avatarURL)
                             Text(person.name).font(.title2.weight(.semibold)).foregroundStyle(KikiPalette.text)
                             Text(person.bio.isEmpty ? "这个人很安静，还没有留下简介。" : person.bio)
                                 .font(.body).foregroundStyle(KikiPalette.secondary).multilineTextAlignment(.center)
-                            Text(person.id).font(.caption.monospaced()).foregroundStyle(KikiPalette.muted).textSelection(.enabled)
+                            Text(person.publicID).font(.caption.monospaced()).foregroundStyle(KikiPalette.muted).textSelection(.enabled)
                         }.frame(maxWidth: .infinity).padding(.top, 20)
                         HStack(spacing: 0) {
                             count(person.followingCount, title: "关注")
@@ -165,18 +153,6 @@ struct KikiPublicProfileView: View {
                                 Text("正在语聊").font(.headline)
                                 KikiRoomCard(room: room)
                                 Button("进入房间") { Task { await open(room) } }.font(.body.weight(.semibold)).disabled(store.isJoiningRoom)
-                            }
-                        }
-                        if !moments.isEmpty {
-                            VStack(alignment: .leading, spacing: 13) {
-                                Text("最近动态").font(.headline)
-                                ForEach(moments.prefix(3)) { moment in
-                                    Button { destination = .moment(moment) } label: {
-                                        KikiProfileMomentPreview(moment: moment, store: store)
-                                    }.buttonStyle(.plain)
-                                        .accessibilityHint("查看完整动态和评论")
-                                        .accessibilityIdentifier("social.profile.moment.\(moment.id)")
-                                }
                             }
                         }
                         Text("关注后，可以在语聊页的「关注」中找到对方正在开的房间。")
@@ -192,28 +168,28 @@ struct KikiPublicProfileView: View {
                 }
                 .navigationTitle(userID == store.userID ? "我的主页" : "个人主页").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    if let leadingAction {
+                        if #available(iOS 26.0, *) {
+                            ToolbarItem(placement: .topBarLeading) { leadingAction }
+                                .sharedBackgroundVisibility(.hidden)
+                        } else {
+                            ToolbarItem(placement: .topBarLeading) { leadingAction }
+                        }
+                    }
                     ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
                 }
                 .task { await reload() }
                 .onChange(of: store.socialPrivacyRevision) { _ in
-                    person = nil; moments = []; destination = nil
+                    person = nil; reportTarget = nil
                     dismiss()
                 }
-                .sheet(item: $destination) { value in
-                    Group {
-                        switch value {
-                        case .report(let target): KikiSocialReportForm(target: target, store: store)
-                        case .moment(let moment): KikiMomentCommentsView(moment: moment, store: store)
-                        }
-                    }.kikiRoomSheet()
+                .sheet(item: $reportTarget) { target in
+                    KikiSocialReportForm(target: target, store: store).kikiRoomSheet()
                 }
                 .confirmationDialog("拉黑后将停止互相关注、隐藏双方社交内容与私信，并屏蔽对方房间语音和文字。", isPresented: $confirmsBlock, titleVisibility: .visible) {
                     Button("拉黑用户", role: .destructive) { Task { await block() } }; Button("取消", role: .cancel) { }
                 }
-                .confirmationDialog("取消关注 \(person?.name ?? "此用户")？", isPresented: $confirmsUnfollow, titleVisibility: .visible) {
-                    Button("取消关注", role: .destructive) { Task { await follow(false) } }
-                    Button("保留关注", role: .cancel) { }
-                }
+
         }.environmentObject(store).tint(KikiPalette.lavender)
     }
 
@@ -221,15 +197,14 @@ struct KikiPublicProfileView: View {
         let following = store.isFollowing(person)
         return HStack(spacing: 10) {
             KikiPublicProfileButton(style: .message, isEnabled: !isBlocking, isBusy: false, action: {
-                guard destination == nil, !isBlocking else { return }
+                guard reportTarget == nil, !isBlocking else { return }
                 store.requestDirectConversation(person)
             }).frame(maxWidth: .infinity).frame(height: 48)
             KikiPublicProfileButton(style: .follow(following), isEnabled: !isBlocking && !isFollowing, isBusy: isFollowing, action: {
-                if following { confirmsUnfollow = true }
-                else { Task { await follow(true) } }
+                Task { await follow(!following) }
             }).frame(maxWidth: .infinity).frame(height: 48)
             KikiPublicProfileButton(style: .more, isEnabled: !isBlocking, isBusy: false, action: {}, report: {
-                    destination = .report(.init(kind: .profile, targetID: userID, name: person.name))
+                    reportTarget = .init(kind: .profile, targetID: userID, name: person.name)
             }, block: { confirmsBlock = true }).frame(width: 44, height: 48)
         }
             .accessibilityElement(children: .contain).accessibilityIdentifier("social.profile.actions")
@@ -246,11 +221,6 @@ struct KikiPublicProfileView: View {
             let loaded = try await store.socialPerson(userID)
             guard privacy == store.socialPrivacyRevision else { return }
             person = loaded; error = nil
-            await store.gifts.refreshDecorations(userIDs: [userID])
-            guard privacy == store.socialPrivacyRevision else { return }
-            let page = try? await store.socialMoments(kind: .all, userID: userID)
-            guard privacy == store.socialPrivacyRevision else { return }
-            moments = page?.moments ?? []
         } catch is CancellationError { }
         catch { self.error = error.localizedDescription; person = nil }
     }
@@ -270,101 +240,11 @@ struct KikiPublicProfileView: View {
     }
 }
 
-struct KikiProfileMomentPreview: View {
-    let moment: KikiMoment
-    @ObservedObject var store: KikiAppStore
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(Date(timeIntervalSince1970: moment.createdAt), format: .dateTime.month().day().hour().minute())
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                if !moment.media.isEmpty {
-                    Label("\(moment.media.count) 张图片", systemImage: "photo.on.rectangle")
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-            }.font(.caption).foregroundStyle(KikiPalette.muted)
-            if !moment.text.isEmpty {
-                Text(moment.text).font(.body).lineSpacing(4).lineLimit(4)
-                    .foregroundStyle(KikiPalette.text)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            mediaPreview
-            Divider().overlay(KikiPalette.elevated)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) { statistics; Spacer(minLength: 0); detailLabel }
-                VStack(alignment: .leading, spacing: 8) { statistics; detailLabel }
-            }.font(.caption)
-        }.frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 18))
-    }
-
-    @ViewBuilder private var mediaPreview: some View {
-        if moment.media.count == 1, let media = moment.media.first {
-            Color.clear.aspectRatio(max(aspectRatio(media), 1.25), contentMode: .fit)
-                .frame(maxHeight: 280).frame(maxWidth: .infinity)
-                .background(KikiPalette.elevated)
-                .overlay { image(media) }
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-        } else if !moment.media.isEmpty {
-            HStack(spacing: 7) {
-                ForEach(moment.media) { media in
-                    Color.clear.aspectRatio(1, contentMode: .fit)
-                        .frame(maxWidth: .infinity)
-                        .background(KikiPalette.elevated)
-                        .overlay { image(media) }
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                }
-            }
-        }
-    }
-
-    private func image(_ media: KikiSocialMedia) -> some View {
-        // Fit the authenticated image into its metadata ratio before the outer
-        // preview frame, so portrait/panorama content is not cropped to a strip.
-        KikiSocialImageView(media: media, store: store)
-            .aspectRatio(aspectRatio(media), contentMode: .fit)
-    }
-
-    private func aspectRatio(_ media: KikiSocialMedia) -> CGFloat {
-        CGFloat(max(1, media.width)) / CGFloat(max(1, media.height))
-    }
-
-    private var statistics: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 16) { likeStatistic; commentStatistic }
-                .fixedSize(horizontal: true, vertical: false)
-            VStack(alignment: .leading, spacing: 7) { likeStatistic; commentStatistic }
-        }
-    }
-
-    private var likeStatistic: some View {
-        Label("\(moment.likeCount) 个赞", systemImage: moment.liked ? "heart.fill" : "heart")
-            .foregroundStyle(moment.liked ? KikiPalette.lavender : KikiPalette.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var commentStatistic: some View {
-        Label("\(moment.commentCount) 条评论", systemImage: "bubble.right")
-            .foregroundStyle(KikiPalette.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var detailLabel: some View {
-        Label("查看动态", systemImage: "chevron.right")
-            .foregroundStyle(KikiPalette.lavender)
-            .fixedSize(horizontal: true, vertical: false)
-    }
-}
-
 /// Standard UIKit actions stay interactive inside nested native sheets. A single
 /// profile destination above owns all secondary presentation; buttons only emit
 /// intent and never perform their own presentation or network requests.
 private struct KikiPublicProfileButton: UIViewRepresentable {
-    enum Style { case message, follow(Bool), more }
+    enum Style { case message, follow(Bool), more, relationship(String, Bool, String) }
     let style: Style
     let isEnabled: Bool
     let isBusy: Bool
@@ -393,17 +273,33 @@ private struct KikiPublicProfileButton: UIViewRepresentable {
             title = following ? "已关注" : "关注"; symbol = following ? "checkmark" : "plus"; identifier = "social.follow"
             foreground = following ? UIColor(KikiPalette.lavender) : .white
             background = following ? UIColor(KikiPalette.elevated) : UIColor(KikiPalette.action)
+        case .relationship(let label, let prominent, let userID):
+            title = label; symbol = ""; identifier = "relationships.action." + userID
+            foreground = prominent ? .white : UIColor(KikiPalette.purple)
+            background = prominent ? UIColor(KikiPalette.action) : UIColor(KikiPalette.purple.opacity(0.1))
         case .more:
             title = ""; symbol = "ellipsis"; identifier = "social.profile.more"
             foreground = UIColor(KikiPalette.lavender); background = UIColor(KikiPalette.surface)
         }
         configuration.title = title
-        configuration.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold))
+        configuration.image = symbol.isEmpty ? nil : UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold))
         configuration.imagePadding = 6; configuration.showsActivityIndicator = isBusy
         configuration.baseForegroundColor = foreground; configuration.baseBackgroundColor = background
         configuration.background.cornerRadius = 14; configuration.cornerStyle = .fixed
         configuration.contentInsets = .init(top: 0, leading: title.isEmpty ? 0 : 8, bottom: 0, trailing: title.isEmpty ? 0 : 8)
-        let font = UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: .subheadline).pointSize, weight: .semibold)
+        let font: UIFont
+        switch style {
+        case .follow, .relationship:
+            // Shrink the visible control while preserving its native tap area.
+            configuration.background.backgroundInsets = .init(top: 5, leading: 0, bottom: 5, trailing: 0)
+            configuration.background.cornerRadius = 12
+            configuration.titleLineBreakMode = .byClipping
+            configuration.image = symbol.isEmpty ? nil : UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
+            font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(for: .systemFont(ofSize: 14, weight: .semibold), compatibleWith: button.traitCollection)
+            if case .relationship = style { configuration.cornerStyle = .capsule }
+        case .message, .more:
+            font = UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: .subheadline).pointSize, weight: .semibold)
+        }
         configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
             var value = incoming; value.font = font; return value
         }
@@ -424,7 +320,7 @@ private struct KikiPublicProfileButton: UIViewRepresentable {
         } else { button.menu = nil; button.showsMenuAsPrimaryAction = false }
     }
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? uiView.intrinsicContentSize.width, height: 48)
+        CGSize(width: proposal.width ?? uiView.intrinsicContentSize.width, height: max(44, proposal.height ?? 48))
     }
     final class Coordinator: NSObject {
         var action: () -> Void = {}, report: () -> Void = {}, block: () -> Void = {}
@@ -434,62 +330,139 @@ private struct KikiPublicProfileButton: UIViewRepresentable {
 
 struct KikiRelationshipsView: View {
     @ObservedObject var store: KikiAppStore
-    let initialKind: KikiRelationshipKind
     @Environment(\.dismiss) private var dismiss
     @State private var kind: KikiRelationshipKind
     @State private var people: [KikiPerson] = []
     @State private var nextCursor: String?
+    // Keep loaded following rows for this sheet's lifetime so an unfollow can
+    // be reversed. A new sheet fetches current membership again.
+    @State private var followingSnapshot: KikiPeoplePage?
     @State private var error: String?
     @State private var isLoading = false
     @State private var generation = UUID()
     @State private var selected: KikiPersonDestination?
+    @State private var changingPeople: Set<String> = []
+
     init(store: KikiAppStore, initialKind: KikiRelationshipKind) {
-        self.store = store; self.initialKind = initialKind; _kind = State(initialValue: initialKind)
+        self.store = store; _kind = State(initialValue: initialKind)
     }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    Picker("关系", selection: $kind) { ForEach(KikiRelationshipKind.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+                    Picker("关系", selection: $kind) {
+                        ForEach(KikiRelationshipKind.allCases) { Text($0.title).tag($0) }
+                    }.pickerStyle(.segmented).accessibilityIdentifier("relationships.tabs")
                     if let error { KikiInlineError(message: error) { Task { await reload() } } }
                     if isLoading && people.isEmpty { ProgressView().padding(30) }
-                    else if people.isEmpty && error == nil { KikiEmptyState(symbol: "person.2", title: "暂无\(kind.title)", message: "在房间里认识朋友，再来这里看看。") }
+                    else if people.isEmpty && error == nil {
+                        KikiEmptyState(symbol: "person.2", title: "暂无\(kind.title)", message: "")
+                    }
                     LazyVStack(spacing: 0) {
                         ForEach(people) { person in
-                            Button { selected = .init(id: person.id) } label: { KikiPersonRow(person: person) }.buttonStyle(.plain)
+                            HStack(spacing: 12) {
+                                Button { selected = .init(id: person.id) } label: {
+                                    KikiPersonRow(person: person).frame(maxWidth: .infinity, alignment: .leading)
+                                }.buttonStyle(.plain)
+                                    .accessibilityIdentifier("relationships.person." + person.id)
+                                relationshipAction(for: person)
+                            }
                             if person.id != people.last?.id { Divider() }
                         }
                     }.padding(.horizontal, 16).background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 18))
-                    if nextCursor != nil { Button(isLoading ? "正在加载…" : "加载更多") { Task { await loadMore() } }.disabled(isLoading) }
+                    if nextCursor != nil {
+                        Button(isLoading ? "正在加载…" : "加载更多") { Task { await loadMore() } }.disabled(isLoading)
+                    }
                 }.padding(20).frame(maxWidth: 720).frame(maxWidth: .infinity)
             }.background(KikiPalette.background.ignoresSafeArea()).refreshable { await reload() }
-                .navigationTitle("我的朋友").navigationBarTitleDisplayMode(.inline)
+                .navigationTitle("关注 / 粉丝").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
                 .task(id: kind) { await reload() }
                 .onChange(of: store.socialRevision) { _ in Task { await reload() } }
                 .onChange(of: store.socialPrivacyRevision) { _ in
-                    generation = UUID(); people = []; nextCursor = nil; isLoading = false
+                    generation = UUID(); people = []; nextCursor = nil; followingSnapshot = nil
+                    isLoading = false; changingPeople = []
                     Task { await reload() }
                 }
-                .sheet(item: $selected, onDismiss: { Task { await reload() } }) { KikiPublicProfileView(userID: $0.id, store: store) }
+                .sheet(item: $selected, onDismiss: { Task { await reload() } }) {
+                    KikiPublicProfileView(userID: $0.id, store: store)
+                }
         }.tint(KikiPalette.lavender)
     }
+
+    private func relationshipAction(for person: KikiPerson) -> some View {
+        let following = store.isFollowing(person)
+        let label = kind == .mutual ? "聊天" : (following ? (person.followsYou ? "互相关注" : "已关注") : "关注")
+        return KikiPublicProfileButton(style: .relationship(label, kind != .mutual && !following, person.id),
+            isEnabled: !changingPeople.contains(person.id), isBusy: changingPeople.contains(person.id), action: {
+                if kind == .mutual { store.requestDirectConversation(person) }
+                else { Task { await setFollowing(person, enabled: !following) } }
+            })
+            .frame(width: 88, height: 44)
+            .disabled(changingPeople.contains(person.id))
+    }
+
+    private func setFollowing(_ person: KikiPerson, enabled: Bool) async {
+        guard !changingPeople.contains(person.id) else { return }
+        let privacy = store.socialPrivacyRevision, account = store.userID, requestedKind = kind
+        changingPeople.insert(person.id)
+        defer { if privacy == store.socialPrivacyRevision, account == store.userID { changingPeople.remove(person.id) } }
+        do {
+            let updated = try await store.setFollowing(person, enabled: enabled)
+            guard privacy == store.socialPrivacyRevision, account == store.userID else { return }
+            if let snapshot = followingSnapshot {
+                followingSnapshot = .init(people: snapshot.people.map { $0.id == updated.id ? updated : $0 },
+                                          nextCursor: snapshot.nextCursor)
+            }
+            if kind == requestedKind {
+                people = people.compactMap { current in
+                    guard current.id == updated.id else { return current }
+                    if kind == .mutual && !updated.mutual { return nil }
+                    return updated
+                }
+            }
+            error = nil
+        } catch is CancellationError { }
+        catch { if privacy == store.socialPrivacyRevision, account == store.userID { self.error = error.localizedDescription } }
+    }
+
     private func reload() async {
-        let id = UUID(); generation = id; let privacy = store.socialPrivacyRevision; isLoading = true; error = nil
+        let id = UUID(); generation = id
+        let privacy = store.socialPrivacyRevision, revision = store.socialRevision, requestedKind = kind
+        if requestedKind == .following, let snapshot = followingSnapshot {
+            people = snapshot.people; nextCursor = snapshot.nextCursor
+            isLoading = false; error = nil
+            return
+        }
+        isLoading = true; error = nil
         defer { if generation == id { isLoading = false } }
         do {
-            let result = try await store.socialRelationships(kind)
-            guard generation == id, privacy == store.socialPrivacyRevision else { return }; people = result.people; nextCursor = result.nextCursor
-        } catch is CancellationError { } catch { if generation == id { self.error = error.localizedDescription; people = [] } }
+            let result = try await store.socialRelationships(requestedKind)
+            try Task.checkCancellation()
+            guard generation == id, privacy == store.socialPrivacyRevision, revision == store.socialRevision,
+                  kind == requestedKind else { return }
+            people = result.people; nextCursor = result.nextCursor
+            if requestedKind == .following { followingSnapshot = result }
+        } catch is CancellationError { }
+        catch { if generation == id { self.error = error.localizedDescription; people = [] } }
     }
+
     private func loadMore() async {
-        guard !isLoading, let cursor = nextCursor else { return }; let id = generation; let privacy = store.socialPrivacyRevision
-        isLoading = true; defer { if generation == id { isLoading = false } }
+        guard !isLoading, let cursor = nextCursor else { return }
+        let id = generation, privacy = store.socialPrivacyRevision, revision = store.socialRevision, requestedKind = kind
+        isLoading = true
+        defer { if generation == id { isLoading = false } }
         do {
-            let result = try await store.socialRelationships(kind, cursor: cursor)
-            guard generation == id, privacy == store.socialPrivacyRevision else { return }
-            let ids = Set(people.map(\.id)); people += result.people.filter { !ids.contains($0.id) }; nextCursor = result.nextCursor
-        } catch is CancellationError { } catch { if generation == id { self.error = error.localizedDescription } }
+            let result = try await store.socialRelationships(requestedKind, cursor: cursor)
+            try Task.checkCancellation()
+            guard generation == id, privacy == store.socialPrivacyRevision, revision == store.socialRevision,
+                  kind == requestedKind else { return }
+            let ids = Set(people.map(\.id))
+            people += result.people.filter { !ids.contains($0.id) }; nextCursor = result.nextCursor
+            if requestedKind == .following { followingSnapshot = .init(people: people, nextCursor: nextCursor) }
+        } catch is CancellationError { }
+        catch { if generation == id { self.error = error.localizedDescription } }
     }
 }
 
@@ -511,7 +484,6 @@ struct KikiMessagesView: View {
     @State private var hasLoaded = false
     @State private var error: String?
     @State private var selectedPerson: KikiPersonDestination?
-    @State private var selectedMoment: KikiMoment?
     @State private var showsSafety = false
     @State private var isDismissingForInbox = false
     @State private var generation = UUID()
@@ -528,7 +500,7 @@ struct KikiMessagesView: View {
     private var hasRetry: Bool { retryMutation != nil || retryBulk != nil }
     private var refreshIsActive: Bool {
         isActive && scenePhase == .active && store.isAuthenticated && !store.isPresentingRoom
-            && store.directConversationPath.isEmpty && selectedPerson == nil && selectedMoment == nil && !showsSafety
+            && store.directConversationPath.isEmpty && selectedPerson == nil && !showsSafety
     }
     private var showsDeletion: Binding<Bool> {
         Binding(get: { pendingDeletion != nil || pendingBulkDeletion != nil }, set: { if !$0 { pendingDeletion = nil; pendingBulkDeletion = nil } })
@@ -546,7 +518,7 @@ struct KikiMessagesView: View {
             return "清空你这一侧已有的私聊记录和互动提醒，对方不受影响。确认期间收到的新消息会保留。"
         }
         if let entry = pendingDeletion?.entry, case .notification = entry.content {
-            return "仅删除这条提醒，其他提醒及原动态、评论和私聊记录不受影响。"
+            return "仅删除这条提醒，其他提醒和私聊记录不受影响。"
         }
         return "将移除此会话并清空你这一侧的记录，对方不受影响。新消息到来后会重新显示。"
     }
@@ -585,11 +557,9 @@ struct KikiMessagesView: View {
                     }
                 }
                 .sheet(item: $selectedPerson, onDismiss: localSheetDidDismiss) { KikiPublicProfileView(userID: $0.id, store: store) }
-                .sheet(item: $selectedMoment, onDismiss: localSheetDidDismiss) { KikiMomentCommentsView(moment: $0, store: store) }
                 .sheet(isPresented: $showsSafety, onDismiss: localSheetDidDismiss) { KikiSafetyCenter(rtc: .shared) }
                 .onChange(of: push.inboxRequest) { _ in handlePushRequest() }
                 .onChange(of: push.pendingInboxRequest) { _ in handlePushRequest() }
-                .onChange(of: push.inboxPresentationReady) { _ in handlePushRequest() }
                 .alert(deletionTitle, isPresented: showsDeletion) {
                     Button("删除", role: .destructive) {
                         let bulk = pendingBulkDeletion; let single = pendingDeletion
@@ -608,7 +578,7 @@ struct KikiMessagesView: View {
                     generation = UUID(); navigationRequestID = UUID(); entries = []; nextCursor = nil
                     pendingDeletion = nil; activeMutation = nil; retryMutation = nil
                     pendingBulkDeletion = nil; activeBulk = nil; retryBulk = nil; isPreparingBulk = false; error = nil
-                    isLoading = false; hasLoaded = false; selectedPerson = nil; selectedMoment = nil; showsSafety = false
+                    isLoading = false; hasLoaded = false; selectedPerson = nil; showsSafety = false
                     isDismissingForInbox = false
                     if isActive && store.isAuthenticated { Task { await reload() } }
                 }
@@ -634,7 +604,7 @@ struct KikiMessagesView: View {
                         if let through = deletionThroughID(entry) { pendingDeletion = .init(entry: entry, kind: .clear(through), accountID: store.userID, privacyRevision: store.socialPrivacyRevision) }
                     })
                     .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
-                    .listRowBackground(entry.isPinned ? KikiPalette.purple.opacity(0.07) : KikiPalette.surface)
+                    .listRowBackground(Color.clear)
                     .listRowSeparatorTint(KikiPalette.elevated)
             }
             if isLoading {
@@ -683,9 +653,6 @@ struct KikiMessagesView: View {
                 guard canNavigate(id, privacy: privacy, account: account) else { return }
                 if notice.kind == "room_started", let roomID = notice.roomID {
                     store.requestRoomNotification(roomID: roomID, notificationID: notice.id)
-                } else if let momentID = notice.momentID {
-                    let moment = try await store.socialMoment(momentID)
-                    guard canNavigate(id, privacy: privacy, account: account) else { return }; selectedMoment = moment
                 } else if let actor = notice.actor { selectedPerson = .init(id: actor.id) }
                 else { showsSafety = true }
             } catch is CancellationError { }
@@ -748,10 +715,10 @@ struct KikiMessagesView: View {
     }
     private func handlePushRequest() {
         guard isActive, store.isAuthenticated, !isDismissingForInbox,
-              let request = push.pendingInboxRequest, push.inboxPresentationReady else { return }
+              let request = push.pendingInboxRequest else { return }
         store.directConversationPath = []
-        if selectedPerson != nil || selectedMoment != nil || showsSafety {
-            isDismissingForInbox = true; selectedPerson = nil; selectedMoment = nil; showsSafety = false
+        if selectedPerson != nil || showsSafety {
+            isDismissingForInbox = true; selectedPerson = nil; showsSafety = false
             return
         }
         guard push.consumeInboxRequest(request) else { return }
@@ -906,7 +873,7 @@ struct KikiSocialReportsView: View {
                 if reports.isEmpty && !isLoading && error == nil { Text("暂无社交举报记录").foregroundStyle(.secondary) }
                 ForEach(reports) { report in
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack { Text(report.targetType == "profile" ? "用户举报" : (report.targetType == "direct_message" ? "私信举报" : "动态与评论举报")); Spacer(); Text(report.status == "pending" ? "待处理" : "已处理").foregroundStyle(.secondary) }
+                        HStack { Text(report.targetType == "profile" ? "用户举报" : (report.targetType == "direct_message" ? "私信举报" : "历史举报")); Spacer(); Text(report.status == "pending" ? "待处理" : "已处理").foregroundStyle(.secondary) }
                         Text(report.id).font(.caption).textSelection(.enabled)
                         Text(Date(timeIntervalSince1970: report.createdAt), format: .dateTime.month().day().hour().minute()).font(.caption).foregroundStyle(.secondary)
                     }

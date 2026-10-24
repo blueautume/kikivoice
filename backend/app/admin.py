@@ -377,7 +377,7 @@ class AdminService:
             alerts.append({"code":"backup_attention","level":"warning",
                            "message":backup["lastError"] or "账号服务备份或恢复校验已超过36小时，请检查维护任务。"})
         return {"schemaVersion":1,"serverTime":iso(now),
-                "service":{"id":SERVICE_ID,"name":"Kiki 账号服务","host":"kiki.group","mode":"account","readOnly":True},
+                "service":{"id":SERVICE_ID,"name":"kiki 账号服务","host":"kiki.group","mode":"account","readOnly":True},
                 "voiceService":{"included":False,"message":"语音房间、在线人数与音频质量请切换至 furby.top 语聊服务查看。"},
                 "operations":operations,"storage":storage,"infrastructure":infrastructure,
                 "push":push.metrics(db,self.settings,now),

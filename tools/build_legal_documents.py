@@ -46,7 +46,7 @@ def validate(source: dict) -> None:
     operator = source["operator"]
     if set(operator) != {"name", "type", "email"} or any(not isinstance(v, str) or not v.strip() for v in operator.values()):
         raise ValueError("A real operator name, type and public email are required")
-    if operator["name"] in {"KikiTalk", "开发者", "姓名", "某某", "某公司"}:
+    if operator["name"] in {"kiki", "KikiTalk", "开发者", "姓名", "某某", "某公司"}:
         raise ValueError("Operator must identify the confirmed natural person or legal entity")
     if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", operator["email"]):
         raise ValueError("Invalid public contact email")
@@ -93,7 +93,7 @@ def page_html(document: dict, source: dict, digest: str, archived: bool) -> byte
     version = document["version"]
     identifier = document["id"]
     title = escape(document["title"])
-    navigation = "".join(f'<a href="{route}"' + (' aria-current="page"' if key == identifier else '') + f'>{escape(next(d["title"] for d in source["documents"] if d["id"] == key).replace("KikiTalk ", ""))}</a>' for key, route in ROUTES.items())
+    navigation = "".join(f'<a href="{route}"' + (' aria-current="page"' if key == identifier else '') + f'>{escape(next(d["title"] for d in source["documents"] if d["id"] == key).replace("kiki ", ""))}</a>' for key, route in ROUTES.items())
     sections = "".join(
         f'<section id="section-{index}"><h2>{escape(section["title"])}</h2>'
         + "".join(f'<p>{paragraph_html(paragraph)}</p>' for paragraph in section["paragraphs"])
@@ -119,7 +119,7 @@ def page_html(document: dict, source: dict, digest: str, archived: bool) -> byte
 </head>
 <body>
   <a class="skip-link" href="#main">跳至正文</a>
-  <header class="legal-header"><a class="brand" href="/"><img src="/favicon.svg" width="34" height="34" alt=""><span>KikiTalk</span></a><a class="home-link" href="/">返回官网 ↗</a></header>
+  <header class="legal-header"><a class="brand" href="/"><img src="/favicon.svg" width="34" height="34" alt=""><span>kiki</span></a><a class="home-link" href="/">返回官网 ↗</a></header>
   <main id="main" class="legal-main">
     <nav class="legal-nav" aria-label="协议与说明">{navigation}</nav>
     <div class="document-header"><span class="eyebrow">协议与说明 / LEGAL</span><h1>{title}</h1><p class="metadata">版本与生效日期：{version} · 最近更新：{source['updatedAt']}</p><p class="operator">运营者：{escape(operator['name'])}（{escape(operator['type'])}） · 联系邮箱：<a href="mailto:{escape(operator['email'], quote=True)}">{escape(operator['email'])}</a></p><p class="version-note">{version_note}</p></div>
@@ -127,7 +127,7 @@ def page_html(document: dict, source: dict, digest: str, archived: bool) -> byte
     <article class="legal-article" aria-label="{title}正文">{sections}</article>
     <aside class="document-proof"><p>文档集合校验值（SHA-256）</p><code>{digest}</code><p>用于核对应用、服务端和官网所提供的同一组协议文本，不是签名或身份证明。</p></aside>
   </main>
-  <footer class="legal-footer"><a href="/">KikiTalk · kiki.group</a><span>仅限 18 周岁及以上 · iOS 内测中</span><a href="mailto:{escape(operator['email'], quote=True)}">联系运营者</a></footer>
+  <footer class="legal-footer"><a href="/">kiki · kiki.group</a><span>仅限 18 周岁及以上 · iOS 内测中</span><a href="mailto:{escape(operator['email'], quote=True)}">联系运营者</a></footer>
 </body>
 </html>
 '''.encode("utf-8")

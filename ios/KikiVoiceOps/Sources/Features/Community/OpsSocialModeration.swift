@@ -18,38 +18,43 @@ struct OpsSocialModerationPage: Decodable {
 }
 struct OpsSocialReport: Decodable, Identifiable {
     let id, reporterID, reporterName, targetUserID, targetName, targetType: String
+    let reporterDisplayID, targetDisplayID: String?
+    var reporterLabel: String { reporterDisplayID ?? reporterID }
+    var targetLabel: String { targetDisplayID ?? targetUserID }
     let contentID: String?
     let reason, details, status: String
     let evidence: Evidence
     let createdAt: Double
     let resolvedAt: Double?
     let lastAction: String?
-    struct Evidence: Decodable { let text: String; let media: [Media] }
-    struct Media: Decodable, Identifiable { let id, path: String; let width, height: Int }
+    struct Evidence: Decodable { let text: String }
     var typeTitle: String {
-        switch targetType { case "profile": "个人资料"; case "moment": "动态"; case "comment": "评论"; default: "私聊消息" }
+        switch targetType { case "profile": "个人资料"; default: "私聊消息" }
     }
     var reasonTitle: String {
         switch reason { case "harassment": "骚扰或辱骂"; case "spam": "垃圾广告"; case "sexual": "色情内容"; case "fraud": "诈骗"; default: "其他" }
     }
     var statusTitle: String { status == "pending" ? "待处理" : status == "dismissed" ? "已驳回" : "已处理" }
     func validate() throws {
-        guard !id.isEmpty, id.utf8.count <= 128,
+        guard OpsPublicAccountNumber.isValid(reporterDisplayID), OpsPublicAccountNumber.isValid(targetDisplayID),
+              !id.isEmpty, id.utf8.count <= 128,
               [reporterID, targetUserID].allSatisfy({ $0.range(of: "^kiki_[A-Za-z0-9_]{8,64}$", options: .regularExpression) != nil }),
               [reporterName, targetName].allSatisfy({ $0.count <= 32 }),
-              ["profile", "moment", "comment", "direct_message"].contains(targetType),
+              ["profile", "direct_message"].contains(targetType),
               ["pending", "resolved", "dismissed"].contains(status),
-              details.count <= 500, evidence.text.count <= 4096, evidence.media.count <= 3,
-              createdAt.isFinite, createdAt > 0,
-              evidence.media.allSatisfy({ UUID(uuidString: $0.id) != nil && (1...4096).contains($0.width) && (1...4096).contains($0.height) }) else { throw OpsError.invalidResponse }
+              details.count <= 500, evidence.text.count <= 4096,
+              createdAt.isFinite, createdAt > 0 else { throw OpsError.invalidResponse }
     }
 }
 struct OpsSocialRestriction: Decodable, Identifiable {
     let userID, userName, sourceReportID: String
+    let userDisplayID: String?
+    var accountLabel: String { userDisplayID ?? userID }
     let until: Double
     var id: String { userID }
     func validate() throws {
-        guard userID.range(of: "^kiki_[A-Za-z0-9_]{8,64}$", options: .regularExpression) != nil,
+        guard OpsPublicAccountNumber.isValid(userDisplayID),
+              userID.range(of: "^kiki_[A-Za-z0-9_]{8,64}$", options: .regularExpression) != nil,
               !sourceReportID.isEmpty, userName.count <= 32, until.isFinite, until > 0 else { throw OpsError.invalidResponse }
     }
 }
@@ -101,7 +106,6 @@ struct OpsCommunityAuthorization {
     @Published private(set) var error: String?
     @Published private(set) var notice: String?
     @Published private(set) var pending: OpsSocialPendingAction?
-    @Published private(set) var images: [String: Data] = [:]
     private let parent: OpsStore
     private let api: any OpsAPI
     private let vault: any OpsSocialPendingVault
@@ -113,7 +117,7 @@ struct OpsCommunityAuthorization {
     }
     func invalidate() {
         serial = UUID(); queryTask?.cancel(); actionTask?.cancel(); queryTask = nil; actionTask = nil
-        page = nil; images = [:]; pending = nil; error = nil; notice = nil; isLoading = false; isActing = false
+        page = nil; pending = nil; error = nil; notice = nil; isLoading = false; isActing = false
     }
     func load(filter proposed: OpsReportFilter? = nil, more: Bool = false) async {
         guard !isActing else { return }
@@ -124,7 +128,7 @@ struct OpsCommunityAuthorization {
         queryTask?.cancel(); serial = UUID()
         let expected = serial
         filter = nextFilter; isLoading = true; error = nil
-        if !more { page = nil; images = [:] }
+        if !more { page = nil }
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { if self.serial == expected { self.isLoading = false; self.queryTask = nil } }
@@ -176,7 +180,7 @@ struct OpsCommunityAuthorization {
                 _ = try await self.parent.communityAuthorization()
                 guard self.serial == expected, self.parent.isCurrentCommunity(auth) else { return false }
                 try self.vault.removeSocialPending(accountID: auth.accountID)
-                self.pending = nil; self.page = nil; self.images = [:]; self.notice = "处理已完成。"
+                self.pending = nil; self.page = nil; self.notice = "处理已完成。"
                 return true
             } catch {
                 guard self.serial == expected, !(error is CancellationError) else { return false }
@@ -192,22 +196,9 @@ struct OpsCommunityAuthorization {
         actionTask = task; return await task.value
     }
     func retryPending() async -> Bool { guard let pending else { return false }; return await act(pending.request) }
-    func loadImage(_ id: String) async {
-        guard images[id] == nil else { return }
-        let expected = serial
-        do {
-            let auth = try await parent.communityAuthorization()
-            let data = try await api.socialEvidenceImage(id: id, session: auth.session)
-            guard serial == expected, parent.isCurrentCommunity(auth), !Task.isCancelled else { return }
-            _ = try await parent.communityAuthorization()
-            guard serial == expected, parent.isCurrentCommunity(auth) else { return }
-            if images.count >= 12 { images.removeAll() }
-            images[id] = data
-        } catch { guard serial == expected else { return }; if await rejectAccess(error) { return }; self.error = message(error) }
-    }
     private func rejectAccess(_ error: Error) async -> Bool {
         guard let value = error as? OpsError, [.forbidden, .unauthenticated, .expired].contains(value) else { return false }
-        page = nil; images = [:]; self.error = value.localizedDescription
+        page = nil; self.error = value.localizedDescription
         await parent.communityRequestRejected(value)
         return true
     }

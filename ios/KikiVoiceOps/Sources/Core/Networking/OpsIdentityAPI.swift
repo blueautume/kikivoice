@@ -18,7 +18,6 @@ protocol OpsAPI: Sendable {
     func moderate(_ request: OpsModerationRequest, session: OpsSession) async throws -> OpsModerationResult
     func socialModeration(session: OpsSession, filter: OpsReportFilter, cursor: String?) async throws -> OpsSocialModerationPage
     func socialModerate(_ request: OpsSocialActionRequest, session: OpsSession) async throws -> OpsSocialActionResult
-    func socialEvidenceImage(id: String, session: OpsSession) async throws -> Data
     func incidents(_ query: OpsIncidentQuery, session: OpsSession) async throws -> OpsIncidentPage
     func logout(session: OpsSession) async throws
 }
@@ -28,7 +27,6 @@ extension OpsAPI {
     func moderate(_ request: OpsModerationRequest, session: OpsSession) async throws -> OpsModerationResult { throw OpsError.forbidden }
     func socialModeration(session: OpsSession, filter: OpsReportFilter, cursor: String?) async throws -> OpsSocialModerationPage { throw OpsError.forbidden }
     func socialModerate(_ request: OpsSocialActionRequest, session: OpsSession) async throws -> OpsSocialActionResult { throw OpsError.forbidden }
-    func socialEvidenceImage(id: String, session: OpsSession) async throws -> Data { throw OpsError.forbidden }
     func incidents(_ query: OpsIncidentQuery, session: OpsSession) async throws -> OpsIncidentPage { throw OpsError.forbidden }
 }
 
@@ -143,21 +141,6 @@ struct OpsIdentityAPI: OpsAPI {
         try value.validate()
         let result = try await send(OpsSocialActionResult.self, path: "/admin/v2/services/account/social/moderation/action", method: "POST", session: session, body: JSONEncoder().encode(value))
         try result.validate(value); return result
-    }
-    func socialEvidenceImage(id: String, session: OpsSession) async throws -> Data {
-        guard OpsIncident.validUUID(id) else { throw OpsError.unsafeEndpoint }
-        let req = try request(path: "/admin/v2/services/account/social/media/\(id.lowercased()).jpg", method: "GET", session: session)
-        let (data, response) = try await transport.send(req)
-        try Task.checkCancellation()
-        guard response.url == req.url, data.count <= 2 * 1024 * 1024 else { throw OpsError.redirected }
-        switch response.statusCode {
-        case 200: break
-        case 401: throw OpsError.unauthenticated
-        case 403: throw OpsError.forbidden
-        default: throw OpsError.server(status: response.statusCode)
-        }
-        guard response.mimeType == "image/jpeg", data.starts(with: [0xff, 0xd8, 0xff]) else { throw OpsError.invalidResponse }
-        return data
     }
     func logout(session: OpsSession) async throws {
         struct Response: Decodable { let revoked: Bool }

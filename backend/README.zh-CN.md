@@ -1,4 +1,8 @@
-# KikiTalk 服务端
+# kiki 服务端
+
+> **当前社交范围（2026-10-23）：** 动态及图片发布、点赞、评论、相关通知/统计/审核 API 已彻底移除，保留关系、公开资料、文字私信、语聊开房提醒与安全治理。协议为 r16；历史记录仅受限回滚保留。详见 [当前关系与私信](../docs/P1_SOCIAL.zh-CN.md)。已通过 `deploy/deploy_remove_moments.py` 完成两端与官网发布，60 项公网验收及清理通过；实际结果见当前关系与私信文档。
+
+> **原生房间背景（2026-10-23）：** 装饰、礼物、钻石及对应管理功能已移除。账号服务不初始化相关数据或提供对应接口，运维权限仍为 account／voice／community 三类；房间背景只保存 0...4 的五款预设风格。协议与官网更新为 r15，见 [房间背景说明](../docs/ROOM_BACKGROUNDS.zh-CN.md)。
 
 > **当前切换（2026-10-19）：** 当前工作区已为自建 LiveKit 停机替换接入账号到语聊的授权桥接，以及独立只读账号管理 API。账号服务 `kiki.group`（`43.138.219.160`）继续负责 Apple 登录、资料、协议与注销；语聊媒体/房间由 `furby.top`（`139.224.50.108`）负责。两台主机和业务/语聊/运维凭证保持分离；视频、音效和礼物入口不在本次开放范围。 服务器实际部署、备份、协议及真机待验状态见 [LiveKit 停机切换](../docs/LIVEKIT_CUTOVER.zh-CN.md)。
 
@@ -22,7 +26,7 @@ APNs worker 在发送前重新校验有效会话、当前协议、内容可见�
 
 站内 `room_started` 提醒使用当前房主资料和固定文案“开始语聊了，点击进入房间”，两个通知列表返回对应 `roomID`。通知总开关仅控制 APNs，不删站内提醒；隐藏内容仍使用通用提醒，推送不提交房名或图片。发送前及点击时额外向语聊端签名查询 `POST /internal/v1/account/room-started-status`，确认事件对应的房间仍活跃、房主源会话及同意 epoch 有效；不依赖管理看板采样。语聊短暂重连宽限内仍可视为有效房间，关闭、撤回或会话失效后拒绝。网络失败延后重试，不将失败误认为已结束；所有远程请求都在数据库事务外进行，返回后重查本地权限和最新偏好。
 
-`GET /v1/social/notifications/{notificationID}/destination` 仅解析当前账号自己的、未删除且未被本人清除的提醒，返回 `type=notification、notificationID` 和可选 `roomID/momentID/personID`。本人已读不阻止从站内历史再次点击；旧 APNs delivery 解析继续保留原已读失效语义。客户端仍须通过权威房间接口进入，通知不是入房授权。此功能沿用 r13 已披露的关注／互动提醒及两服务签名同步，不改正式协议或要求全员重新补签；本轮不进行真实账号或真机推送测试。
+`GET /v1/social/notifications/{notificationID}/destination` 仅解析当前账号自己的、未删除且未被本人清除的提醒，返回 `type=notification、notificationID` 和可选 `roomID/personID`。本人已读不阻止从站内历史再次点击；旧 APNs delivery 解析继续保留原已读失效语义。客户端仍须通过权威房间接口进入，通知不是入房授权。此功能沿用 r13 已披露的关注／互动提醒及两服务签名同步，不改正式协议或要求全员重新补签；本轮不进行真实账号或真机推送测试。
 
 ## P0 社区管理与账号统计增量（2026-10-19）
 
@@ -52,7 +56,6 @@ APNs worker 在发送前重新校验有效会话、当前协议、内容可见�
 
 真实账号、腾讯云 UserSig 签发、资料、房间登记、收藏和浏览记录服务。音视频、麦位、成员和房间消息由 iOS 中的腾讯云 SDK 承担。
 
-新增自有免费 GIF 礼物服务：一次性发放一亿体验钻石、服务器定价扣款、UUID 幂等账目及房间礼物动态。无需开通腾讯云商业礼物或支付服务；接口、数据保留、隔离测试和发布记录见 [礼物功能说明](../docs/GIFTS.zh-CN.md)。现有 Apple 登录及旧业务接口保持兼容。
 
 当前 **Apple 登录专用版本**已于2026-10-17部署到生产，旧用户在线数据清理与公网验收完成；本人真机首次Apple授权与服务端兑换已确认成功。完整接入及人工验收步骤见 [Apple 登录说明](../docs/APPLE_LOGIN.zh-CN.md)。
 
@@ -64,10 +67,12 @@ APNs worker 在发送前重新校验有效会话、当前协议、内容可见�
 
 服务器使用独立的 `kikitalk` 系统用户运行服务，systemd 自动启动和异常重启。部署文件在 `/opt/kikitalk`，SQLite 在 `/var/lib/kikitalk/kikitalk.sqlite3`，头像在 `/var/lib/kikitalk/avatars`（目录 `0700`、文件 `0600`），凭据在 `/etc/kikitalk/server.env`，只有 root 能读取环境配置文件。原有服务器管理面板及 SSH 服务不受此服务控制。
 
+现有生产服务的常规更新使用 `python3 backend/deploy/deploy_remove_moments.py account --check` 预检，再去掉 `--check` 发布。发布器核对服务实际数据库路径与已验证备份覆盖范围，停服后额外保存一致性数据库快照，独立执行 `backend/deploy/retire_legacy_notifications.py` 升级旧通知，再替换在线代码并校验健康；在线应用不再包含停用模块的迁移代码。恢复旧数据库后，同样必须在启动当前 API 前以服务用户运行该维护脚本的 `--database <实际数据库路径>`。下方 `deploy.sh` 为历史初始安装流程，不用于旧库的此次升级或恢复。
+
 本机 SSH 私钥放在 `~/.ssh/kikitalk_server.pem`（权限 `0600`），服务器主机公钥固定在 `~/.ssh/kikitalk_known_hosts`。腾讯云凭据仅保存在本机 `~/.config/kikitalk/server.env`（权限 `0600`）和服务器环境文件中。它们不属于仓库和 App 安装包。
 
 ```bash
-# 更新后端（保留服务器现有凭据和Nginx证书，不删除数据库）
+# 历史初始安装流程；现有服务更新使用上方带备份和维护迁移的发布器
 bash backend/deploy/deploy.sh
 
 # 使用系统CA检查公网状态
@@ -166,7 +171,7 @@ backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt
 backend/.venv/bin/python -m pytest -q backend/tests
 ```
 
-Apple登录基线 **103 项测试通过**；新增礼物和QA测试26项也已验证，具体批次及生产验收见 [礼物功能说明](../docs/GIFTS.zh-CN.md)。Apple 专项覆盖一次性/过期/并发 challenge、nonce 与授权码绑定、签名和算法混淆、issuer/audience/时间/subject、JWKS 缓存与轮换节流、加密存储、每日核验、刷新与新登录并发、旧授权撤销重试、通知签名/去重/乱序及先于登录提交、远端故障时本地注销和队列重试/到期。原有资料、头像、昵称、房间、跨账号权限、UserSig、会话、协议同意/撤回和大小/速率限制测试继续通过；旧 ID 端点不存在、旧设备凭据不能登录也有验证。
+Apple登录基线 **103 项测试通过**。Apple 专项覆盖一次性/过期/并发 challenge、nonce 与授权码绑定、签名和算法混淆、issuer/audience/时间/subject、JWKS 缓存与轮换节流、加密存储、每日核验、刷新与新登录并发、旧授权撤销重试、通知签名/去重/乱序及先于登录提交、远端故障时本地注销和队列重试/到期。原有资料、头像、昵称、房间、跨账号权限、UserSig、会话、协议同意/撤回和大小/速率限制测试继续通过；旧 ID 端点不存在、旧设备凭据不能登录也有验证。
 
 iOS 本轮 39 项测试执行完成（1 项 opt-in 跳过，其余通过）。自动化使用独立本地签名密钥及 HTTP mock，生产验证器没有测试身份后门。随后额外执行的iOS真实challenge测试通过且未跳过；本人已在真机完成首次真实授权，服务端确认兑换、建账、会话、加密令牌、协议记录及昵称保存正常。退出重登、注销、系统撤销仍需分别人工验收。生产部署、旧用户清理及公网验证已完成，详见 [Apple 登录说明](../docs/APPLE_LOGIN.zh-CN.md)。
 

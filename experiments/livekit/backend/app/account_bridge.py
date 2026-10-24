@@ -44,6 +44,8 @@ def initialize_database(db):
         db.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT")
     if "needs_nickname" not in columns:
         db.execute("ALTER TABLE users ADD COLUMN needs_nickname INTEGER NOT NULL DEFAULT 0")
+    if "display_id" not in columns:
+        db.execute("ALTER TABLE users ADD COLUMN display_id TEXT")
 
 
 class Model(BaseModel):
@@ -53,12 +55,20 @@ class Model(BaseModel):
 class Profile(Model):
     id: str = Field(pattern=r"^kiki_[a-zA-Z0-9_]{8,64}$")
     sdkUserID: str = Field(max_length=80)
+    displayID: str | None = Field(default=None, pattern=r"^kiki_[0-9]{6}$")
     name: str = Field(min_length=1, max_length=16)
     bio: str = Field(max_length=80)
     avatarIndex: int = Field(strict=True, ge=0, le=11)
     avatarURL: str | None = Field(default=None, max_length=160)
     needsNickname: bool = Field(strict=True)
     notificationsEnabled: bool = Field(strict=True)
+
+    @field_validator("displayID")
+    @classmethod
+    def display_id(cls, value):
+        if value == "kiki_000000":
+            raise ValueError("Invalid public account number")
+        return value
 
     @field_validator("name", "bio")
     @classmethod
@@ -178,12 +188,12 @@ def build_router(app, settings, lock, user_json, sdk_json, revoke):
                     clear_account(app,profile.id,withdrawal_epoch=payload.lastWithdrawalEpoch)
             expires = min(payload.sourceExpiresAt, now + LEASE_SECONDS)
             with db:
-                db.execute("""INSERT INTO users(id,name,bio,avatar_index,notifications,created_at,avatar_url,needs_nickname)
-                    VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,bio=excluded.bio,
+                db.execute("""INSERT INTO users(id,name,bio,avatar_index,notifications,created_at,avatar_url,needs_nickname,display_id)
+                    VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,bio=excluded.bio,
                     avatar_index=excluded.avatar_index,notifications=excluded.notifications,
-                    avatar_url=excluded.avatar_url,needs_nickname=excluded.needs_nickname""",
+                    avatar_url=excluded.avatar_url,needs_nickname=excluded.needs_nickname,display_id=excluded.display_id""",
                     (profile.id, profile.name, profile.bio, profile.avatarIndex, profile.notificationsEnabled, now,
-                     profile.avatarURL, profile.needsNickname))
+                     profile.avatarURL, profile.needsNickname, profile.displayID))
                 db.execute("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?) ON CONFLICT(token_hash) DO UPDATE SET expires_at=excluded.expires_at",
                            (token_hash, profile.id, expires))
                 db.execute("INSERT OR IGNORE INTO account_authorizations VALUES(?,?,?)", (payload.authorizationID, profile.id, token_hash))
@@ -224,12 +234,12 @@ def build_router(app, settings, lock, user_json, sdk_json, revoke):
             now, db = int(time.time()), app.state.db
             with db:
                 db.execute("INSERT OR REPLACE INTO account_deletions VALUES(?,?)", (hashlib.sha256(payload.accountID.encode()).hexdigest(), now + TOMBSTONE_SECONDS))
+                # Stop displaying a recycled public number even when there is
+                # no remaining voice authorization or media cleanup is delayed.
+                db.execute("UPDATE users SET display_id=NULL WHERE id=?", (payload.accountID,))
             rows = db.execute("SELECT user_id,token_hash FROM account_authorizations WHERE user_id=?", (payload.accountID,)).fetchall()
             await revoke(rows, deleted=True)
             with db:
-                # Deletion can arrive after every voice lease expired. Erase
-                # experience state even when there are no sessions to revoke.
-                app.state.experience.clear_user(payload.accountID, deleted=True)
                 app.state.incidents.clear_user(payload.accountID)
                 from .social_policy import clear_account
                 clear_account(app,payload.accountID)

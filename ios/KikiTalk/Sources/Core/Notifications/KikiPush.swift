@@ -37,7 +37,6 @@ struct KikiPushReceipt: Decodable { let ok: Bool; let accountTag: String; let re
 struct KikiPushRoute: Decodable {
     let type: String
     let personID: String?
-    let momentID: String?
     let notificationID: String?
     let roomID: String?
 }
@@ -153,7 +152,7 @@ struct KikiForegroundNotificationGate {
 }
 
 struct KikiPushNavigation: Identifiable {
-    enum Content { case direct(KikiPerson), moment(KikiMoment), room(roomID: String, notificationID: String) }
+    enum Content { case direct(KikiPerson), room(roomID: String, notificationID: String) }
     let id = UUID()
     let content: Content
 }
@@ -230,12 +229,10 @@ enum KikiPushEnvironment {
     @Published private(set) var inboxRequest = UUID()
     private(set) var inboxNavigationRevision: Int?
     @Published private(set) var pendingInboxRequest: UUID?
-    @Published private(set) var inboxPresentationReady = true
     @Published private(set) var foregroundNotice: KikiForegroundNotice?
     var foregroundContext: @MainActor () -> KikiForegroundNotificationContext = { .init(isActive: false) } {
         didSet { foregroundContextDidChange() }
     }
-    var inboxOpensNotifications: Bool { pendingInboxRequest != nil }
     @Published var navigation: KikiPushNavigation?
     private let system: any KikiPushSystem
     private let identity: any KikiIdentityStoring
@@ -328,7 +325,7 @@ enum KikiPushEnvironment {
             try await store.setNotificationsEnabled(false)
             guard store.pushSessionKey == key else { return }
             pendingTap = nil; tapAccount = nil; navigation = nil
-            pendingInboxRequest = nil; inboxPresentationReady = true
+            pendingInboxRequest = nil
             foregroundNotice = nil
             system.clearNotifications()
             await refresh()
@@ -367,7 +364,6 @@ enum KikiPushEnvironment {
             if self.accountTag == nil { await self.refresh() }
             guard self.currentForegroundScope == scope, tap.accountTag == self.accountTag else { return }
             store.directMessagePushReceived()
-            store.momentContentPushReceived(scope: scope)
             await store.refreshSocialSummary()
             guard self.currentForegroundScope == scope else { return }
             await self.refresh()
@@ -423,7 +419,7 @@ enum KikiPushEnvironment {
         bindingTask?.cancel(); bindingTask = nil; bindingFingerprint = nil
         bindingAttempt = UUID()
         pendingTap = nil; tapAccount = nil; navigation = nil; resolving = false
-        pendingInboxRequest = nil; inboxPresentationReady = true
+        pendingInboxRequest = nil
         system.clearNotifications()
         scheduleRefresh()
     }
@@ -435,7 +431,7 @@ enum KikiPushEnvironment {
         bindingTask?.cancel(); bindingTask = nil; bindingFingerprint = nil
         bindingAttempt = UUID()
         pendingTap = nil; tapAccount = nil; navigation = nil; resolving = false
-        pendingInboxRequest = nil; inboxPresentationReady = true
+        pendingInboxRequest = nil
         sessionKey = nil; accountTag = nil; registeredFingerprint = nil; token = nil
         lastRegisteredAt = nil
         isRegistered = false; isBusy = false; message = nil
@@ -448,14 +444,8 @@ enum KikiPushEnvironment {
         }
     }
     func waitForTeardown() async { _ = await teardownTask?.result }
-    /// Called by the root sheet's actual dismissal completion, rather than a
-    /// timer. A generic notification can then present its own inbox sheet.
-    func navigationDidDismiss() {
-        guard navigation == nil, pendingInboxRequest != nil else { return }
-        inboxPresentationReady = true
-    }
     func consumeInboxRequest(_ id: UUID) -> Bool {
-        guard inboxPresentationReady, pendingInboxRequest == id else { return false }
+        guard pendingInboxRequest == id else { return false }
         pendingInboxRequest = nil
         return true
     }
@@ -533,7 +523,6 @@ enum KikiPushEnvironment {
                       UUID(uuidString: notificationID) != nil else { throw KikiAPIError.invalidResponse }
                 content = .room(roomID: roomID, notificationID: notificationID)
             }
-            else if route.type == "notification", let momentID = route.momentID { content = .moment(try await store.socialMoment(momentID)) }
             else if route.type == "notification" { content = nil }
             else { throw KikiAPIError.invalidResponse }
             guard validTap(id, key: key, tap: tap, navigationRevision: navigationRevision) else { return }
@@ -566,8 +555,6 @@ enum KikiPushEnvironment {
     private func commitNavigation(_ content: KikiPushNavigation.Content?) {
         let request = UUID()
         inboxNavigationRevision = store?.socialNavigationRevision
-        let waitsForDismissal = navigation != nil && content == nil
-        inboxPresentationReady = !waitsForDismissal
         pendingInboxRequest = content == nil ? request : nil
         navigation = content.map { KikiPushNavigation(content: $0) }
         inboxRequest = request
@@ -609,7 +596,7 @@ struct KikiPushPreferencesView: View {
             List {
                 Section {
                     Label("消息提醒", systemImage: "bell.badge").font(.title3.weight(.semibold))
-                    Text("收到私信、社区互动或关注的人开播时，及时提醒你。开启隐藏消息内容后，通知将不显示对方姓名和消息正文。")
+                    Text("收到私信、新的关注或关注的人开播时，及时提醒你。开启隐藏消息内容后，通知将不显示对方姓名和消息正文。")
                         .foregroundStyle(KikiPalette.secondary)
                 }
                 Section("提醒设置") {

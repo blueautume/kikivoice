@@ -1,10 +1,128 @@
 import SwiftUI
 
+/// The profile keeps this action separate from the room's invitation lifecycle.
+struct KikiProfileSeatInviteButton: View {
+    let title: String
+    let isBusy: Bool
+    let isEnabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            guard isEnabled, !isBusy else { return }
+            action()
+        } label: {
+            HStack(spacing: 6) {
+                Text(title)
+                    .lineLimit(1)
+                if isBusy {
+                    ProgressView().controlSize(.small).tint(.white)
+                } else {
+                    Image(systemName: "mic.fill")
+                        .accessibilityHidden(true)
+                }
+            }
+            .font(.subheadline.weight(.semibold))
+            .fixedSize(horizontal: true, vertical: false)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 7)
+            .frame(minHeight: 36)
+            .background(KikiPalette.action, in: Capsule())
+            .opacity(isEnabled || isBusy ? 1 : 0.5)
+            .frame(minHeight: 44)
+            .contentShape(Capsule())
+        }
+        .labelStyle(.titleAndIcon)
+        .buttonStyle(.plain)
+        .disabled(!isEnabled || isBusy)
+        .accessibilityLabel("邀请上麦")
+        .accessibilityValue(isBusy ? "正在发送" : title)
+        .accessibilityIdentifier("social.profile.inviteSeat")
+    }
+}
+
+/// Consent stays explicit: receiving an invitation never opens the microphone.
+struct KikiIncomingSeatInvitationCard: View {
+    let isBusy: Bool
+    let isEnabled: Bool
+    let isRoomFull: Bool
+    let onAccept: () -> Void
+    let onDecline: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("收到上麦邀请", systemImage: "mic.fill")
+                .font(.headline)
+                .foregroundStyle(KikiPalette.text)
+                .accessibilityAddTraits(.isHeader)
+            Text(isRoomFull
+                 ? "麦位已满，接受后将等待空位；上麦后麦克风默认关闭。"
+                 : "接受后将加入麦位，麦克风默认关闭。")
+                .font(.subheadline)
+                .foregroundStyle(KikiPalette.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            invitationActions
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(KikiPalette.elevated, lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("livekit.room.incomingSeatInvitation")
+    }
+
+    private var invitationActions: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 10))
+        return layout {
+            Button {
+                guard isEnabled, !isBusy else { return }
+                onDecline()
+            } label: {
+                Text("暂不")
+                    .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, minHeight: 24)
+                    .padding(.horizontal, 15).padding(.vertical, 10)
+                    .foregroundStyle(KikiPalette.text)
+                    .background(KikiPalette.elevated, in: Capsule())
+            }
+            .accessibilityLabel("暂不上麦")
+            .accessibilityIdentifier("livekit.room.declineSeatInvitation")
+            Button {
+                guard isEnabled, !isBusy else { return }
+                onAccept()
+            } label: {
+                HStack(spacing: 7) {
+                    if isBusy {
+                        ProgressView().controlSize(.small).tint(.white)
+                    }
+                    Text(isBusy ? "处理中" : "接受")
+                }
+                .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, minHeight: 24)
+                .padding(.horizontal, 15).padding(.vertical, 10)
+                .foregroundStyle(.white)
+                .background(KikiPalette.action, in: Capsule())
+            }
+            .accessibilityLabel("接受上麦邀请")
+            .accessibilityIdentifier("livekit.room.acceptSeatInvitation")
+        }
+        .font(.subheadline.weight(.semibold))
+        .buttonStyle(.plain)
+        .disabled(!isEnabled || isBusy)
+        .opacity(isEnabled || isBusy ? 1 : 0.5)
+    }
+}
+
 /// A moderation-only sheet. The room owns request submission and all mutations.
 @MainActor
 struct KikiSeatRequestSheet: View {
     let roomState: KikiRoomState?
-    @ObservedObject var gifts: KikiGiftStore
     let isWorking: Bool
     let isAvailable: Bool
     let errorMessage: String?
@@ -16,11 +134,10 @@ struct KikiSeatRequestSheet: View {
     private let accent = KikiPalette.purple
     private let background = KikiPalette.background
 
-    init(roomState: KikiRoomState?, gifts: KikiGiftStore, isWorking: Bool, isAvailable: Bool,
+    init(roomState: KikiRoomState?, isWorking: Bool, isAvailable: Bool,
          errorMessage: String?, onApprove: @escaping (String) -> Void, onReject: @escaping (String) -> Void,
          onOpenPerson: @escaping (String) -> Void, onDismiss: @escaping () -> Void) {
         self.roomState = roomState
-        self.gifts = gifts
         self.isWorking = isWorking
         self.isAvailable = isAvailable
         self.errorMessage = errorMessage
@@ -98,7 +215,7 @@ struct KikiSeatRequestSheet: View {
         return layout {
             HStack(spacing: 11) {
                 Button { onOpenPerson(request.userID) } label: {
-                    KikiDecoratedAvatar(gifts: gifts, userID: request.userID, index: member?.avatarIndex ?? 0,
+                    KikiAvatar(index: member?.avatarIndex ?? 0,
                                         size: 44, customURL: member?.avatarURL)
                         .saturation(online ? 1 : 0).opacity(online ? 1 : 0.42)
                 }

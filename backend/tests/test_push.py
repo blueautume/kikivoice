@@ -129,23 +129,6 @@ def test_default_preview_resolves_current_name_and_body_without_persisting_them_
         assert private not in persisted and private not in caplog.text
 
 
-def test_default_interaction_preview_contains_comment_text_and_specific_system_notice(env):
-    e=env;a,b=login(e.c,'commenter'),login(e.c,'moment-owner');register(e,b)
-    post=e.c.post('/v1/social/moments',headers=authorization(b),json={'requestID':rid(),'text':'动态','mediaIDs':[]}).json()['moment']
-    assert e.c.put('/v1/social/moments/'+post['id']+'/like',headers=authorization(a),json={'requestID':rid()}).status_code==200
-    comment=e.c.post('/v1/social/moments/'+post['id']+'/comments',headers=authorization(a),json={'requestID':rid(),'text':'这条动态很有意思'})
-    assert comment.status_code==200
-    e.s.dispatch()
-    alerts=[json.loads(request.content)['aps']['alert'] for request in e.requests]
-    assert {'title':a['user']['name'],'body':'赞了你的动态'} in alerts
-    assert {'title':a['user']['name'],'body':'评论了你的动态：这条动态很有意思'} in alerts
-    with database(e.c.settings) as db:
-        owner=db.execute('SELECT account_id FROM accounts WHERE login_id=?',(b['user']['id'],)).fetchone()[0]
-        e.social.notice(db,owner,'safety','你的社交发布限制已解除。')
-    e.s.dispatch()
-    assert json.loads(e.requests[-1].content)['aps']['alert']=={'title':'Kiki语聊','body':'你的社交发布限制已解除。'}
-
-
 @pytest.mark.parametrize('phase',['policy','provider'])
 @pytest.mark.parametrize('hidden',[False,True],ids=['show','hide'])
 def test_dispatch_reads_preference_after_policy_and_provider_preparation(env,monkeypatch,phase,hidden):
@@ -182,20 +165,6 @@ def test_ambiguous_retry_rechecks_preference_without_changing_delivery_id(env,fi
     assert json.loads(e.requests[0].content)['aps']['alert']==(push.GENERIC_ALERT if first_hidden else expected)
     assert json.loads(e.requests[1].content)['aps']['alert']==(expected if first_hidden else push.GENERIC_ALERT)
     assert MESSAGE_TEXT not in json.dumps(rows(e)) and MESSAGE_TEXT not in caplog.text
-
-
-def test_deleted_comment_during_provider_preparation_never_leaks_preview(env,monkeypatch):
-    e=env;a,b=login(e.c,'late-commenter'),login(e.c,'late-recipient');register(e,b)
-    post=e.c.post('/v1/social/moments',headers=authorization(b),json={'requestID':rid(),'text':'动态','mediaIDs':[]}).json()['moment']
-    comment=e.c.post('/v1/social/moments/'+post['id']+'/comments',headers=authorization(a),json={'requestID':rid(),'text':'发送前已经删除的评论'}).json()['comment']
-    original=e.s.provider_token
-    def deleted_before_final_validation(environment):
-        result=original(environment)
-        assert e.c.delete('/v1/social/comments/'+comment['id'],headers=authorization(a)).status_code==200
-        return result
-    monkeypatch.setattr(e.s,'provider_token',deleted_before_final_validation)
-    e.s.dispatch()
-    assert e.requests==[] and rows(e)[0]['state']=='cancelled'
 
 
 @pytest.mark.parametrize('text',['🙂'*1000,'转义"\\\n'*1200],ids=['utf8-dm','escaped-system'])
@@ -273,19 +242,6 @@ def test_transactional_enqueue_idempotency_hidden_alert_and_opaque_route(env):
             e.social.notice(db,target,'safety','事务回滚');raise RuntimeError('rollback')
     assert len(rows(e))==1
 
-def test_like_comment_safety_queue_and_deleted_content(env):
-    e=env;a,b=login(e.c,'alice'),login(e.c,'bob');register(e,b)
-    post=e.c.post('/v1/social/moments',headers=authorization(b),json={'requestID':rid(),'text':'动态','mediaIDs':[]}).json()['moment']
-    like=e.c.put('/v1/social/moments/'+post['id']+'/like',headers=authorization(a),json={'requestID':rid()})
-    comment=e.c.post('/v1/social/moments/'+post['id']+'/comments',headers=authorization(a),json={'requestID':rid(),'text':'评论'})
-    assert len(rows(e))==2,(like.text,comment.text)
-    e.c.request('DELETE','/v1/social/moments/'+post['id'],headers=authorization(b),json={'requestID':rid()})
-    e.s.dispatch();assert e.requests==[] and all(r['state']=='cancelled' for r in rows(e))
-    assert e.c.patch('/v1/me',headers=authorization(b),json={'hideNotificationContent':True}).status_code==200
-    with database(e.c.settings) as db:
-        target=db.execute('SELECT account_id FROM accounts WHERE login_id=?',(b['user']['id'],)).fetchone()[0]
-        e.social.notice(db,target,'safety','违规详情不能出现在锁屏')
-    e.s.dispatch();assert len(e.requests)==1 and '违规' not in e.requests[0].content.decode()
 
 def test_off_on_never_revives_queue_and_inapp_notice_survives(env):
     e=env;a,b=login(e.c,'alice'),login(e.c,'bob');register(e,b);follow(e,a,b)
@@ -489,7 +445,12 @@ def test_account_preview_preference_does_not_expand_actual_voice_exchange_profil
     assert exchanged.status_code==200,exchanged.text
     request=next(request for request in reversed(pair.captured) if request.url.path=='/internal/v1/account/session')
     profile=json.loads(request.content)['user']
-    assert set(profile)=={'id','sdkUserID','name','bio','avatarIndex','avatarURL','needsNickname','notificationsEnabled'}
+    assert set(profile)=={'id','displayID','sdkUserID','name','bio','avatarIndex','avatarURL','needsNickname','notificationsEnabled'}
+    assert profile['displayID']==a['user']['displayID']=='kiki_000001'
+    assert 'hideNotificationContent' not in profile
     assert 'hideNotificationContent' not in exchanged.json()['user']
-    assert pair.voice.get('/v1/me',headers=authorization(exchanged.json())).json()['id']==a['user']['id']
+    voice_user=pair.voice.get('/v1/me',headers=authorization(exchanged.json())).json()
+    assert voice_user['id']==a['user']['id']
+    assert voice_user['displayID']==a['user']['displayID']
+    assert 'hideNotificationContent' not in voice_user
     assert c.get('/v1/me',headers=authorization(a)).json()['hideNotificationContent'] is True

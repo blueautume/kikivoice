@@ -5,11 +5,39 @@ import XCTest
 @testable import KikiVoiceOps
 
 final class CommunityOpsTests: XCTestCase {
+    func testPublicNumbersArePresentationOnlyAndLegacyReportsStillDecode() throws {
+        let legacy = try JSONDecoder().decode(OpsModerationPage.self, from: communityFixtureData())
+        XCTAssertEqual(legacy.reports.first?.targetLabel, "user_fixture_target")
+        var value = try XCTUnwrap(JSONSerialization.jsonObject(with: communityFixtureData()) as? [String: Any])
+        var reports = try XCTUnwrap(value["reports"] as? [[String: Any]])
+        reports[0]["reporterDisplayID"] = "kiki_000001"
+        reports[0]["targetDisplayID"] = "kiki_000002"
+        value["reports"] = reports
+        value["activeRestrictions"] = [["reportID": "report_fixture", "targetUserID": "user_fixture_target", "targetDisplayID": "kiki_000002", "bannedUntil": 1794975600]]
+        let page = try JSONDecoder().decode(OpsModerationPage.self, from: JSONSerialization.data(withJSONObject: value))
+        try page.validate()
+        XCTAssertEqual(page.reports.first?.reporterLabel, "kiki_000001")
+        XCTAssertEqual(page.reports.first?.targetLabel, "kiki_000002")
+        XCTAssertEqual(page.reports.first?.targetUserID, "user_fixture_target")
+        XCTAssertEqual(page.activeRestrictions?.first?.id, "user_fixture_target")
+        XCTAssertEqual(page.activeRestrictions?.first?.accountLabel, "kiki_000002")
+        let request = fixtureRequest()
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
+        XCTAssertEqual(body["reportID"] as? String, "report_fixture")
+        XCTAssertNil(body["targetDisplayID"])
+        reports[0]["targetDisplayID"] = "kiki_000000"; value["reports"] = reports
+        let invalid = try JSONDecoder().decode(OpsModerationPage.self, from: JSONSerialization.data(withJSONObject: value))
+        XCTAssertThrowsError(try invalid.validate())
+    }
+
     func testCommunityGrantIsIndependentAndMissingGrantFailsClosed() throws {
         let old = try JSONDecoder().decode(OpsPermissions.self, from: Data(#"{"voice":true,"account":true}"#.utf8))
         XCTAssertFalse(old.community); XCTAssertFalse(old.permits(.community))
         let community = OpsPermissions(voice: false, account: false, community: true)
         XCTAssertTrue(community.permits(.community)); XCTAssertFalse(community.permits(.voice)); XCTAssertFalse(community.permits(.account))
+        XCTAssertEqual(OpsService.allCases.map(\.rawValue), ["voice", "account", "community"])
+        let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(community)) as? [String: Bool])
+        XCTAssertEqual(encoded, ["voice": false, "account": false, "community": true])
     }
 
     func testModerationBodyValidationAndFixedCentralRoutes() async throws {

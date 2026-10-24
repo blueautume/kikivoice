@@ -33,6 +33,7 @@ def main():
         raise SystemExit("Run as root with an existing private staging directory")
     required = ["backend/app/main.py", "backend/deploy/kikitalk.service",
                 "backend/deploy/nginx.conf", "backend/deploy/kiki.group.conf",
+                "backend/deploy/facescan.locations.conf",
                 "website/dist/index.html", "fullchain.pem", "privkey.pem"]
     if not all((stage / name).is_file() for name in required):
         raise SystemExit("Staging directory is incomplete")
@@ -51,6 +52,7 @@ def main():
     backup = Path("/var/backups/kikitalk") / ("domain-install-" + stamp)
     backup.mkdir(parents=True, mode=0o700)
     paths = [Path(p) for p in ["/etc/nginx/nginx.conf", "/etc/nginx/conf.d/kiki.group.conf",
+             "/etc/nginx/snippets/facescan.locations.conf",
              "/etc/nginx/tls/kiki.group", "/etc/systemd/system/kikitalk.service",
              "/etc/kikitalk/server.env", "/opt/kikitalk/app", "/opt/kikitalk/deploy"]]
     existed = [p for p in paths if p.exists()]
@@ -87,6 +89,7 @@ def main():
         copy_file(stage / "fullchain.pem", tls / "fullchain.pem")
         copy_file(stage / "privkey.pem", tls / "privkey.pem", 0o600)
         copy_file(stage / "backend/deploy/nginx.conf", Path("/etc/nginx/nginx.conf"))
+        copy_file(stage / "backend/deploy/facescan.locations.conf", Path("/etc/nginx/snippets/facescan.locations.conf"))
         copy_file(stage / "backend/deploy/kiki.group.conf", Path("/etc/nginx/conf.d/kiki.group.conf"))
         run("nginx", "-t")
         shutil.copytree(stage / "backend/app", "/opt/kikitalk/app", dirs_exist_ok=True)

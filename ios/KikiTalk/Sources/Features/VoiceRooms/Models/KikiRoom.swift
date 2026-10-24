@@ -5,6 +5,7 @@ struct KikiRoomMemberPreview: Codable, Equatable, Identifiable, Sendable {
     let name: String
     let avatarIndex: Int
     let avatarURL: String?
+    var displayID: String? = nil
     var id: String { userID }
 }
 
@@ -23,21 +24,23 @@ struct KikiRoom: Identifiable, Codable, Equatable {
     var hostAvatarIndex: Int
     var hostAvatarURL: String?
     var memberPreview: [KikiRoomMemberPreview]
+    var hostDisplayID: String?
     var language: String { "中文" }
 
     init(id: String, title: String, host: String, hostID: String, category: String, audience: Int,
          isLive: Bool, theme: Int, isCreatedByMe: Bool, status: String, createdAt: Int = 0, hostAvatarIndex: Int = 0, hostAvatarURL: String? = nil,
-         memberPreview: [KikiRoomMemberPreview] = []) {
+         memberPreview: [KikiRoomMemberPreview] = [], hostDisplayID: String? = nil) {
         self.id = id; self.title = title; self.host = host; self.hostID = hostID
-        self.category = category; self.audience = audience; self.isLive = isLive; self.theme = theme
+        self.category = category; self.audience = audience; self.isLive = isLive; self.theme = KikiRoomBackgroundStyle(theme: theme).rawValue
         self.isCreatedByMe = isCreatedByMe; self.status = status; self.createdAt = createdAt
         self.hostAvatarIndex = hostAvatarIndex
         self.hostAvatarURL = hostAvatarURL
         self.memberPreview = memberPreview
+        self.hostDisplayID = hostDisplayID
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, host, hostID, category, audience, isLive, theme, isCreatedByMe, status, createdAt, hostAvatarIndex, hostAvatarURL, memberPreview
+        case id, title, host, hostID, category, audience, isLive, theme, isCreatedByMe, status, createdAt, hostAvatarIndex, hostAvatarURL, memberPreview, hostDisplayID
     }
 
     init(from decoder: Decoder) throws {
@@ -49,12 +52,13 @@ struct KikiRoom: Identifiable, Codable, Equatable {
         category = try values.decode(String.self, forKey: .category)
         audience = try values.decode(Int.self, forKey: .audience)
         isLive = try values.decode(Bool.self, forKey: .isLive)
-        theme = try values.decode(Int.self, forKey: .theme)
+        theme = KikiRoomBackgroundStyle(theme: try values.decode(Int.self, forKey: .theme)).rawValue
         isCreatedByMe = try values.decode(Bool.self, forKey: .isCreatedByMe)
         status = try values.decode(String.self, forKey: .status)
         createdAt = try values.decodeIfPresent(Int.self, forKey: .createdAt) ?? 0
         hostAvatarIndex = try values.decodeIfPresent(Int.self, forKey: .hostAvatarIndex) ?? 0
         hostAvatarURL = try values.decodeIfPresent(String.self, forKey: .hostAvatarURL)
         memberPreview = try values.decodeIfPresent([KikiRoomMemberPreview].self, forKey: .memberPreview) ?? []
+        hostDisplayID = try values.decodeIfPresent(String.self, forKey: .hostDisplayID)
     }
 }

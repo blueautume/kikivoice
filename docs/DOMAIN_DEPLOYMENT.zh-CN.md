@@ -1,5 +1,17 @@
 # kiki.group 官网与业务域名部署
 
+## FaceScan 独立页面（2026-10-24）
+
+- 技术支持：<https://kiki.group/facescan/support.html>
+- 隐私政策：<https://kiki.group/facescan/privacy-policy.html>
+- `/facescan/` 默认显示技术支持页；原始 HTML 保存在 `website/facescan/`，支持页的图片已内嵌，两页不依赖远程资源。
+- 独立发布：`python3 backend/deploy/deploy_facescan.py`，本地检查：同一命令加 `--check`。源文件来自 FaceScan 工程的 `support.html` 和 `privacy-policy.html`，更新时同步这两份副本。修改 CSS 后须同步 `backend/deploy/facescan.locations.conf` 的样式 SHA-256。
+- 服务器使用 `/var/www/facescan/releases/<UTC时间戳>/` 与 `current` 原子软链，不受 KikiTalk 官网版本切换影响。路由由 `/etc/nginx/snippets/facescan.locations.conf` 提供，主站配置只插入该 include，保留线上额外业务路由。
+- 发布保留原主站配置、原 snippet 和旧 FaceScan 软链目标，自动校验公网两页哈希、主页哈希及 `/health`，失败则回滚。后台进程、账号数据及凭据不参与此发布。
+- 此次只发布网页，不修改 KikiTalk 或 FaceScan 的 iOS 应用版本。
+
+本次实际发布版本为 `20261023T191954604254Z`（北京时间 2026-10-24 03:19:54）。两页公网 HTML 的 SHA-256 与用户原文件完全一致；浏览器确认两页样式、支持页内嵌图片和隐私链接正常。公网 `/health` 为 `ok`，主站首页 SHA-256 发布前后均为 `c7b4e4c821583e1e3900bbbc3788f6077fc3e3040f9688234f9e4427ada544ce`。回滚材料位于 `/root/kiki-facescan-releases/20261023T191954604254Z/previous/`；首次发布前不存在 FaceScan 目录，回滚会移除新 include、snippet 和 `current` 软链，保留版本目录供核查。
+
 > **归档部署记录（2026-10-16）：** 下文保留当时的域名迁移、腾讯客户端和验收情况。当前 iOS 已切换自建 LiveKit 并移除旧腾讯实现；不要使用旧 SDK 步骤配置当前 App。现行目录与服务分工见[项目接手指南](PROJECT_HANDOVER.zh-CN.md)。2026-10-22 的 iOS 清理没有重新部署网站、修改证书或验证现网。
 
 

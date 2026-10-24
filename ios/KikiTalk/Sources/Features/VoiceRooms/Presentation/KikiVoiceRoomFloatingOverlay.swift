@@ -14,6 +14,8 @@ final class KikiVoiceRoomFloatingOverlay: NSObject {
     private var keyboardFrameInScreen: CGRect?
     private var isDragging = false
     private var navigationRefreshScheduled = false
+    private weak var appearanceSource: UIView?
+    private var appearanceRegistration: (any UITraitChangeRegistration)?
 
     var isVisible: Bool { !window.isHidden }
 
@@ -56,10 +58,17 @@ final class KikiVoiceRoomFloatingOverlay: NSObject {
 
     func show() {
         guard window.isHidden else { return }
+        synchronizeAppearance()
         window.isHidden = false
         controller.view.setNeedsLayout()
         controller.view.layoutIfNeeded()
         positionBubble()
+        // SwiftUI applies an initial preferred color scheme during the host's
+        // first update, which can follow this window's initial layout.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isVisible else { return }
+            self.synchronizeAppearance()
+        }
         controller.bubble.setPresentationVisible(true)
         // Deliberately do not call makeKeyAndVisible: text fields retain their keyboard focus.
         if !UIAccessibility.isReduceMotionEnabled {
@@ -74,6 +83,11 @@ final class KikiVoiceRoomFloatingOverlay: NSObject {
         controller.bubble.layer.removeAllAnimations()
         controller.bubble.alpha = 1
         window.isHidden = true
+        if let appearanceSource, let appearanceRegistration {
+            appearanceSource.unregisterForTraitChanges(appearanceRegistration)
+        }
+        appearanceSource = nil
+        appearanceRegistration = nil
     }
 
     func update(roomTitle: String, status: String, avatarURL: String? = nil, avatarIndex: Int = 0,
@@ -112,6 +126,45 @@ final class KikiVoiceRoomFloatingOverlay: NSObject {
         return true
     }
 
+    private var mainWindow: UIWindow? {
+        let candidates = window.windowScene?.windows.filter {
+            $0 !== window && !$0.isHidden && $0.alpha > 0.01 && $0.windowLevel == .normal
+                && $0.rootViewController != nil
+        } ?? []
+        return candidates.first(where: \.isKeyWindow) ?? candidates.first
+    }
+
+    private func synchronizeAppearance() {
+        guard let mainWindow, let root = mainWindow.rootViewController else { return }
+        func visibleController(_ controller: UIViewController) -> UIViewController {
+            if let presented = controller.presentedViewController, !presented.isBeingDismissed {
+                return visibleController(presented)
+            }
+            if let navigation = controller as? UINavigationController, let visible = navigation.visibleViewController {
+                return visibleController(visible)
+            }
+            if let tabs = controller as? UITabBarController, let selected = tabs.selectedViewController {
+                return visibleController(selected)
+            }
+            return controller
+        }
+        let source = visibleController(root).viewIfLoaded ?? root.viewIfLoaded ?? mainWindow
+        if appearanceSource !== source {
+            if let appearanceSource, let appearanceRegistration {
+                appearanceSource.unregisterForTraitChanges(appearanceRegistration)
+            }
+            appearanceSource = source
+            appearanceRegistration = source.registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+                [weak self] (_: UIView, _: UITraitCollection) in self?.synchronizeAppearance()
+            }
+        }
+        // A separate window inherits scene traits, while a hosting controller's
+        // preferred color scheme applies only within the main window.
+        let style = source.traitCollection.userInterfaceStyle
+        if window.overrideUserInterfaceStyle != style { window.overrideUserInterfaceStyle = style }
+        window.updateTraitsIfNeeded()
+    }
+
     /// The overlay has its own window, so its safe area does not include the
     /// main window's native tab bar. Reserve only the visible bar at this dock.
     private var restingArea: CGRect {
@@ -127,11 +180,7 @@ final class KikiVoiceRoomFloatingOverlay: NSObject {
     }
 
     private func visibleTabBarTop(in safeArea: CGRect, dockX: CGFloat) -> CGFloat? {
-        let candidates = window.windowScene?.windows.filter {
-            $0 !== window && !$0.isHidden && $0.alpha > 0.01 && $0.windowLevel == .normal
-                && $0.rootViewController != nil
-        } ?? []
-        guard let mainWindow = candidates.first(where: \.isKeyWindow) ?? candidates.first else { return nil }
+        guard let mainWindow else { return nil }
         let dock = CGRect(x: dockX - KikiVoiceRoomBubbleButton.size.width / 2, y: safeArea.minY,
                           width: KikiVoiceRoomBubbleButton.size.width, height: safeArea.height)
         var top: CGFloat?
@@ -180,6 +229,7 @@ final class KikiVoiceRoomFloatingOverlay: NSObject {
 
     private func positionBubble(animated: Bool = false, duration: TimeInterval = 0.22) {
         guard controller.isViewLoaded, !controller.view.bounds.isEmpty else { return }
+        synchronizeAppearance()
         let resting = restingArea
         let preferred = CGPoint(x: isOnRight ? resting.maxX : resting.minX,
                                 y: resting.minY + resting.height * verticalFraction)
@@ -269,15 +319,13 @@ private final class KikiVoiceRoomOverlayController: UIViewController {
 final class KikiVoiceRoomBubbleButton: UIButton {
     static let size = CGSize(width: 80, height: 80)
     private let avatarDisc = UIView()
-    private let gradient = CAGradientLayer()
     private let avatar = UIImageView()
-    private let fallback = UILabel()
+    private let fallback = UIImageView()
     private let rings = [CAShapeLayer(), CAShapeLayer()]
     private var avatarTask: Task<Void, Never>?
     private var avatarURL: String?
     private var avatarIndex: Int?
     private var sourceAvatar: UIImage?
-    private var avatarColors: [CGColor] = []
     private var isOnline = true
     private let imageContext = CIContext(options: [.cacheIntermediates: false])
     private var speaking = false
@@ -302,15 +350,15 @@ final class KikiVoiceRoomBubbleButton: UIButton {
         avatarDisc.layer.masksToBounds = true
         avatarDisc.layer.borderWidth = 2
         avatarDisc.layer.borderColor = UIColor.white.withAlphaComponent(0.85).cgColor
-        avatarDisc.layer.addSublayer(gradient)
-        gradient.startPoint = CGPoint(x: 0.1, y: 0)
-        gradient.endPoint = CGPoint(x: 0.9, y: 1)
+        avatarDisc.backgroundColor = KikiAvatarAppearance.backgroundColor
         avatar.contentMode = .scaleAspectFill
         avatar.isUserInteractionEnabled = false
         avatar.accessibilityIdentifier = "voiceRoomFloatingAvatar"
-        fallback.textAlignment = .center
+        fallback.image = UIImage(systemName: KikiAvatarAppearance.placeholderSymbolName)
+        fallback.tintColor = KikiAvatarAppearance.foregroundColor
+        fallback.contentMode = .scaleAspectFit
         fallback.isUserInteractionEnabled = false
-        fallback.font = .systemFont(ofSize: 39)
+        fallback.accessibilityIdentifier = "voiceRoomFloatingAvatarPlaceholder"
         avatarDisc.addSubview(fallback)
         avatarDisc.addSubview(avatar)
         addSubview(avatarDisc)
@@ -331,16 +379,6 @@ final class KikiVoiceRoomBubbleButton: UIButton {
         avatarTask?.cancel()
         avatarURL = url
         avatarIndex = index
-        let faces = ["🧑🏻‍🚀", "👩🏻", "🧑🏼", "👩🏽‍🦱", "🧑🏻‍🎨", "👩🏼‍🦰", "🧑🏽‍🎤", "👨🏻‍🦱", "👩🏻‍🎤", "🧑🏼‍🚀", "👩🏾", "👨🏼"]
-        let colors: [UIColor] = [UIColor(red: 0.39, green: 0.32, blue: 0.64, alpha: 1),
-                                 UIColor(red: 0.58, green: 0.51, blue: 0.57, alpha: 1),
-                                 UIColor(red: 0.46, green: 0.53, blue: 0.47, alpha: 1),
-                                 UIColor(red: 0.68, green: 0.47, blue: 0.42, alpha: 1),
-                                 UIColor(red: 0.42, green: 0.56, blue: 0.61, alpha: 1)]
-        let faceIndex = (index % faces.count + faces.count) % faces.count
-        let colorIndex = (index % colors.count + colors.count) % colors.count
-        fallback.text = faces[faceIndex]
-        avatarColors = [colors[colorIndex].cgColor, colors[colorIndex].withAlphaComponent(0.45).cgColor]
         sourceAvatar = url.flatMap { KikiAccountAPIClient.shared.cachedAvatar($0) }
         updateAvatarAppearance()
         guard let url, sourceAvatar == nil else { return }
@@ -351,7 +389,7 @@ final class KikiVoiceRoomBubbleButton: UIButton {
                 guard let self, self.avatarURL == url, self.avatarIndex == index else { return }
                 self.sourceAvatar = image
                 self.updateAvatarAppearance()
-            } catch { /* A trusted cached or preset host avatar remains usable offline. */ }
+            } catch { /* A cached photo or the system avatar remains usable offline. */ }
         }
     }
 
@@ -368,22 +406,15 @@ final class KikiVoiceRoomBubbleButton: UIButton {
     }
 
     private func updateAvatarAppearance() {
-        gradient.colors = isOnline ? avatarColors : [UIColor.darkGray.cgColor, UIColor.gray.cgColor]
         avatarDisc.alpha = isOnline ? 1 : 0.46
         avatarDisc.layer.borderColor = (isOnline ? UIColor.white.withAlphaComponent(0.85) : UIColor.gray).cgColor
-        if isOnline {
-            avatar.image = sourceAvatar
-        } else {
+        if !isOnline, let source = sourceAvatar {
             // Render only on a real avatar/connectivity change, never on a polling tick.
-            let source = sourceAvatar ?? UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).image { _ in
-                (fallback.text ?? "").draw(in: CGRect(x: 4, y: 8, width: 56, height: 56),
-                                           withAttributes: [.font: UIFont.systemFont(ofSize: 39)])
-            }
             if let input = CIImage(image: source),
                let result = imageContext.createCGImage(input.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0]), from: input.extent) {
                 avatar.image = UIImage(cgImage: result, scale: source.scale, orientation: source.imageOrientation)
             } else { avatar.image = source }
-        }
+        } else { avatar.image = sourceAvatar }
         fallback.isHidden = avatar.image != nil
     }
 
@@ -410,9 +441,8 @@ final class KikiVoiceRoomBubbleButton: UIButton {
         let circle = bounds.insetBy(dx: 8, dy: 8)
         avatarDisc.frame = circle
         avatarDisc.layer.cornerRadius = circle.height / 2
-        gradient.frame = avatarDisc.bounds
         avatar.frame = avatarDisc.bounds
-        fallback.frame = avatarDisc.bounds
+        fallback.frame = avatarDisc.bounds.insetBy(dx: circle.width * 0.06, dy: circle.height * 0.06)
         layer.shadowPath = UIBezierPath(ovalIn: circle).cgPath
         for ring in rings {
             ring.frame = bounds
@@ -435,7 +465,10 @@ final class KikiVoiceRoomBubbleButton: UIButton {
             traits.userInterfaceStyle == .dark ? UIColor(red: 0.75, green: 0.62, blue: 1, alpha: 1)
                 : UIColor(red: 0.47, green: 0.32, blue: 0.82, alpha: 1)
         }.resolvedColor(with: traitCollection)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         rings.forEach { $0.strokeColor = color.cgColor }
+        CATransaction.commit()
     }
 
     @objc private func reduceMotionChanged() { updateRings(force: true) }

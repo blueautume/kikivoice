@@ -106,16 +106,6 @@ final class KikiRoomChatPresentationTests: XCTestCase {
                        ["old", "newer", "announcement-2"])
     }
 
-    func testBlockedPeopleDoNotLeakThroughEitherGiftSideOrMessageHistory() {
-        let blockedMessage = voice("hidden-message", sender: "blocked", createdAt: 100, sequence: 1)
-        let visible = voice("visible-message", sender: "friend", createdAt: 100, sequence: 2)
-        let hiddenSender = gift("hidden-sender", sender: "blocked", recipient: "friend", createdAt: 101)
-        let hiddenRecipient = gift("hidden-recipient", sender: "friend", recipient: "blocked", createdAt: 102)
-        let publicGift = gift("visible-gift", sender: "friend", recipient: "host", createdAt: 103)
-        let result = timeline(messages: [blockedMessage, visible], gifts: [hiddenSender, hiddenRecipient, publicGift],
-                              blockedIDs: ["blocked"])
-        XCTAssertEqual(result, [.message(visible), .gift(publicGift)])
-    }
 
     func testBlockedAnnouncementAuthorIsFilteredConsistentlyWithRoomChat() {
         let notice = KikiRoomAnnouncement(text: "已屏蔽成员发布的公告", revision: 4, updatedAt: 110,
@@ -126,19 +116,6 @@ final class KikiRoomChatPresentationTests: XCTestCase {
                        "A missing author is not proof that the notice belongs to a blocked person")
     }
 
-    func testTimelineRemainsChronologicalAndDeterministicForEqualTimestamps() {
-        let earlyGift = gift("early", createdAt: 99, sequence: 8)
-        let laterGift = gift("gift-a", createdAt: 100, sequence: 1)
-        let high = voice("msg-z", createdAt: 100, sequence: 9)
-        let low = voice("msg-a", createdAt: 100, sequence: 2)
-        let tie = voice("msg-b", createdAt: 100, sequence: 2)
-        let announcement = KikiRoomAnnouncement(text: "公告", revision: 1, updatedAt: 100, updatedByUserID: "host")
-        let entries = timeline(messages: [high, tie, low], gifts: [laterGift, earlyGift], announcement: announcement)
-        XCTAssertEqual(entries.map(\.id), ["gift-early", "msg-a", "msg-b", "msg-z", "gift-gift-a", "announcement-1"])
-        XCTAssertEqual(entries.map(\.createdAt), [99, 100, 100, 100, 100, 100])
-        XCTAssertEqual(entries, timeline(messages: [low, high, tie], gifts: [earlyGift, laterGift], announcement: announcement),
-                       "Unchanged server content must not jump when feed arrays arrive in another order")
-    }
 
     func testChatBubbleWrapsLongMessagesAndAccessibilityTextWithinItsColumn() {
         let text = String(repeating: "今天有什么开心的事？一起慢慢聊聊生活里的小收获 😀 ", count: 8)
@@ -213,9 +190,9 @@ final class KikiRoomChatPresentationTests: XCTestCase {
         }
     }
 
-    private func timeline(messages: [KikiVoiceMessage] = [], gifts: [KikiGiftEvent] = [],
+    private func timeline(messages: [KikiVoiceMessage] = [],
                           announcement: KikiRoomAnnouncement = .empty, blockedIDs: Set<String> = []) -> [KikiRoomChatEntry] {
-        KikiRoomChatEntry.timeline(messages: messages, gifts: gifts, announcement: announcement, blockedIDs: blockedIDs)
+        KikiRoomChatEntry.timeline(messages: messages, announcement: announcement, blockedIDs: blockedIDs)
     }
 
     private func voice(_ id: String, sender: String = "friend", createdAt: Int, sequence: Int) -> KikiVoiceMessage {
@@ -223,19 +200,11 @@ final class KikiRoomChatPresentationTests: XCTestCase {
               createdAt: createdAt, sequence: sequence, senderAvatarIndex: 3)
     }
 
-    private func gift(_ id: String, sender: String = "friend", recipient: String = "host",
-                      createdAt: Int, sequence: Int = 1) -> KikiGiftEvent {
-        .init(id: id, roomID: "fixture-room", batchID: "batch-" + id, senderUserID: sender, senderName: "朋友",
-              recipientUserID: recipient, recipientName: "房主", giftID: "flower", giftName: "鲜花", seq: sequence,
-              quantity: 1, unitPrice: 30, batchRecipientCount: 1, createdAt: createdAt)
-    }
 
     private func bubble(text: String) -> some View {
         KikiRoomChatBubbleRow(id: "long", senderName: "一个很长的昵称也需要换行的朋友", text: text,
                               isLocal: false, onOpenSender: {}) {
             KikiAvatar(index: 3, size: 32)
-        } bubbleBackground: {
-            RoundedRectangle(cornerRadius: 15).fill(KikiPalette.surface)
         }
     }
 
@@ -303,20 +272,16 @@ private struct KikiRoomChatScreenshotFixture: View {
                     KikiRoomChatBubbleRow(id: "friend", senderName: "南风", text: "大家好，今天在聊什么？", isLocal: false,
                                           onOpenSender: {}) {
                         KikiAvatar(index: 5, size: 32)
-                    } bubbleBackground: { RoundedRectangle(cornerRadius: 15).fill(KikiPalette.surface) }
+                    }
                     KikiRoomChatBubbleRow(id: "me", senderName: "我", text: "你好 👋 很高兴认识你！", isLocal: true,
                                           onOpenSender: {}) {
                         KikiAvatar(index: 2, size: 32)
-                    } bubbleBackground: { RoundedRectangle(cornerRadius: 15).fill(KikiPalette.surface) }
-                    KikiRoomAnnouncementChatRow(text: "欢迎来到 KikiTalk。请友好交流，尊重每位朋友，让我们一起享受聊天的时光。", onOpen: {})
-                    KikiRoomChatBubbleRow(id: "gift", senderName: "小岛", text: "送给南风 鲜花 ×1", isLocal: false,
-                                          isGift: true, onOpenSender: {}) {
-                        KikiAvatar(index: 4, size: 32)
-                    } bubbleBackground: { RoundedRectangle(cornerRadius: 15).fill(KikiPalette.purple.opacity(0.12)) }
+                    }
+                    KikiRoomAnnouncementChatRow(text: "欢迎来到 kiki。请友好交流，尊重每位朋友，让我们一起享受聊天的时光。", onOpen: {})
                     KikiRoomChatBubbleRow(id: "long", senderName: "昵称比较长的一位朋友", text: longText, isLocal: false,
                                           onOpenSender: {}) {
                         KikiAvatar(index: 8, size: 32)
-                    } bubbleBackground: { RoundedRectangle(cornerRadius: 15).fill(KikiPalette.surface) }
+                    }
                 }
             }
             HStack {
@@ -324,11 +289,9 @@ private struct KikiRoomChatScreenshotFixture: View {
                     .padding(14).background(KikiPalette.surface, in: Capsule())
                 Image(systemName: "mic.fill").foregroundStyle(KikiPalette.purple).frame(width: 44, height: 44)
                     .background(KikiPalette.surface, in: Circle())
-                Image(systemName: "gift.fill").foregroundStyle(KikiPalette.purple).frame(width: 44, height: 44)
-                    .background(KikiPalette.surface, in: Circle())
             }
         }
         .padding(16).frame(maxWidth: 760).frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(KikiRoomDecorationBackground(decorationID: "background_aurora"))
+        .background(KikiRoomBackground(theme: 2))
     }
 }

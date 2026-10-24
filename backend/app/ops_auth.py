@@ -74,7 +74,7 @@ def initialize_database(db):
     # Existing installations have a restrictive CHECK constraint. Rebuild only
     # this independent ACL table atomically; existing viewers gain no new grant.
     sql = db.execute("SELECT sql FROM sqlite_master WHERE name='ops_grants'").fetchone()[0]
-    if "'community'" not in sql:
+    if "'community'" not in sql or "'gifts'" in sql:
         db.execute("SAVEPOINT ops_acl_upgrade")
         try:
             db.execute("ALTER TABLE ops_grants RENAME TO ops_grants_previous")
@@ -82,7 +82,7 @@ def initialize_database(db):
                 account_id TEXT NOT NULL REFERENCES ops_accounts(account_id) ON DELETE CASCADE,
                 service TEXT NOT NULL CHECK(service IN ('account','voice','community')),
                 granted_at INTEGER NOT NULL, PRIMARY KEY(account_id,service))""")
-            db.execute("INSERT INTO ops_grants SELECT * FROM ops_grants_previous")
+            db.execute("INSERT INTO ops_grants SELECT * FROM ops_grants_previous WHERE service IN ('account','voice','community')")
             db.execute("DROP TABLE ops_grants_previous")
             db.execute("RELEASE ops_acl_upgrade")
         except Exception:
@@ -105,11 +105,8 @@ def validate_settings(settings):
         secret = settings.ops_bridge_secret
         if len(secret) < 43 or len(set(secret)) < 16:
             raise RuntimeError("Configure an independent high-entropy operations bridge secret")
-        if secret in {settings.voice_bridge_secret, settings.secret_key, settings.apple_token_encryption_key,
-                      settings.qa_gifts_token}:
+        if secret in {settings.voice_bridge_secret, settings.secret_key, settings.apple_token_encryption_key}:
             raise RuntimeError("Operations bridge credentials must be independent")
-        if settings.qa_gifts_enabled:
-            raise RuntimeError("Operations Passkey service cannot share an isolated QA service")
         if settings.admin_passphrase_hash:
             from .admin import verify_passphrase
             if verify_passphrase(secret, settings.admin_passphrase_hash):
@@ -275,8 +272,8 @@ class OpsService:
             db.execute("INSERT INTO ops_challenges VALUES(?,?,?,?,?,?,?)",
                        (transaction,kind,challenge,account_id,user_handle,now,now+CHALLENGE_SECONDS))
         if kind == "registration":
-            options = generate_registration_options(rp_id=RP_ID, rp_name="Kiki 运维", user_name=account_id,
-                user_id=user_handle, user_display_name="Kiki 运维新账号", challenge=challenge,
+            options = generate_registration_options(rp_id=RP_ID, rp_name="kiki 运维", user_name=account_id,
+                user_id=user_handle, user_display_name="kiki 运维新账号", challenge=challenge,
                 timeout=CHALLENGE_SECONDS*1000, supported_pub_key_algs=[COSEAlgorithmIdentifier.ECDSA_SHA_256],
                 authenticator_selection=AuthenticatorSelectionCriteria(authenticator_attachment=AuthenticatorAttachment.PLATFORM,
                     resident_key=ResidentKeyRequirement.REQUIRED,require_resident_key=True,

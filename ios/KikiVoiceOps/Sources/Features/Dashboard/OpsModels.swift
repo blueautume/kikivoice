@@ -114,7 +114,7 @@ struct AccountOpsDashboard: Decodable {
         let accountsWithCustomAvatar: Int
     }
     struct Social: Decodable {
-        let follows, mutualPairs, moments, comments, privateMedia, messagesLast30Days, pendingReports, activePostingRestrictions: Int
+        let follows, mutualPairs, messagesLast30Days, pendingReports, activePostingRestrictions: Int
         let note: String
     }
     struct Activity: Decodable {

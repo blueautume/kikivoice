@@ -1,6 +1,6 @@
 # KikiTalk 文档导航
 
-更新日期：2026-10-22。当前源码入口与历史批次资料分开阅读；日期记录中的测试数量、安装结果与服务器状态不自动代表当前版本。历史链接中的 `output/`、`experiments/livekit/validation/` 是未纳入 Git 的本地生成证据，克隆仓库不会自动取得。
+更新日期：2026-10-23。当前源码入口与历史批次资料分开阅读；日期记录中的测试数量、安装结果与服务器状态不自动代表当前版本。历史链接中的 `output/`、`experiments/livekit/validation/` 是未纳入 Git 的本地生成证据，克隆仓库不会自动取得。
 
 ## 当前开发入口
 
@@ -20,8 +20,8 @@
 | --- | --- |
 | Apple 登录 | [APPLE_LOGIN](APPLE_LOGIN.zh-CN.md) |
 | 自建语音切换及房间改进 | [LIVEKIT_CUTOVER](LIVEKIT_CUTOVER.zh-CN.md) |
-| 社交、动态与私聊 | [P1_SOCIAL](P1_SOCIAL.zh-CN.md) |
-| 免费体验礼物与装扮 | [GIFTS](GIFTS.zh-CN.md) |
+| 关系与私聊 | [P1_SOCIAL](P1_SOCIAL.zh-CN.md) |
+| 房间背景 | [ROOM_BACKGROUNDS](ROOM_BACKGROUNDS.zh-CN.md) |
 | 推送通知 | [APNS](APNS.zh-CN.md) |
 | 运维身份与授权 | [OPS_PASSKEYS](OPS_PASSKEYS.zh-CN.md) |
 | 社区治理与维护 | [P0_COMMUNITY_SAFETY](P0_COMMUNITY_SAFETY.zh-CN.md) |

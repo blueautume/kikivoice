@@ -1,18 +1,20 @@
-# KikiTalk 当前架构
+# kiki 当前架构
 
-更新日期：2026-10-22。本文描述整理后的源码与构建入口；完整后端、部署和历史状态见[项目接手指南](PROJECT_HANDOVER.zh-CN.md)。目录移动不代表重新部署或运行验收。
+更新日期：2026-10-23。本文描述整理后的源码与构建入口；完整后端、部署和历史状态见[项目接手指南](PROJECT_HANDOVER.zh-CN.md)。目录移动不代表重新部署或运行验收。
+
+用户端可见名称为 kiki，工程与运行标识仍沿用 KikiTalk。启动只展示图标和名称，协议核对静默进行；仅需新同意时显示签署页面。房间背景包含五款自绘原生渐变，随系统深浅色模式变化，由房主在创建或编辑时选择。当前发布范围和回滚记录见[房间背景说明](ROOM_BACKGROUNDS.zh-CN.md)。
 
 ## 工程与目录
 
 | 位置 | 职责 |
 | --- | --- |
-| `ios/KikiTalk/KikiTalk.xcworkspace` / `KikiTalk.xcodeproj` | KikiTalk 用户 App 和 KikiTalkTests，选择 KikiTalk scheme |
+| `ios/KikiTalk/KikiTalk.xcworkspace` / `KikiTalk.xcodeproj` | kiki 用户 App 和 KikiTalkTests，选择 KikiTalk scheme |
 | `ios/KikiVoiceOps/KikiVoiceOps.xcworkspace` | 独立管理 App，选择 KikiVoiceOps scheme |
 | `ios/KikiTalk/Sources/`、`ios/KikiVoiceOps/Sources/` | 各自 App/Core/Features 源码 |
 | 两个 App 各自的 `Tests/`、`Resources/`、`Configuration/` | 回归、包内资源、Info 与 entitlements |
 | `ios/KikiVoiceOps/Scripts/` | 管理工程与图标生成脚本 |
 | `backend/` | 账号、社交、APNs、中央运维身份与跨服务授权 |
-| `experiments/livekit/backend/` | 正式语聊业务 API、信令网关、房间/麦位、聊天、礼物 |
+| `experiments/livekit/backend/` | 正式语聊业务 API、信令网关、房间/麦位、聊天、背景风格 |
 | `experiments/livekit/infra/`、`shared/` | LiveKit/API 部署、维护、备份、探针，以及跨服务契约和语聊协议副本 |
 | `legal/`、`website/dist/`、`tools/` | 正式协议源文件、官网与资源生成工具 |
 
@@ -37,13 +39,11 @@ ios/
 │   │       ├── Authentication/   Apple授权与登录
 │   │       ├── Privacy/          协议、同意与撤回
 │   │       ├── VoiceRooms/       Models/Discovery/Services/Views/Presentation/Chat
-│   │       ├── Gifts/            体验礼物与装扮
 │   │       ├── Social/           用户、关系与站内通知
-│   │       ├── Moments/          动态与评论
 │   │       ├── Messaging/        私聊、会话与未读
 │   │       └── Profile/          资料与设置
 │   ├── Tests/                    App/Core/Features/Integration
-│   ├── Resources/                Assets、Gifts、协议、启动页、隐私清单
+│   ├── Resources/                Assets、协议、启动页、隐私清单
 │   └── Configuration/            Info.plist、entitlements
 └── KikiVoiceOps/
     ├── Sources/
@@ -64,10 +64,10 @@ ios/
 
 | 入口文件 | 职责 |
 | --- | --- |
-| `App/KikiTalkApp.swift`、`KikiRootView.swift` | App/通知代理入口、协议/启动/登录/昵称门禁、四页签与导航 |
+| `App/KikiTalkApp.swift`、`KikiRootView.swift` | App/通知代理入口、协议/启动/登录/昵称门禁、三页签与导航 |
 | `App/KikiAppStore.swift`、`KikiStartupPermissions.swift` | 跨页业务状态与服务编排、会话/租约/退出、启动准备 |
 | `Core/Networking/KikiAccountAPIClient.swift` | kiki.group 账号/社交、头像、协议、推送及换取语聊授权 |
-| `Core/Networking/KikiAPIClient.swift`、`KikiHTTPSDelegate.swift` | furby.top 房间/聊天/礼物/安全接口与共享 DTO，HTTPS 重定向策略 |
+| `Core/Networking/KikiAPIClient.swift`、`KikiHTTPSDelegate.swift` | furby.top 房间/聊天/安全接口与共享 DTO，HTTPS 重定向策略 |
 | `Core/Storage/KikiIdentityStorage.swift` | 身份存储接口、Keychain实现 |
 | `Core/DesignSystem/KikiPalette.swift`、`KikiAvatar.swift` | 共用颜色、头像绘制/加载 |
 | `Core/Notifications/KikiPush.swift`、`Core/Diagnostics/KikiIncidents.swift` | APNs登记/点击导航、业务/请求/媒体故障关联 |
@@ -76,15 +76,14 @@ ios/
 | `Features/VoiceRooms/Services/` | RTCService、RoomRuntime：LiveKit、音轨、权限、重连、消息同步 |
 | `Features/VoiceRooms/Views/` | 房间主界面、上麦审批、公告与诊断辅助视图 |
 | `Features/VoiceRooms/Presentation/`、`Chat/` | UIKit房间host、悬浮恢复、消息展示/输入与键盘 |
-| `Features/Gifts/` | 体验钱包/背包、赠送队列、装扮、效果及装饰头像 |
-| `Features/Social/`、`Moments/` | 关系/通知模型及页面、动态/赞评/发布 |
+| `Features/Social/` | 关系/通知模型及页面 |
 | `Features/Messaging/` | 私聊详情、会话行和未读请求门禁 |
 | `Features/Authentication/`、`Privacy/` | 原生Apple授权、登录/首次昵称、协议校验/确认/撤回 |
 | `Features/Profile/` | 个人资料、设置、收藏/足迹、注销与安全入口 |
 
-AppStore 保留跨页面业务状态和服务编排，RootView 保留门禁与导航。已从原集中文件中抽出调色板、头像、身份存储、HTTPS delegate、房间模型、大厅/封面、装饰头像、未读门禁、房间host、公告和诊断视图等完整顶层类型。Social、Profile、网络 DTO 和部分测试仍有多职责集中；本轮未将所有大文件完全拆解。
+AppStore 保留跨页面业务状态和服务编排，RootView 保留门禁与导航。已从原集中文件中抽出调色板、头像、身份存储、HTTPS delegate、房间模型、大厅/封面、未读门禁、房间host、公告和诊断视图等完整顶层类型。Social、Profile、网络 DTO 和部分测试仍有多职责集中；本轮未将所有大文件完全拆解。
 
-`Resources/Assets.xcassets` 存品牌图标和启动配色，预设头像由 KikiAvatar 的 Emoji/色彩绘制。`Resources/Gifts`、协议 JSON、PrivacyInfo 和启动页继续按原包内资源名加载；`Configuration` 只改变工程定位，不改变 Bundle ID、Keychain namespace 或服务域名。
+`Resources/Assets.xcassets` 存品牌图标和启动配色。未上传头像时，KikiAvatar 与语聊悬浮窗使用 iOS SF Symbols 的 `person.crop.circle.fill`，颜色随深浅色模式变化；编辑头像仅支持用户从相册上传照片。房间预设背景的五款索引由语聊服务保存，客户端随深浅色模式绘制（见 [房间背景](ROOM_BACKGROUNDS.zh-CN.md)）；协议 JSON、PrivacyInfo 和启动页继续按原包内资源名加载；`Configuration` 只改变工程定位，不改变 Bundle ID、Keychain namespace 或服务域名。
 
 ## 状态与服务流
 
@@ -105,7 +104,7 @@ ObservableObject 保存跨页和会话级状态，页面 `@State` 保存分页�
 | 链路 | 凭据与职责 |
 | --- | --- |
 | 用户 App → `https://kiki.group` | 账号 bearer；Apple、资料、社交、协议、APNs |
-| 用户 App → `https://furby.top` | 独立语聊会话；房间、麦位、消息、礼物与安全 |
+| 用户 App → `https://furby.top` | 独立语聊会话；房间、麦位、消息与安全 |
 | 用户 App → `wss://furby.top` / WebRTC | 指定房间凭证，经信令网关核验后连接LiveKit |
 | 管理 App → `https://kiki.group/admin/v2/` | 独立Passkey运维会话与逐项授权 |
 | 账号服务 ↔ 语聊服务 | 独立签名内部API，授权交换、撤销、屏蔽及管理代理 |

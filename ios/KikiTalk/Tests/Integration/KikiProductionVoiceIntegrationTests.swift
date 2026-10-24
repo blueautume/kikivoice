@@ -10,323 +10,6 @@ import XCTest
 /// Apple, reads account credentials, or adds a production login bypass.
 final class KikiProductionVoiceIntegrationTests: XCTestCase {
     @MainActor
-    func testRoomHostAutomaticallyReceivesPeerGiftAndPresentsAnimation() async throws {
-        guard let encoded = ProcessInfo.processInfo.environment["KIKI_PRODUCTION_VOICE_ACCOUNTS_JSON"], !encoded.isEmpty else {
-            throw XCTSkip("需在私密测试环境注入两份可注销的正式语聊换票结果；不使用 Apple 登录。")
-        }
-        let sessions: [KikiVoiceSessionResponse]
-        do { sessions = try JSONDecoder().decode([KikiVoiceSessionResponse].self, from: Data(encoded.utf8)) }
-        catch { XCTFail("私密测试会话格式不符合换票契约。"); return }
-        guard sessions.count >= 2 else { XCTFail("需要两份独立语聊会话。"); return }
-        let receiver = sessions[0], sender = sessions[1]
-        guard receiver.user.id != sender.user.id,
-              [receiver, sender].allSatisfy({ !$0.token.isEmpty && $0.expiresAt > Int(Date().timeIntervalSince1970) + 60 &&
-                  $0.sdk.provider == "livekit" && $0.sdk.serverURL == "wss://furby.top" &&
-                  $0.sdk.userID == $0.user.id }) else {
-            XCTFail("测试会话必须是未过期的独立正式语聊授权。"); return
-        }
-        let api = KikiAPIClient.shared
-        let rtc = KikiRTCService.shared
-        let gifts = KikiGiftStore()
-        gifts.configure(api: api, token: receiver.token, userID: receiver.user.id)
-        rtc.renewAuthorization = nil
-        rtc.onRoomClosed = nil; rtc.onSessionExpired = nil
-        rtc.configure(api: api)
-        rtc.configureGifts(gifts)
-        let peer = Room()
-        var roomID: String?
-        var receivedEventCount = 0
-        var animationRendered = false
-        var peerSendCost = 0
-        var succeeded = false
-        defer {
-            // The parent runner audits and disposes the two isolated identities.
-            // Only this small, non-secret result crosses the runner boundary.
-            let metadata: [String: Any] = [
-                "roomID": roomID ?? "", "receivedEventCount": receivedEventCount,
-                "animationRendered": animationRendered, "peerSendCost": peerSendCost,
-                "succeeded": succeeded,
-                "device": UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
-            ]
-            if let data = try? JSONSerialization.data(withJSONObject: metadata, options: [.sortedKeys]) {
-                try? data.write(to: URL(fileURLWithPath: "/tmp/kiki-gift-receive-result.json"), options: .atomic)
-            }
-            rtc.configureGifts(nil)
-            gifts.reset()
-        }
-
-
-        do {
-            let before = try await api.experience(token: receiver.token)
-            let created = try await api.reserveRoom(title: "礼物接收端自动同步验收", category: "随心聊", isLive: false, theme: 0, token: receiver.token)
-            roomID = created.id
-            try await rtc.login(credentials: receiver.sdk, sessionToken: receiver.token)
-            try await rtc.createRoom(roomID: created.id, title: created.title, category: created.category, isLive: false, theme: created.theme)
-            XCTAssertTrue(rtc.gifts === gifts)
-            XCTAssertTrue(rtc.isPresentingRoom)
-            XCTAssertFalse(rtc.microphoneEnabled)
-            let grant = try await api.rtcJoin(roomID: created.id, token: sender.token)
-            try await peer.connect(url: grant.serverURL, token: grant.participantToken)
-            try await waitFor("真实房间呈现并由页面自动建立礼物游标") {
-                rtc.participants.count == 2 && peer.remoteParticipants.count == 1 &&
-                    gifts.roomCursor != nil && self.presentedRoomController(for: rtc)?.viewIfLoaded?.window != nil
-            }
-            XCTAssertFalse(peer.localParticipant.isMicrophoneEnabled())
-            XCTAssertTrue(gifts.events.isEmpty)
-            let controller = try XCTUnwrap(presentedRoomController(for: rtc))
-            let window = try XCTUnwrap(controller.viewIfLoaded?.window)
-            let requestID = UUID()
-            let sent = try await api.sendGift(roomID: created.id, giftID: "flower_rain", quantity: 1,
-                                             recipientIDs: [receiver.user.id], requestID: requestID, token: sender.token)
-            peerSendCost = sent.totalCost
-            let eventID = try XCTUnwrap(sent.events.first?.id)
-            XCTAssertEqual(sent.events.count, 1)
-            XCTAssertEqual(sent.totalCost, 0, "首份花雨优先使用一次性体验礼包。")
-            XCTAssertEqual(sent.inventoryUsed, 1)
-            XCTAssertEqual(sent.diamondQuantity, 0)
-            XCTAssertEqual(sent.totalQuantity, 1)
-            XCTAssertEqual(sent.giftInventory.first { $0.giftID == "flower_rain" }?.quantity, 2)
-
-            // Do not call gifts.pollRoom here: the UIKit-presented SwiftUI room
-            // must drive the receiving account's first and incremental reads.
-            try await waitFor("收礼方页面自动收到另一端礼物") { gifts.events.contains { $0.id == eventID } }
-            receivedEventCount = gifts.events.filter { $0.id == eventID }.count
-            XCTAssertEqual(receivedEventCount, 1)
-            XCTAssertTrue(gifts.events.contains {
-                $0.id == eventID && $0.senderUserID == sender.user.id && $0.recipientUserID == receiver.user.id
-            })
-            try await waitFor("收礼方真实房间播放随包 GIF") { !self.animatedImages(in: controller.view).isEmpty }
-            let animation = try XCTUnwrap(animatedImages(in: controller.view).first)
-            animationRendered = (animation.image?.images?.count ?? 0) > 1
-            XCTAssertTrue(animationRendered)
-            XCTAssertFalse(animation.isUserInteractionEnabled)
-            window.layoutIfNeeded()
-            let screenshot = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
-            }
-            let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
-            let output = URL(fileURLWithPath: "/tmp/" + device + "-kiki-gift-receive-fixed.png")
-            try XCTUnwrap(screenshot.pngData()).write(to: output, options: .atomic)
-            let attachment = XCTAttachment(image: screenshot)
-            attachment.name = device + "-peer-gift-received-in-real-room"
-            attachment.lifetime = .keepAlways
-            add(attachment)
-
-            let after = try await api.experience(token: receiver.token)
-            XCTAssertEqual(after.wallet.balance, before.wallet.balance, "收礼不增加钻石或产生收益。")
-            XCTAssertEqual(after.giftInventory, before.giftInventory, "收到礼物只展示，不增加可转赠背包。")
-            let retry = try await api.sendGift(roomID: created.id, giftID: "flower_rain", quantity: 1,
-                                              recipientIDs: [receiver.user.id], requestID: requestID, token: sender.token)
-            XCTAssertEqual(retry, sent, "重试复用原结算，不能再次扣背包或钻石。")
-            try await Task.sleep(nanoseconds: 3_000_000_000)
-            receivedEventCount = gifts.events.filter { $0.id == eventID }.count
-            XCTAssertEqual(receivedEventCount, 1, "同一请求重试和自动增量读取不能重复收礼。")
-            XCTAssertFalse(rtc.microphoneEnabled)
-            XCTAssertFalse(peer.localParticipant.isMicrophoneEnabled())
-            await rtc.leaveRoom(endRoom: true)
-            try await waitFor("验收房间结束并断开双方") { rtc.currentSDKRoomID == nil && peer.connectionState == .disconnected }
-            await rtc.logout()
-            await peer.disconnect()
-            succeeded = true
-        } catch {
-            if let roomID { _ = try? await api.setRoomStatus(roomID, status: "ended", token: receiver.token) }
-            await rtc.logout()
-            await peer.disconnect()
-            XCTFail("正式收礼页面集成验收未完成（凭据及底层错误原文已隐藏）。")
-            throw NSError(domain: "KikiProductionVoiceIntegration", code: 3)
-        }
-    }
-
-    @MainActor
-    func testBackpackBurstSendUsesInventoryBeforeDiamonds() async throws {
-        guard let encoded = ProcessInfo.processInfo.environment["KIKI_PRODUCTION_VOICE_ACCOUNTS_JSON"], !encoded.isEmpty else {
-            throw XCTSkip("需在私密测试环境注入两份可注销的正式语聊换票结果；不使用 Apple 登录。")
-        }
-        let sessions: [KikiVoiceSessionResponse]
-        do { sessions = try JSONDecoder().decode([KikiVoiceSessionResponse].self, from: Data(encoded.utf8)) }
-        catch { XCTFail("私密测试会话格式不符合换票契约。"); return }
-        guard sessions.count >= 2 else { XCTFail("需要两份独立语聊会话。"); return }
-        let receiver = sessions[0], sender = sessions[1]
-        guard receiver.user.id != sender.user.id,
-              [receiver, sender].allSatisfy({ !$0.token.isEmpty && $0.expiresAt > Int(Date().timeIntervalSince1970) + 60 &&
-                  $0.sdk.provider == "livekit" && $0.sdk.serverURL == "wss://furby.top" &&
-                  $0.sdk.userID == $0.user.id }) else {
-            XCTFail("测试会话必须是未过期的独立正式语聊授权。"); return
-        }
-        let api = KikiAPIClient.shared
-        let rtc = KikiRTCService.shared
-        let gifts = KikiGiftStore()
-        let senderGifts = KikiGiftStore()
-        gifts.configure(api: api, token: receiver.token, userID: receiver.user.id)
-        senderGifts.configure(api: api, token: sender.token, userID: sender.user.id)
-        rtc.renewAuthorization = nil
-        rtc.onRoomClosed = nil; rtc.onSessionExpired = nil
-        rtc.configure(api: api)
-        rtc.configureGifts(gifts)
-        let peer = Room()
-        var roomID: String?
-        var receivedEventCount = 0
-        var batchCount = 0
-        var animationRendered = false
-        var topComboCount = 0
-        var topComboConfirmed = false
-        var topComboObservable = false
-        var totalCost = 0
-        var inventoryUsed = 0
-        var senderFlowerCount = -1
-        var receiverFlowerCount = -1
-        var succeeded = false
-        defer {
-            let metadata: [String: Any] = [
-                "roomID": roomID ?? "", "receivedEventCount": receivedEventCount,
-                "batchCount": batchCount, "animationRendered": animationRendered,
-                "topComboCount": topComboCount, "topComboConfirmed": topComboConfirmed,
-                "topComboObservable": topComboObservable,
-                "totalCost": totalCost, "inventoryUsed": inventoryUsed,
-                "senderFlowerCount": senderFlowerCount, "receiverFlowerCount": receiverFlowerCount,
-                "succeeded": succeeded,
-                "device": UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
-            ]
-            if let data = try? JSONSerialization.data(withJSONObject: metadata, options: [.sortedKeys]) {
-                try? data.write(to: URL(fileURLWithPath: "/tmp/kiki-gift-burst-result.json"), options: .atomic)
-            }
-            rtc.configureGifts(nil)
-            gifts.reset()
-            senderGifts.reset()
-        }
-        do {
-            // Each live acceptance method requires a fresh pair of disposable
-            // identities; prior gift methods must never consume this package.
-            let receiverBefore = try await api.experience(token: receiver.token)
-            let senderBefore = try await api.experience(token: sender.token)
-            XCTAssertEqual(receiverBefore.wallet.balance, 100_000_000)
-            XCTAssertEqual(senderBefore.wallet.balance, 100_000_000)
-            XCTAssertEqual(receiverBefore.giftInventory.first { $0.giftID == "flower_rain" }?.quantity, 3)
-            XCTAssertEqual(senderBefore.giftInventory.first { $0.giftID == "flower_rain" }?.quantity, 3)
-            await gifts.refresh()
-            await senderGifts.refresh()
-            XCTAssertEqual(senderGifts.giftCount("flower_rain"), 3)
-            let flower = try XCTUnwrap(senderGifts.giftItems.first { $0.id == "flower_rain" })
-            let created = try await api.reserveRoom(title: "背包多人连送自动验收", category: "随心聊", isLive: false, theme: 0, token: receiver.token)
-            roomID = created.id
-            try await rtc.login(credentials: receiver.sdk, sessionToken: receiver.token)
-            try await rtc.createRoom(roomID: created.id, title: created.title, category: created.category, isLive: false, theme: created.theme)
-            XCTAssertTrue(rtc.gifts === gifts)
-            XCTAssertTrue(rtc.isPresentingRoom)
-            XCTAssertFalse(rtc.microphoneEnabled)
-            let grant = try await api.rtcJoin(roomID: created.id, token: sender.token)
-            try await peer.connect(url: grant.serverURL, token: grant.participantToken)
-            try await waitFor("双端真实入房与接收页面礼物游标") {
-                rtc.participants.count == 2 && peer.remoteParticipants.count == 1 &&
-                    gifts.roomCursor != nil && self.presentedRoomController(for: rtc)?.viewIfLoaded?.window != nil
-            }
-            XCTAssertFalse(peer.localParticipant.isMicrophoneEnabled())
-            XCTAssertTrue(gifts.events.isEmpty)
-            let controller = try XCTUnwrap(presentedRoomController(for: rtc))
-            let window = try XCTUnwrap(controller.viewIfLoaded?.window)
-            let queue = senderGifts.sendQueue(for: created.id)
-            let recipients = [receiver.user.id, sender.user.id]
-            for _ in 0..<3 { XCTAssertTrue(queue.enqueue(gift: flower, recipientIDs: recipients)) }
-            XCTAssertNil(queue.lastCombo, "点击瞬间尚未获得服务器确认。")
-
-            // The receiving account's actual presented room drives all reads.
-            // No manual gifts.pollRoom call may make this acceptance pass.
-            try await waitFor("接收方自动读取三次多人单件赠送并播放 GIF") {
-                gifts.events.filter { $0.senderUserID == sender.user.id && $0.giftID == "flower_rain" }.count >= 6 &&
-                    !self.animatedImages(in: controller.view).isEmpty
-            }
-            let animation = try XCTUnwrap(animatedImages(in: controller.view).first)
-            animationRendered = (animation.image?.images?.count ?? 0) > 1
-            XCTAssertTrue(animationRendered)
-            XCTAssertFalse(animation.isUserInteractionEnabled)
-            // The receiving room must combine three confirmed batches into its
-            // visible top counter. Scan the real public accessibility labels;
-            // event counts alone cannot prove what the person actually sees.
-            let comboDeadline = Date().addingTimeInterval(2)
-            var observedTopCombo: Int?
-            repeat {
-                if let count = giftTopComboCount(in: controller.view, giftName: flower.name) {
-                    observedTopCombo = max(observedTopCombo ?? 0, count)
-                    if count == 3 { break }
-                }
-                try await Task.sleep(nanoseconds: 100_000_000)
-            } while Date() < comboDeadline
-            topComboObservable = observedTopCombo != nil
-            topComboCount = observedTopCombo ?? 0
-            topComboConfirmed = observedTopCombo == 3
-            if let observedTopCombo {
-                XCTAssertEqual(observedTopCombo, 3, "接收端顶部可见连击应为 ×3，不能只验证三批服务端事件。")
-            } else {
-                // In-process SwiftUI accessibility can omit virtual nodes on
-                // some simulator versions. Record the missing proof explicitly;
-                // the saved real-room screenshot then needs visual inspection.
-                let note = XCTAttachment(string: "未能通过公开可访问性节点读取顶部连击数；topComboConfirmed=false，需核对本测试保存的真实房间截图。")
-                note.name = "top-combo-accessibility-unavailable"; note.lifetime = .keepAlways; add(note)
-            }
-            window.layoutIfNeeded()
-            let screenshot = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
-            }
-            let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
-            try XCTUnwrap(screenshot.pngData()).write(to: URL(fileURLWithPath: "/tmp/" + device + "-kiki-gift-burst.png"), options: .atomic)
-            let attachment = XCTAttachment(image: screenshot)
-            attachment.name = device + "-backpack-burst-in-real-room"
-            attachment.lifetime = .keepAlways
-            add(attachment)
-
-            try await waitFor("发送队列全部确认并累计三次连送") {
-                queue.pendingCount == 0 && !queue.isSending && queue.lastCombo?.count == 3
-            }
-            let events = gifts.events.filter { $0.senderUserID == sender.user.id && $0.giftID == "flower_rain" }
-            receivedEventCount = events.count
-            batchCount = Set(events.map(\.batchID)).count
-            XCTAssertEqual(receivedEventCount, 6)
-            XCTAssertEqual(batchCount, 3)
-            XCTAssertEqual(Set(events.map(\.id)).count, 6)
-            XCTAssertTrue(events.allSatisfy { $0.quantity == 1 && $0.batchRecipientCount == 2 })
-            for batch in Dictionary(grouping: events, by: \.batchID).values {
-                XCTAssertEqual(batch.count, 2)
-                XCTAssertEqual(Set(batch.map(\.recipientUserID)), Set(recipients), "每次 Send 为每个选中目标各送一份。")
-            }
-            let combo = try XCTUnwrap(queue.lastCombo)
-            totalCost = combo.totalCost
-            inventoryUsed = combo.inventoryUsed
-            XCTAssertEqual(combo.count, 3)
-            XCTAssertEqual(combo.giftID, "flower_rain")
-            XCTAssertEqual(Set(combo.recipientIDs), Set(recipients))
-            XCTAssertEqual(inventoryUsed, 3)
-            XCTAssertEqual(totalCost, 297)
-            XCTAssertEqual(senderGifts.wallet?.balance, 100_000_000 - 297)
-            XCTAssertEqual(senderGifts.giftCount("flower_rain"), 0)
-            let senderAfter = try await api.experience(token: sender.token)
-            let receiverAfter = try await api.experience(token: receiver.token)
-            senderFlowerCount = senderAfter.giftInventory.first { $0.giftID == "flower_rain" }?.quantity ?? 0
-            receiverFlowerCount = receiverAfter.giftInventory.first { $0.giftID == "flower_rain" }?.quantity ?? 0
-            XCTAssertEqual(senderFlowerCount, 0)
-            XCTAssertEqual(senderAfter.wallet.balance, 100_000_000 - 297)
-            XCTAssertEqual(receiverFlowerCount, 3)
-            XCTAssertEqual(receiverAfter.giftInventory, receiverBefore.giftInventory)
-            XCTAssertEqual(receiverAfter.wallet.balance, receiverBefore.wallet.balance)
-            let giftEntries = senderAfter.entries.filter { $0.kind == "gift" }
-            XCTAssertEqual(giftEntries.count, 3, "三次确认各保留一次结算记录，纯背包单金额为零。")
-            XCTAssertEqual(giftEntries.reduce(0) { $0 + $1.amount }, -297)
-            XCTAssertFalse(rtc.microphoneEnabled)
-            XCTAssertFalse(peer.localParticipant.isMicrophoneEnabled())
-            await rtc.leaveRoom(endRoom: true)
-            try await waitFor("连送验收房间结束并断开双方") { rtc.currentSDKRoomID == nil && peer.connectionState == .disconnected }
-            await rtc.logout()
-            await peer.disconnect()
-            succeeded = true
-        } catch {
-            if let roomID { _ = try? await api.setRoomStatus(roomID, status: "ended", token: receiver.token) }
-            await rtc.logout()
-            await peer.disconnect()
-            XCTFail("正式背包连送集成验收未完成（凭据及底层错误原文已隐藏）。")
-            throw NSError(domain: "KikiProductionVoiceIntegration", code: 4)
-        }
-    }
-
-    @MainActor
     func testMigratedRoomPermissionsChatMinimizeAnnouncementAndEnd() async throws {
         guard let encoded = ProcessInfo.processInfo.environment["KIKI_PRODUCTION_VOICE_ACCOUNTS_JSON"], !encoded.isEmpty else {
             throw XCTSkip("需在私密测试环境注入两份可注销的正式语聊换票结果；不使用 Apple 登录。")
@@ -451,11 +134,9 @@ final class KikiProductionVoiceIntegrationTests: XCTestCase {
         }
         let api = KikiAPIClient.shared
         let rtc = KikiRTCService.shared
-        let gifts = KikiGiftStore()
-        gifts.configure(api: api, token: listener.token, userID: listener.user.id)
         rtc.renewAuthorization = nil
         rtc.onRoomClosed = nil; rtc.onSessionExpired = nil
-        rtc.configure(api: api); rtc.configureGifts(gifts)
+        rtc.configure(api: api)
         let peer = Room()
         var roomID: String?
         var minimizedBeforeClosure = false
@@ -496,7 +177,6 @@ final class KikiProductionVoiceIntegrationTests: XCTestCase {
             if let data = try? JSONSerialization.data(withJSONObject: metadata, options: [.sortedKeys]) {
                 try? data.write(to: URL(fileURLWithPath: "/tmp/kiki-minimized-close-result.json"), options: .atomic)
             }
-            rtc.configureGifts(nil); gifts.reset()
         }
         do {
             // A is a direct SDK owner and B is the app's actual UIKit room.
@@ -594,11 +274,9 @@ final class KikiProductionVoiceIntegrationTests: XCTestCase {
         }
         let api = KikiAPIClient.shared
         let rtc = KikiRTCService.shared
-        let gifts = KikiGiftStore()
-        gifts.configure(api: api, token: host.token, userID: host.user.id)
         rtc.renewAuthorization = nil
         rtc.onRoomClosed = nil; rtc.onSessionExpired = nil
-        rtc.configure(api: api); rtc.configureGifts(gifts)
+        rtc.configure(api: api)
         let peer = Room()
         let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
         var roomID: String?
@@ -636,7 +314,6 @@ final class KikiProductionVoiceIntegrationTests: XCTestCase {
             if let data = try? JSONSerialization.data(withJSONObject: metadata, options: [.sortedKeys]) {
                 try? data.write(to: URL(fileURLWithPath: "/tmp/kiki-ordered-room-result.json"), options: .atomic)
             }
-            rtc.configureGifts(nil); gifts.reset()
         }
         do {
             let created = try await api.reserveRoom(title: "顺位上麦与房主关闭验收", category: "随心聊", isLive: false, theme: 0, token: host.token)
@@ -816,25 +493,6 @@ final class KikiProductionVoiceIntegrationTests: XCTestCase {
     }
 
     @MainActor
-    private func giftTopComboCount(in root: UIView, giftName: String) -> Int? {
-        let nodes = roomAccessibilityNodes(in: root)
-        let labels = nodes.compactMap { node -> String? in
-            let identifier = (node as? UIAccessibilityIdentification)?.accessibilityIdentifier
-            if identifier == "giftPresentationCombo" { return node.accessibilityLabel }
-            // Public label fallback for simulators that omit a virtual node's
-            // identifier. Chat says “送给”; the presentation says “赠送”.
-            if let label = node.accessibilityLabel, label.contains(giftName), label.contains("×"),
-               label.contains("赠送") || label.hasPrefix(giftName + " ×") { return label }
-            if let text = (node as? UILabel)?.text, text.hasPrefix(giftName + " ×") { return text }
-            return nil
-        }
-        return labels.compactMap { text -> Int? in
-            guard let range = text.range(of: "×\\s*[0-9]+", options: .regularExpression) else { return nil }
-            return Int(text[range].filter(\.isNumber))
-        }.max()
-    }
-
-    @MainActor
     private func captureOrderedScreenshot(_ window: UIWindow, name: String) throws {
         window.layoutIfNeeded()
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
@@ -903,16 +561,6 @@ final class KikiProductionVoiceIntegrationTests: XCTestCase {
         }
         if controller.presentedViewController != nil { sheet.dismiss(animated: false) }
         try? await Task.sleep(nanoseconds: 250_000_000)
-    }
-
-    @MainActor
-    private func animatedImages(in view: UIView) -> [UIImageView] {
-        var images: [UIImageView] = []
-        if let imageView = view as? UIImageView, (imageView.image?.images?.count ?? 0) > 1 {
-            images.append(imageView)
-        }
-        for child in view.subviews { images.append(contentsOf: animatedImages(in: child)) }
-        return images
     }
 
     @MainActor

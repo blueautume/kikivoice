@@ -19,22 +19,9 @@ def path(notification_id):
     return BASE+"/notifications/"+notification_id
 
 
-def comment_notice(e, owner, actor, text="真正的评论"):
-    post=e.c.post(BASE+"/moments",headers=authorization(owner),json=mutation(text="保留的动态",mediaIDs=[]))
-    assert post.status_code==200,post.text
-    moment_id=post.json()["moment"]["id"]
-    payload=mutation(text=text)
-    response=e.c.post(BASE+"/moments/"+moment_id+"/comments",headers=authorization(actor),json=payload)
-    assert response.status_code==200,response.text
-    comment_id=response.json()["comment"]["id"]
-    with database(e.c.settings) as db:
-        notification_id=db.execute("SELECT id FROM social_notifications WHERE dedupe_key=?",("comment:"+comment_id,)).fetchone()[0]
-    return notification_id,moment_id,comment_id,payload
-
-
-def test_delete_one_comment_notice_preserves_other_entries_content_and_unread_totals(env):
+def test_delete_one_notice_preserves_other_entries_and_unread_totals(env):
     e=env;owner,peer,other=[login(e.c,name) for name in ("delete-owner","delete-peer","delete-other")]
-    target,moment_id,comment_id,_=comment_notice(e,owner,peer)
+    target=notice(e,owner)
     kept=notice(e,owner)
     theirs=notice(e,other)
     private=send(e,peer,owner)
@@ -56,8 +43,6 @@ def test_delete_one_comment_notice_preserves_other_entries_content_and_unread_to
     unified=e.c.get(BASE+"/inbox",headers=authorization(owner)).json()
     assert unified["unreadNotificationCount"]==2 and unified["unreadDirectMessageCount"]==1
     assert any(item.get("conversation",{}).get("id")==private["conversationID"] for item in unified["entries"])
-    current=e.c.get(BASE+"/moments/"+moment_id,headers=authorization(owner)).json()["moment"]
-    assert current["commentCount"]==1 and current["commentPreview"][0]["id"]==comment_id
     with database(e.c.settings) as db:
         assert db.execute("SELECT 1 FROM social_notifications WHERE id=?",(target,)).fetchone() is None
         assert db.execute("SELECT 1 FROM social_notification_sequence WHERE notification_id=?",(target,)).fetchone() is None
@@ -99,26 +84,6 @@ def test_delete_is_owner_bound_and_request_ids_cannot_cross_targets_or_operation
     # The same UUID in a different authenticated account is an independent receipt.
     ok(e,"DELETE",path(theirs),other,payload)
     assert [item["id"] for item in notifications(e,owner)["notifications"]]==[kept]
-
-
-def test_source_replays_do_not_recreate_deleted_comment_like_or_follow_notifications(env):
-    e=env;owner,peer=login(e.c,"replay-owner"),login(e.c,"replay-peer")
-    target,moment_id,_,comment_payload=comment_notice(e,owner,peer)
-    like_path=BASE+"/moments/"+moment_id+"/like"
-    follow_path=BASE+"/follows/"+owner["user"]["id"]
-    like_payload,follow_payload=mutation(),mutation()
-    assert request(e,"PUT",like_path,peer,like_payload).status_code==200
-    assert request(e,"PUT",follow_path,peer,follow_payload).status_code==200
-    deleted={item["id"] for item in notifications(e,owner)["notifications"]}
-    assert target in deleted and len(deleted)==3
-    for item in deleted: ok(e,"DELETE",path(item),owner,mutation())
-    assert request(e,"POST",BASE+"/moments/"+moment_id+"/comments",peer,comment_payload).status_code==200
-    for route,payload in ((like_path,like_payload),(follow_path,follow_payload),(like_path,mutation()),(follow_path,mutation())):
-        assert request(e,"PUT",route,peer,payload).status_code==200
-    assert notifications(e,owner)["notifications"]==[]
-    detail=e.c.get(BASE+"/moments/"+moment_id,headers=authorization(owner)).json()["moment"]
-    assert detail["commentCount"]==1 and detail["likeCount"]==1
-    assert e.c.get(BASE+"/people/"+owner["user"]["id"],headers=authorization(peer)).json()["person"]["following"] is True
 
 
 def test_delete_cancels_pending_and_claimed_push_but_retains_accepted_receipts_without_routes(env):
@@ -222,3 +187,17 @@ def test_concurrent_same_request_id_commits_one_deletion_receipt(env,monkeypatch
     with database(e.c.settings) as db:
         assert db.execute("SELECT COUNT(*) FROM social_receipts WHERE actor_id=? AND request_id=?",(account_id(e,owner),payload["requestID"])).fetchone()[0]==1
         assert db.execute("SELECT COUNT(*) FROM social_rate_events WHERE actor_id=? AND kind='inbox'",(account_id(e,owner),)).fetchone()[0]==1
+
+
+def test_follow_source_replay_does_not_recreate_deleted_notification(env):
+    e=env;owner,peer=login(e.c,"replay-owner"),login(e.c,"replay-peer")
+    follow_path=BASE+"/follows/"+owner["user"]["id"]
+    payload=mutation()
+    assert request(e,"PUT",follow_path,peer,payload).status_code==200
+    notices=notifications(e,owner)["notifications"]
+    assert len(notices)==1
+    ok(e,"DELETE",path(notices[0]["id"]),owner,mutation())
+    for retry in (payload,mutation()):
+        assert request(e,"PUT",follow_path,peer,retry).status_code==200
+    assert notifications(e,owner)["notifications"]==[]
+    assert e.c.get(BASE+"/people/"+owner["user"]["id"],headers=authorization(peer)).json()["person"]["following"] is True

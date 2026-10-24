@@ -11,6 +11,7 @@ import Combine
     @Published private(set) var customAvatarURL: String?
     @Published private(set) var needsNickname = false
     @Published private(set) var userID = ""
+    @Published private(set) var displayID = ""
     @Published private(set) var favoriteIDs: Set<String> = []
     @Published private(set) var recentRoomIDs: [String] = []
     @Published private(set) var notificationsEnabled = false
@@ -48,14 +49,10 @@ import Combine
     @Published private(set) var directContentRevision = 0
     private var directAccessRevision: [String: Int] = [:]
     private var directAccessFetchRevision: [String: Int] = [:]
-    private let socialImageCache: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>(); cache.countLimit = 40; cache.totalCostLimit = 24 * 1024 * 1024; return cache
-    }()
     var unreadMessageCount: Int { unreadNotificationCount + unreadDirectMessageCount }
     @Published private(set) var directHistoryRevision: [String: Int] = [:]
     @Published private(set) var notificationHistoryRevision = 0
     @Published private(set) var socialRevision = 0
-    @Published private(set) var momentContentRevision = 0
     @Published private(set) var socialPrivacyRevision = 0
     private var socialRefreshID = UUID()
     private var socialMutationRefreshTask: Task<Void, Never>?
@@ -63,10 +60,6 @@ import Combine
     private var directUnreadGate = KikiUnreadRequestGate()
     private var notificationForegroundScope: KikiForegroundNotificationScope?
     private var directForegroundScope: KikiForegroundNotificationScope?
-    private var momentNotificationScope: KikiForegroundNotificationScope?
-    private var momentNotificationSequence = 0
-    private var legacyMomentNotificationIDs: Set<String> = []
-    private var legacyMomentNotificationOrder: [String] = []
     private var appIsForeground = false
     private struct VisibleDirectConversation {
         let owner: UUID
@@ -96,7 +89,6 @@ import Combine
     }
 
     let consent: KikiConsentStore
-    let gifts = KikiGiftStore()
     private let identity: any KikiIdentityStoring
     private let apiProvider: () -> KikiAccountAPIClient
     private let voiceAPIProvider: () -> KikiAPIClient
@@ -219,7 +211,7 @@ import Combine
                 self.pushController?.endSession()
             self.sessionGeneration += 1
             self.isAuthenticated = false
-            self.suspendExperience()
+
             self.credentialsExpiry = 0
             self.voiceToken = nil; self.voiceUserID = nil
             self.leaseTask?.cancel(); self.leaseTask = nil
@@ -671,7 +663,7 @@ import Combine
         }
     }
 
-    func updateRoomTitle(roomID: String, title: String) async throws -> KikiRoomState {
+    func updateRoomTitle(roomID: String, title: String, theme: Int? = nil) async throws -> KikiRoomState {
         try requireAccess()
         guard isAuthenticated, !needsNickname, let token else { throw KikiAPIError.server(401, "请先登录。") }
         let generation = sessionGeneration
@@ -679,7 +671,7 @@ import Combine
         do {
             try await ensureSDKSession()
             let session = try currentVoiceToken()
-            let state = try await performAPI { try await voiceAPI.updateRoomTitle(roomID, title: title, token: session) }
+            let state = try await performAPI { try await voiceAPI.updateRoomTitle(roomID, title: title, theme: theme, token: session) }
             try requireAccess(generation: generation, token: token)
             guard state.room.hostID == voiceUserID, state.room.isCreatedByMe, state.me.role == .owner,
                   state.me.userID == voiceUserID else {
@@ -691,7 +683,7 @@ import Combine
             func renamed(_ rooms: [KikiRoom]) -> [KikiRoom] {
                 rooms.map { record in
                     guard record.id == roomID else { return record }
-                    var updated = record; updated.title = state.room.title; return updated
+                    var updated = record; updated.title = state.room.title; updated.theme = state.room.theme; return updated
                 }
             }
             roomMetadata = renamed(roomMetadata)
@@ -827,15 +819,15 @@ import Combine
         guard !trimmed.isEmpty, trimmed.count <= 16 else {
             throw KikiAPIError.server(422, "请输入 1–16 字的昵称。")
         }
-        try await updateProfile(name: trimmed, bio: bio, avatarIndex: avatarIndex)
+        try await updateProfile(name: trimmed, bio: bio)
         await refreshRooms()
     }
 
-    func updateProfile(name: String, bio: String, avatarIndex: Int, jpegData: Data? = nil, clearCustomAvatar: Bool = false) async throws {
+    func updateProfile(name: String, bio: String, jpegData: Data? = nil) async throws {
         try requireAccess()
         guard let token else { throw KikiAPIError.server(401, "请先登录。") }
         let contentRevision = notificationContentRevision
-        let updated = try await performAPI { try await api.updateProfile(name: name, bio: bio, avatarIndex: clearCustomAvatar && jpegData == nil ? avatarIndex : nil, token: token) }
+        let updated = try await performAPI { try await api.updateProfile(name: name, bio: bio, token: token) }
         try requireAccess(token: token)
         apply(updated, contentRevision: contentRevision)
         profileNeedsRTCSync = true
@@ -1040,7 +1032,7 @@ import Combine
         // Prevent room-close callbacks from starting a new SDK login while the
         // user is intentionally ending this session.
         isAuthenticated = false
-        suspendExperience()
+
         rtcStorage?.stopMediaForPrivacy()
         leaseTask?.cancel(); leaseTask = nil
         renewalTask?.cancel()
@@ -1068,7 +1060,7 @@ import Combine
         incidents.clear()
         sessionGeneration += 1
         isAuthenticated = false
-        suspendExperience()
+
         rtcStorage?.stopMediaForPrivacy()
         leaseTask?.cancel(); leaseTask = nil
         renewalTask?.cancel()
@@ -1107,7 +1099,7 @@ import Combine
         isEndingSession = true
         isAuthenticated = false
         sessionGeneration += 1
-        suspendExperience()
+
         rtcStorage?.stopMediaForPrivacy()
         leaseTask?.cancel(); leaseTask = nil
         renewalTask?.cancel()
@@ -1152,6 +1144,7 @@ import Combine
         self.user = user
         if let token { incidents.bind(userID: user.id, token: token) }
         userID = user.id
+        displayID = user.publicID
         profileName = user.name
         bio = user.bio
         avatarIndex = user.avatarIndex
@@ -1238,7 +1231,7 @@ import Combine
                     self.sessionGeneration += 1
                     self.isEndingSession = true
                     self.isAuthenticated = false
-                    self.suspendExperience()
+
                     self.rtcStorage?.stopMediaForPrivacy()
                     self.voiceToken = nil; self.voiceUserID = nil; self.credentialsExpiry = 0
                     self.loadingError = "语聊授权暂时无法续期，请检查网络后重新连接。"
@@ -1256,20 +1249,6 @@ import Combine
         return voiceToken
     }
 
-    func refreshExperience() async {
-        guard permitsBusiness, isAuthenticated, !needsNickname else { return }
-        let generation = sessionGeneration
-        do {
-            try await ensureSDKSession()
-            try requireAccess(generation: generation)
-            await gifts.refresh()
-        } catch is CancellationError { }
-        catch {
-            guard !Task.isCancelled, generation == sessionGeneration else { return }
-            notify(error.localizedDescription)
-        }
-    }
-
     private func connectSDK(_ credentials: KikiSDKCredentials, voiceSession: String, expiresAt: Int,
                             generation: Int, expectedToken: String) async throws {
         try requireAccess(generation: generation, token: expectedToken)
@@ -1278,8 +1257,6 @@ import Combine
         catch { await rtcStorage?.logout(); throw error }
         voiceToken = voiceSession
         voiceUserID = credentials.userID
-        gifts.configure(api: voiceAPI, token: voiceSession, userID: credentials.userID)
-        rtc.configureGifts(gifts)
         credentialsExpiry = min(credentials.expiresAt, expiresAt)
         startLeaseRenewal()
         if !needsNickname { try await syncRTCProfile() }
@@ -1398,7 +1375,6 @@ import Combine
         guard privacy == socialPrivacyRevision else { throw CancellationError() }
         if notificationUnreadGate.accepts(fetch) {
             unreadNotificationCount = result.unreadCount
-            if cursor == nil, let scope { acceptMomentNotifications(result.notifications, scope: scope) }
             if cursor == nil, let push = pushController, let scope, scope == push.currentForegroundScope {
                 let baseline = notificationForegroundScope != scope
                 notificationForegroundScope = scope
@@ -1416,55 +1392,6 @@ import Combine
             }
         }
         return result
-    }
-
-    private func acceptMomentNotifications(_ notifications: [KikiSocialNotification], scope: KikiForegroundNotificationScope) {
-        guard scope.sessionKey == pushSessionKey, scope.privacyRevision == socialPrivacyRevision else { return }
-        let baseline = momentNotificationScope != scope
-        if baseline {
-            momentNotificationScope = scope
-            momentNotificationSequence = 0
-            legacyMomentNotificationIDs = []; legacyMomentNotificationOrder = []
-        }
-        let previousSequence = momentNotificationSequence
-        var changed = false
-        for notification in notifications {
-            let fresh: Bool
-            if notification.seq > 0 {
-                fresh = notification.seq > previousSequence
-                momentNotificationSequence = max(momentNotificationSequence, notification.seq)
-            } else {
-                fresh = legacyMomentNotificationIDs.insert(notification.id).inserted
-                legacyMomentNotificationOrder.removeAll { $0 == notification.id }
-                legacyMomentNotificationOrder.append(notification.id)
-                if legacyMomentNotificationOrder.count > 512 {
-                    legacyMomentNotificationIDs.remove(legacyMomentNotificationOrder.removeFirst())
-                }
-            }
-            // The server currently uses kind=system for comment/like notices.
-            // A verified moment reference is the contract; copy and kind are not.
-            // Even the first snapshot can postdate the feed's initial GET.
-            // Seed deduplication and request one content refresh; the separate
-            // banner gate still keeps its own initial snapshot silent.
-            if fresh, let momentID = notification.momentID, UUID(uuidString: momentID) != nil {
-                changed = true
-            }
-        }
-        if changed { momentContentRevision &+= 1 }
-    }
-
-    /// An account-verified push is only an invalidation hint. Feed permissions
-    /// and content still come from the ordinary authenticated moments request.
-    func momentContentPushReceived(scope: KikiForegroundNotificationScope) {
-        guard permitsBusiness, isAuthenticated, scope.sessionKey == pushSessionKey,
-              scope.privacyRevision == socialPrivacyRevision else { return }
-        momentContentRevision &+= 1
-    }
-
-    private func resetMomentNotificationTracking() {
-        momentNotificationScope = nil; momentNotificationSequence = 0
-        legacyMomentNotificationIDs = []; legacyMomentNotificationOrder = []
-        momentContentRevision &+= 1
     }
 
     func readNotifications(ids: [String] = [], all: Bool = false) async throws {
@@ -1539,51 +1466,6 @@ import Combine
         }
     }
 
-    func socialImage(_ media: KikiSocialMedia) async throws -> UIImage {
-        try requireAccess()
-        if let cached = socialImageCache.object(forKey: media.id as NSString) { return cached }
-        let privacy = socialPrivacyRevision
-        let image = try await socialRequest { try await self.api.socialImage(media, token: $0) }
-        guard privacy == socialPrivacyRevision else { throw CancellationError() }
-        socialImageCache.setObject(image, forKey: media.id as NSString, cost: Int(image.size.width * image.size.height * 4))
-        return image
-    }
-    func uploadSocialImage(_ jpeg: Data) async throws -> KikiSocialMedia {
-        try await socialRequest { try await self.api.socialUpload(jpeg: jpeg, token: $0) }
-    }
-    func socialMoments(kind: KikiMomentKind, userID: String? = nil, cursor: String? = nil) async throws -> KikiMomentsPage {
-        try await socialRequest { try await self.api.socialMoments(kind: kind, userID: userID, cursor: cursor, token: $0) }
-    }
-    func socialMoment(_ id: String) async throws -> KikiMoment {
-        try await socialRequest { try await self.api.socialMoment(id, token: $0) }
-    }
-    func publishMoment(requestID: UUID, text: String, mediaIDs: [String]) async throws -> KikiMoment {
-        try await momentMutation { try await self.api.socialPublishMoment(requestID: requestID, text: text, mediaIDs: mediaIDs, token: $0) }
-    }
-    func deleteMoment(_ id: String) async throws {
-        try await momentMutation { try await self.api.socialDeleteMoment(id, token: $0) }
-    }
-    func likeMoment(_ moment: KikiMoment) async throws -> KikiMoment {
-        try await momentMutation { try await self.api.socialLike(moment.id, enabled: !moment.liked, requestID: UUID(), token: $0) }
-    }
-    func socialComments(_ id: String, cursor: String? = nil) async throws -> KikiCommentsPage {
-        try await socialRequest { try await self.api.socialComments(id, cursor: cursor, token: $0) }
-    }
-    func commentMoment(_ id: String, text: String, requestID: UUID) async throws -> KikiMomentComment {
-        try await momentMutation { try await self.api.socialComment(id, text: text, requestID: requestID, token: $0) }
-    }
-    func deleteComment(_ id: String) async throws {
-        try await momentMutation { try await self.api.socialDeleteComment(id, token: $0) }
-    }
-
-    private func momentMutation<Value>(_ operation: (String) async throws -> Value) async throws -> Value {
-        let generation = sessionGeneration, privacy = socialPrivacyRevision, expectedToken = token
-        let result = try await socialRequest(operation)
-        try requireAccess(generation: generation, token: expectedToken)
-        guard privacy == socialPrivacyRevision else { throw CancellationError() }
-        momentContentRevision &+= 1
-        return result
-    }
     func socialConversations(cursor: String? = nil) async throws -> KikiConversationsPage {
         let privacy = socialPrivacyRevision
         let scope = pushSessionKey.map { KikiForegroundNotificationScope(sessionKey: $0, privacyRevision: privacy) }
@@ -1823,7 +1705,6 @@ import Combine
     }
     func socialPolicyChanged(userID: String, blocked: Bool) {
         socialPrivacyRevision += 1
-        resetMomentNotificationTracking()
         pendingDirectConversation = nil; directConversationPath = []
         pendingRoomNotification = nil; resolvedRoomNotification = nil; socialNavigationRevision &+= 1
         socialRefreshID = UUID()
@@ -1832,7 +1713,7 @@ import Combine
         notificationForegroundScope = nil; directForegroundScope = nil
         if blocked { followingOverrides[userID] = false; followingUserIDs.remove(userID); directDrafts[userID] = nil; pendingDirectMessages[userID] = nil }
         directMessageAccess = [:]; directAccessRevision = [:]; directAccessFetchRevision = [:]
-        socialImageCache.removeAllObjects(); socialRevision += 1
+        socialRevision += 1
         pushController?.privacyChanged()
     }
     func setSocialBlock(_ id: String, enabled: Bool) async throws {
@@ -1863,12 +1744,6 @@ import Combine
         if let error = error as? KikiAPIError, error.isUnauthorized { handle(error) }
     }
 
-    private func suspendExperience() {
-        // Invalidate queued writes synchronously, before session teardown awaits.
-        gifts.reset()
-        rtcStorage?.configureGifts(nil)
-    }
-
     private func clearSession(removeCredential: Bool = true) {
         roomMetadataRevision &+= 1
         cancelRoomCatalogRefreshes()
@@ -1878,7 +1753,6 @@ import Combine
         socialMutationRefreshTask?.cancel(); socialMutationRefreshTask = nil
         socialRefreshID = UUID()
         socialPrivacyRevision += 1
-        resetMomentNotificationTracking()
         pendingDirectConversation = nil; directConversationPath = []
         pendingRoomNotification = nil; resolvedRoomNotification = nil; socialNavigationRevision &+= 1
         notificationUnreadGate = KikiUnreadRequestGate(); directUnreadGate = KikiUnreadRequestGate()
@@ -1886,12 +1760,11 @@ import Combine
         visibleDirectConversations = []
         directHistoryRevision = [:]; notificationHistoryRevision += 1
         socialProfile = nil; followingUserIDs = []; followingOverrides = [:]; hasLoadedFollowingIDs = false; unreadNotificationCount = 0; unreadDirectMessageCount = 0
-        socialImageCache.removeAllObjects()
         directDrafts = [:]; pendingDirectMessages = [:]
         directMessageAccess = [:]; directAccessRevision = [:]; directAccessFetchRevision = [:]; directContentRevision += 1
         socialRevision += 1
         leaseTask?.cancel(); leaseTask = nil
-        suspendExperience()
+
         if removeCredential {
             identity.remove("sessionToken")
             identity.remove("appleSubject")
@@ -1899,7 +1772,7 @@ import Combine
         }
         token = nil; voiceToken = nil; voiceUserID = nil; user = nil; credentialsExpiry = 0; profileNeedsRTCSync = false
         isAuthenticated = false
-        profileName = ""; bio = ""; avatarIndex = 0; customAvatarURL = nil; needsNickname = false; userID = ""
+        profileName = ""; bio = ""; avatarIndex = 0; customAvatarURL = nil; needsNickname = false; userID = ""; displayID = ""
         notificationsEnabled = false
         notificationContentRevision &+= 1
         notificationContentRequest = nil

@@ -4,17 +4,15 @@ import SwiftUI
 /// Eight server-owned seats and an independent audience; LiveKit supplies live speaking state.
 struct KikiLiveKitRoomView: View {
     @ObservedObject var rtc: KikiRTCService
-    @ObservedObject private var gifts: KikiGiftStore
     @Environment(\.scenePhase) private var scenePhase
-    @State private var showsGifts = false
-    @State private var showsExperience = false
+    @State private var roomThemeDraft = 0
     @State private var confirmsExit = false
     @State private var showsParticipants = false
     @State private var showsSeatRequests = false
     @State private var showsAnnouncement = false
-    @State private var showsTitleEditor = false
-    @State private var roomTitleDraft = ""
-    @State private var roomTitleError: String?
+    @State private var showsRoomEditor = false
+    @State private var roomNameDraft = ""
+    @State private var roomEditorError: String?
     @State private var reportTarget: KikiReportTarget?
     @State private var queuedReportTarget: KikiReportTarget?
     @State private var pendingBlock: KikiBlockedUser?
@@ -35,65 +33,50 @@ struct KikiLiveKitRoomView: View {
 
     init(rtc: KikiRTCService) {
         self.rtc = rtc
-        self._gifts = ObservedObject(wrappedValue: rtc.gifts)
-    }
-
-    private var experienceVisibilityKey: String {
-        "\(rtc.currentRoomID ?? "")-\(scenePhase)-\(rtc.isVoiceRoomMinimized)-\(rtc.canUseRoom)-\(rtc.safetyState.blockedIDs.sorted().joined(separator: ","))"
-    }
-
-    private var observesRoomExperience: Bool {
-        rtc.currentRoomID != nil && scenePhase == .active && !rtc.isVoiceRoomMinimized && rtc.canUseRoom
     }
 
     private var observesRoomTaps: Bool {
         isComposing && scenePhase == .active && !rtc.isVoiceRoomMinimized && rtc.canUseRoom
-            && !showsGifts && !showsExperience && !showsParticipants && !showsSeatRequests
-            && !showsAnnouncement && !showsTitleEditor && !showsSafety && !confirmsExit
+            && !showsParticipants && !showsSeatRequests
+            && !showsAnnouncement && !showsRoomEditor && !showsSafety && !confirmsExit
             && reportTarget == nil && selectedPerson == nil && pendingBlock == nil && pendingModeration == nil
     }
 
     var body: some View {
-        GeometryReader { _ in
-            let horizontalPadding: CGFloat = 18
-            ZStack {
-                KikiRoomDecorationBackground(decorationID: gifts.appearance(for: rtc.roomInfo?.hostID ?? "").roomBackground)
-                    .ignoresSafeArea()
-                VStack(spacing: 14) {
-                    header
-                        .background {
-                            GeometryReader { geometry in
-                                Color.clear.preference(key: KikiRoomHeaderHeightKey.self, value: geometry.size.height)
+        KikiRoomBottomLayout(hasChatContent: !chatScrollIdentity.isEmpty || rtc.chatSyncNotice != nil,
+                             stageContentHeight: stageContentHeight, contentTopInset: headerHeight + 24,
+                             showsControls: rtc.disconnectionReason == nil) {
+            GeometryReader { _ in
+                let horizontalPadding: CGFloat = 18
+                ZStack {
+                    KikiRoomBackground(theme: rtc.roomInfo?.theme ?? 0)
+                        .ignoresSafeArea()
+                    VStack(spacing: 14) {
+                        header
+                            .background {
+                                GeometryReader { geometry in
+                                    Color.clear.preference(key: KikiRoomHeaderHeightKey.self, value: geometry.size.height)
+                                }
                             }
+                            .onPreferenceChange(KikiRoomHeaderHeightKey.self) { headerHeight = $0 }
+                        KikiRoomContentLayout(hasChatContent: !chatScrollIdentity.isEmpty || rtc.chatSyncNotice != nil,
+                                              onStageHeightChange: { stageContentHeight = $0 }) { width, columns in
+                            roomStage(width: width, avatarSize: columns ? 68 : 55)
+                        } chat: {
+                            chat
                         }
-                        .onPreferenceChange(KikiRoomHeaderHeightKey.self) { headerHeight = $0 }
-                    KikiRoomContentLayout(hasChatContent: !chatScrollIdentity.isEmpty || rtc.chatSyncNotice != nil,
-                                          onStageHeightChange: { stageContentHeight = $0 }) { width, columns in
-                        roomStage(width: width, avatarSize: columns ? 68 : 55)
-                    } chat: {
-                        chat
                     }
+                    .padding(.horizontal, horizontalPadding).padding(.top, 10).padding(.bottom, 2)
+                    .frame(maxWidth: 1180)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .foregroundStyle(KikiPalette.text)
+                    if let reason = rtc.disconnectionReason { endedRoom(reason) }
                 }
-                .padding(.horizontal, horizontalPadding).padding(.top, 10).padding(.bottom, 2)
-                .frame(maxWidth: 1180)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .foregroundStyle(KikiPalette.text)
-                if let reason = rtc.disconnectionReason { endedRoom(reason) }
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            bottomBar
-                .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 8)
-                .frame(maxWidth: 1180).frame(maxWidth: .infinity)
-        }
-        .overlay {
-            if rtc.disconnectionReason == nil {
-                KikiRoomActionRail(hasChatContent: !chatScrollIdentity.isEmpty || rtc.chatSyncNotice != nil,
-                                   stageContentHeight: stageContentHeight, contentTopInset: headerHeight + 24) {
-                    roomActions
-                }
-                .foregroundStyle(KikiPalette.text)
-            }
+        } footer: { placement in
+            composerWithSeatInvitation(placement: placement)
+        } controls: {
+            roomActions.foregroundStyle(KikiPalette.text)
         }
         .background(KikiRoomKeyboardDismissal(isEnabled: observesRoomTaps, onDismiss: endComposing))
         .overlay(alignment: .top) {
@@ -106,25 +89,13 @@ struct KikiLiveKitRoomView: View {
         }
         .tint(KikiPalette.purple)
         .interactiveDismissDisabled()
-        .overlay { KikiGiftPresentationOverlay(gifts: gifts).allowsHitTesting(false) }
-        .sheet(isPresented: $showsGifts) {
-            if let roomID = rtc.currentRoomID {
-                KikiGiftPanel(gifts: gifts, roomID: roomID,
-                              members: rtc.roomState?.members.filter { $0.online && !rtc.safetyState.blockedIDs.contains($0.userID) } ?? [],
-                              hostID: rtc.roomInfo?.hostID).kikiRoomSheet()
-            }
-        }
-        .sheet(isPresented: $showsExperience) { KikiExperienceCenterView(gifts: gifts).kikiRoomSheet() }
-        .task(id: experienceVisibilityKey) {
-            // RTC owns the single refresh driver. A visibility/safety boundary
-            // rebuilds the gift cursor without replaying past room events.
-            rtc.setRoomExperienceVisible(false)
-            rtc.setRoomExperienceVisible(observesRoomExperience)
-        }
-        .onChange(of: scenePhase) { _, phase in if phase != .active { endComposing(); rtc.setRoomExperienceVisible(false) } }
-        .onChange(of: rtc.isVoiceRoomMinimized) { _, minimized in if minimized { endComposing(); rtc.setRoomExperienceVisible(false) } }
-        .onDisappear { endComposing(); rtc.setRoomExperienceVisible(false) }
+        .onChange(of: scenePhase) { _, phase in if phase != .active { endComposing() } }
+        .onChange(of: rtc.isVoiceRoomMinimized) { _, minimized in if minimized { endComposing() } }
+        .onDisappear { endComposing() }
         .onChange(of: rtc.canManageRoom) { _, canManage in if !canManage { showsSeatRequests = false } }
+        .onChange(of: rtc.roomState?.myInvitation) { _, invitation in
+            if invitation != nil { endComposing() }
+        }
         .onChange(of: mySeatRequestStatus) { previous, current in
             if previous != "loading", !rtc.isRoomOwner, ["approved", "rejected", "seated"].contains(current) {
                 showRoomNotice(mySeatStatusTitle)
@@ -145,14 +116,19 @@ struct KikiLiveKitRoomView: View {
             }
             Button("取消", role: .cancel) { }
         }
-        .alert("语聊提示", isPresented: Binding(get: { rtc.roomError != nil && !showsParticipants && !showsSeatRequests }, set: { if !$0 { rtc.roomError = nil } })) {
+        .alert("语聊提示", isPresented: Binding(get: { rtc.roomError != nil && !showsParticipants && !showsSeatRequests && selectedPerson == nil }, set: { if !$0 { rtc.roomError = nil } })) {
             Button("知道了") { rtc.roomError = nil }
         } message: { Text(rtc.roomError ?? "") }
         .sheet(isPresented: $showsParticipants, onDismiss: presentQueuedDestination) { participantList.kikiRoomSheet() }
         .sheet(isPresented: $showsSeatRequests, onDismiss: { rtc.roomError = nil; presentQueuedDestination() }) { seatRequestPanel.kikiRoomSheet() }
         .sheet(item: $reportTarget) { target in KikiSafetyReportForm(rtc: rtc, target: target).kikiRoomSheet() }
         .sheet(item: $selectedPerson) { person in
-            if let store = rtc.socialStore { KikiPublicProfileView(userID: person.id, store: store).kikiRoomSheet() }
+            if let store = rtc.socialStore {
+                KikiPublicProfileView(userID: person.id, store: store,
+                    leadingAction: rtc.canManageRoom && person.id != store.userID
+                        ? AnyView(KikiRoomProfileInviteAction(rtc: rtc, userID: person.id)) : nil)
+                    .kikiRoomSheet()
+            }
         }
         .sheet(isPresented: $showsSafety) { KikiSafetyCenter(rtc: rtc).kikiRoomSheet() }
         .confirmationDialog("拉黑后，你将不再听到对方的声音或看到对方的房间文字。对方仍可能在公开房间听到你；可在设置解除。", isPresented: blockConfirmation(inParticipants: false), titleVisibility: .visible) {
@@ -162,7 +138,7 @@ struct KikiLiveKitRoomView: View {
             moderationConfirmationButtons
         } message: { Text(pendingModeration?.message ?? "") }
         .sheet(isPresented: $showsAnnouncement) { KikiRoomAnnouncementView(rtc: rtc).kikiRoomSheet() }
-        .sheet(isPresented: $showsTitleEditor) { titleEditor.kikiRoomSheet() }
+        .sheet(isPresented: $showsRoomEditor) { roomEditor.kikiRoomSheet() }
     }
 
     private func roomStage(width: CGFloat, avatarSize: CGFloat) -> some View {
@@ -176,18 +152,21 @@ struct KikiLiveKitRoomView: View {
 
     private var header: some View {
         KikiRoomHeader(title: rtc.roomInfo?.title ?? "语聊房", host: rtc.roomInfo?.host ?? "",
-                       onEditTitle: rtc.isRoomOwner ? editRoomTitle : nil,
+                       onEditTitle: rtc.isRoomOwner ? editRoom : nil,
                        isTitleEditingEnabled: rtc.canUseRoom) {
             Button { if let id = rtc.roomInfo?.hostID { openPerson(id) } } label: {
                 if let info = rtc.roomInfo {
                     let online = rtc.roomState?.members.first { $0.userID == info.hostID }?.online ?? true
-                    KikiDecoratedAvatar(gifts: gifts, userID: info.hostID, index: info.hostAvatarIndex, size: 36, customURL: info.hostAvatarURL)
+                    KikiAvatar(index: info.hostAvatarIndex, size: 36, customURL: info.hostAvatarURL)
                         .saturation(online ? 1 : 0).opacity(online ? 1 : 0.45)
                 } else { initials("", size: 36) }
             }.buttonStyle(.plain).accessibilityLabel("查看房主主页")
         } controls: {
             HStack(spacing: 4) {
                 Menu {
+                    if rtc.isRoomOwner {
+                        Button("编辑房间", systemImage: "pencil") { editRoom() }
+                    }
                     if rtc.canManageRoom || !rtc.announcement.text.isEmpty {
                         Button(rtc.canManageRoom ? (rtc.announcement.text.isEmpty ? "发布房间公告" : "编辑房间公告") : "查看房间公告", systemImage: "megaphone") {
                             endComposing()
@@ -226,11 +205,12 @@ struct KikiLiveKitRoomView: View {
         }
     }
 
-    private func editRoomTitle() {
+    private func editRoom() {
         endComposing()
-        roomTitleDraft = rtc.roomInfo?.title ?? ""
-        roomTitleError = nil
-        showsTitleEditor = true
+        roomNameDraft = rtc.roomInfo?.title ?? ""
+        roomEditorError = nil
+        roomThemeDraft = rtc.roomInfo?.theme ?? 0
+        showsRoomEditor = true
     }
 
     private func roomControlIcon(_ symbol: String, size: CGFloat, active: Bool = false, loading: Bool = false) -> some View {
@@ -297,7 +277,7 @@ struct KikiLiveKitRoomView: View {
         let member = rtc.roomState?.member(on: slot)
         return KikiRoomSeatTile(slot: slot, member: member,
                                participant: rtc.participants.first { $0.id == member?.userID },
-                               localUserID: rtc.roomState?.me.userID, avatarSize: avatarSize, gifts: gifts)
+                               localUserID: rtc.roomState?.me.userID, avatarSize: avatarSize)
     }
 
     private func seatPlaceholder(number: Int, avatarSize: CGFloat) -> some View {
@@ -312,7 +292,7 @@ struct KikiLiveKitRoomView: View {
     private var audienceStrip: some View {
         KikiRoomAudienceStrip(listeners: rtc.roomState?.listeners ?? [],
                               onOpenPerson: openPerson) { member in
-            KikiDecoratedAvatar(gifts: gifts, userID: member.userID, index: member.avatarIndex,
+            KikiAvatar(index: member.avatarIndex,
                                 size: 36, customURL: member.avatarURL)
         }
     }
@@ -342,7 +322,7 @@ struct KikiLiveKitRoomView: View {
     }
 
     private var seatRequestPanel: some View {
-        KikiSeatRequestSheet(roomState: rtc.roomState, gifts: gifts,
+        KikiSeatRequestSheet(roomState: rtc.roomState,
                              isWorking: rtc.isPerformingRoomAction, isAvailable: rtc.canUseRoom,
                              errorMessage: rtc.roomError,
                              onApprove: { action(.approveRequest, target: $0) },
@@ -363,8 +343,6 @@ struct KikiLiveKitRoomView: View {
                             switch entry {
                             case .message(let message):
                                 messageRow(message).id(entry.id)
-                            case .gift(let event):
-                                giftRow(event).id(entry.id)
                             case .announcement(let announcement):
                                 KikiRoomAnnouncementChatRow(text: announcement.text) {
                                     endComposing()
@@ -426,7 +404,7 @@ struct KikiLiveKitRoomView: View {
     }
 
     private var chatTimeline: [KikiRoomChatEntry] {
-        KikiRoomChatEntry.timeline(messages: rtc.messages, gifts: gifts.events,
+        KikiRoomChatEntry.timeline(messages: rtc.messages,
                                    announcement: rtc.announcement, blockedIDs: rtc.safetyState.blockedIDs)
     }
 
@@ -442,8 +420,6 @@ struct KikiLiveKitRoomView: View {
         KikiRoomChatBubbleRow(id: message.id, senderName: message.senderName, text: message.text,
                               isLocal: message.isLocal, onOpenSender: { openPerson(message.senderID) }) {
             chatAvatar(userID: message.senderID, fallbackIndex: message.senderAvatarIndex)
-        } bubbleBackground: {
-            KikiChatDecorationBackground(decorationID: gifts.appearance(for: message.senderID).chatBubble)
         }
         .contextMenu {
             if !message.isLocal, let roomID = rtc.currentRoomID {
@@ -458,25 +434,12 @@ struct KikiLiveKitRoomView: View {
         }
     }
 
-    private func giftRow(_ event: KikiGiftEvent) -> some View {
-        KikiRoomChatBubbleRow(id: "gift-" + event.id, senderName: event.senderName,
-                              text: "送给 \(event.recipientName) \(event.giftName) ×\(event.quantity)",
-                              isLocal: event.senderUserID == rtc.roomState?.me.userID, isGift: true,
-                              onOpenSender: { openPerson(event.senderUserID) }) {
-            chatAvatar(userID: event.senderUserID)
-        } bubbleBackground: {
-            RoundedRectangle(cornerRadius: 15).fill(accent.opacity(0.16))
-        }
-    }
-
     private func pendingMessageRow(_ pending: KikiPendingChatMessage) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             KikiRoomChatBubbleRow(id: "pending-" + pending.clientMessageID,
                                   senderName: rtc.roomState?.me.name ?? "我", text: pending.text,
                                   isLocal: true, onOpenSender: { if let id = rtc.roomState?.me.userID { openPerson(id) } }) {
                 chatAvatar(userID: rtc.roomState?.me.userID ?? "")
-            } bubbleBackground: {
-                KikiChatDecorationBackground(decorationID: gifts.appearance(for: rtc.roomState?.me.userID ?? "").chatBubble)
             }
             if let failure = pending.failure {
                 HStack(spacing: 10) {
@@ -494,7 +457,7 @@ struct KikiLiveKitRoomView: View {
 
     private func chatAvatar(userID: String, fallbackIndex: Int = 0) -> some View {
         let member = rtc.roomState?.members.first { $0.userID == userID }
-        return KikiDecoratedAvatar(gifts: gifts, userID: userID, index: member?.avatarIndex ?? fallbackIndex,
+        return KikiAvatar(index: member?.avatarIndex ?? fallbackIndex,
                                    size: 32, customURL: member?.avatarURL)
     }
 
@@ -514,12 +477,6 @@ struct KikiLiveKitRoomView: View {
     }
 
     @ViewBuilder private var roomActions: some View {
-        Button {
-            endComposing()
-            showsGifts = true
-        } label: { roomControlIcon("gift.fill", size: 42) }
-            .buttonStyle(.plain).disabled(!rtc.canSendChat || !gifts.isAvailable)
-            .accessibilityLabel("赠送礼物").accessibilityIdentifier("livekit.room.gifts")
         Button { Task { await rtc.toggleMicrophone() } } label: {
             roomControlIcon(rtc.microphoneEnabled ? "mic.fill" : "mic.slash.fill", size: 42,
                             active: rtc.microphoneEnabled, loading: rtc.isChangingMicrophone)
@@ -529,54 +486,56 @@ struct KikiLiveKitRoomView: View {
         .accessibilityLabel(rtc.microphoneEnabled ? "关闭麦克风" : "打开麦克风")
         .accessibilityValue(rtc.microphoneStatus).accessibilityIdentifier("livekit.room.microphone")
         seatRequestControl
-        Button {
-            endComposing()
-            showsExperience = true
-        } label: { roomControlIcon("diamond.fill", size: 42) }
-            .buttonStyle(.plain)
-            .accessibilityLabel("我的钻石与装扮").accessibilityIdentifier("livekit.room.experience")
     }
 
-    private var titleEditor: some View {
+    private var roomEditor: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("房间名称", text: $roomTitleDraft, axis: .vertical)
+                    TextField("房间名称", text: $roomNameDraft, axis: .vertical)
                         .lineLimit(1...3).submitLabel(.done)
-                        .disabled(rtc.isUpdatingRoomTitle)
+                        .disabled(rtc.isUpdatingRoomDetails)
                         .accessibilityIdentifier("livekit.room.titleInput")
                 } footer: {
-                    Text("最多 36 字、100 字节。留空使用“\(KikiRoomTitlePolicy.defaultTitle(nickname: titleEditorNickname))”。")
+                    Text("最多 36 字、100 字节。留空使用“\(KikiRoomTitlePolicy.defaultTitle(nickname: roomEditorNickname))”。")
                 }
-                if let roomTitleError { Text(roomTitleError).foregroundStyle(.orange).font(.footnote) }
+                Section("房间背景") {
+                    KikiRoomBackgroundPicker(theme: $roomThemeDraft)
+                        .padding(.vertical, 8)
+                        .disabled(rtc.isUpdatingRoomDetails)
+                }
+                if let roomEditorError { Text(roomEditorError).foregroundStyle(.orange).font(.footnote) }
             }
-            .navigationTitle("编辑房间名称").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("编辑房间").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { showsTitleEditor = false }.disabled(rtc.isUpdatingRoomTitle) }
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { showsRoomEditor = false }.disabled(rtc.isUpdatingRoomDetails) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
-                        guard !rtc.isUpdatingRoomTitle else { return }
-                        do { _ = try KikiRoomTitlePolicy.resolved(roomTitleDraft, nickname: titleEditorNickname) }
-                        catch { roomTitleError = error.localizedDescription; return }
-                        roomTitleError = nil
-                        let proposedTitle = roomTitleDraft
+                        guard !rtc.isUpdatingRoomDetails else { return }
+                        do { _ = try KikiRoomTitlePolicy.resolved(roomNameDraft, nickname: roomEditorNickname) }
+                        catch { roomEditorError = error.localizedDescription; return }
+                        roomEditorError = nil
+                        let proposedTitle = roomNameDraft
                         Task {
-                            do { try await rtc.updateRoomTitle(proposedTitle); showsTitleEditor = false }
+                            do {
+                                try await rtc.updateRoomDetails(proposedTitle, theme: roomThemeDraft)
+                                showsRoomEditor = false
+                            }
                             catch is CancellationError { }
-                            catch { roomTitleError = error.localizedDescription }
+                            catch { roomEditorError = error.localizedDescription }
                         }
                     } label: {
-                        if rtc.isUpdatingRoomTitle { ProgressView() } else { Text("保存") }
+                        if rtc.isUpdatingRoomDetails { ProgressView() } else { Text("保存") }
                     }
-                    .disabled(rtc.isUpdatingRoomTitle || !rtc.isRoomOwner)
+                    .disabled(rtc.isUpdatingRoomDetails || !rtc.isRoomOwner)
                     .accessibilityIdentifier("livekit.room.saveTitle")
                 }
             }
         }
-        .interactiveDismissDisabled(rtc.isUpdatingRoomTitle)
+        .interactiveDismissDisabled(rtc.isUpdatingRoomDetails)
     }
 
-    private var titleEditorNickname: String {
+    private var roomEditorNickname: String {
         rtc.socialStore?.profileName ?? rtc.roomState?.me.name ?? rtc.roomInfo?.host ?? ""
     }
 
@@ -640,6 +599,38 @@ struct KikiLiveKitRoomView: View {
     }
 
     private func endComposing() { isComposing = false }
+
+    private func composerWithSeatInvitation(placement: KikiRoomInvitationPlacement) -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let state = rtc.roomState
+            let hasInvitation = state?.room.id == rtc.currentRoomID && rtc.disconnectionReason == nil
+                && state?.pendingIncomingInvitation(at: Int(context.date.timeIntervalSince1970)) != nil
+            KikiRoomComposerWithInvitation(hasInvitation: hasInvitation, placement: placement) {
+                KikiIncomingSeatInvitationCard(isBusy: rtc.isPerformingRoomAction, isEnabled: rtc.canUseRoom,
+                    isRoomFull: state?.availableSeats.isEmpty ?? false,
+                    onAccept: { respondToSeatInvitation(.acceptInvite) },
+                    onDecline: { respondToSeatInvitation(.declineInvite) })
+            } composer: {
+                bottomBar
+            }
+        }
+    }
+
+    private func respondToSeatInvitation(_ action: KikiRoomAction) {
+        guard rtc.canUseRoom, !rtc.isPerformingRoomAction,
+              let roomID = rtc.currentRoomID, rtc.roomState?.myInvitation != nil else { return }
+        endComposing()
+        Task {
+            guard await rtc.performRoomAction(action), rtc.currentRoomID == roomID else { return }
+            if action == .acceptInvite {
+                if rtc.roomState?.me.seatIndex != nil {
+                    showRoomNotice("已上麦，点击麦克风开启声音")
+                } else if rtc.roomState?.myRequest?.status == "approved" {
+                    showRoomNotice("已接受邀请，正在等待空闲麦位")
+                }
+            }
+        }
+    }
 
     private func showRoomNotice(_ message: String) {
         let id = UUID()
@@ -776,7 +767,7 @@ struct KikiLiveKitRoomView: View {
 
     private func memberRow(_ member: KikiRoomMember, state: KikiRoomState) -> some View {
         HStack(spacing: 12) {
-            KikiDecoratedAvatar(gifts: gifts, userID: member.userID, index: member.avatarIndex, size: 36, customURL: member.avatarURL)
+            KikiAvatar(index: member.avatarIndex, size: 36, customURL: member.avatarURL)
                 .saturation(member.online ? 1 : 0).opacity(member.online ? 1 : 0.42)
             VStack(alignment: .leading, spacing: 3) {
                 Text(member.name + (member.userID == state.me.userID ? " (我)" : "") + (rtc.safetyState.blockedIDs.contains(member.userID) ? " · 已拉黑" : ""))
@@ -837,6 +828,47 @@ struct KikiLiveKitRoomView: View {
     }
 }
 
+/// Only room entry points inject this action into a public profile.
+private struct KikiRoomProfileInviteAction: View {
+    @ObservedObject var rtc: KikiRTCService
+    let userID: String
+    @State private var isSending = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            if let state = rtc.roomState, state.room.id == rtc.currentRoomID,
+               !rtc.safetyState.blockedIDs.contains(userID),
+               let status = state.seatInviteState(for: userID, at: Int(context.date.timeIntervalSince1970)) {
+                KikiProfileSeatInviteButton(title: status == .pending ? "已邀请" : "邀请",
+                    isBusy: isSending,
+                    isEnabled: status == .available && rtc.canUseRoom && !rtc.isPerformingRoomAction,
+                    action: invite)
+            }
+        }
+        .alert("邀请上麦", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("知道了") { errorMessage = nil }
+        } message: { Text(errorMessage ?? "") }
+    }
+
+    private func invite() {
+        guard !isSending, rtc.canUseRoom, !rtc.isPerformingRoomAction,
+              let roomID = rtc.currentRoomID,
+              !rtc.safetyState.blockedIDs.contains(userID),
+              rtc.roomState?.seatInviteState(for: userID) == .available else { return }
+        isSending = true
+        Task {
+            defer { isSending = false }
+            let sent = await rtc.performRoomAction(.inviteSeat, targetUserID: userID)
+            guard rtc.currentRoomID == roomID else { return }
+            if !sent {
+                errorMessage = rtc.roomError ?? "邀请未发出，请稍后重试。"
+                rtc.roomError = nil
+            }
+        }
+    }
+}
+
 /// The room identity uses all space between the avatar and the fixed touch targets.
 struct KikiRoomHeader<Avatar: View, Controls: View>: View {
     let title: String
@@ -854,7 +886,7 @@ struct KikiRoomHeader<Avatar: View, Controls: View>: View {
                 if let onEditTitle {
                     Button(action: onEditTitle) { identity }
                         .buttonStyle(.plain).disabled(!isTitleEditingEnabled)
-                        .accessibilityLabel("编辑房间名称")
+                        .accessibilityLabel("编辑房间")
                         .accessibilityValue(title)
                         .accessibilityIdentifier("livekit.room.editTitle")
                 } else { identity }
@@ -892,7 +924,6 @@ struct KikiRoomSeatTile: View {
     let participant: KikiVoiceParticipant?
     let localUserID: String?
     let avatarSize: CGFloat
-    @ObservedObject var gifts: KikiGiftStore
     private let secondary = KikiPalette.secondary
 
     var body: some View {
@@ -902,7 +933,7 @@ struct KikiRoomSeatTile: View {
             ZStack(alignment: .bottomTrailing) {
                 ZStack {
                     if let member {
-                        KikiDecoratedAvatar(gifts: gifts, userID: member.userID, index: member.avatarIndex, size: avatarSize, customURL: member.avatarURL)
+                        KikiAvatar(index: member.avatarIndex, size: avatarSize, customURL: member.avatarURL)
                             .saturation(online ? 1 : 0).opacity(online ? 1 : 0.42)
                     }
                     else {
@@ -916,11 +947,6 @@ struct KikiRoomSeatTile: View {
                 .padding(3)
                 .overlay(Circle().stroke(speaking ? KikiPalette.mint.opacity(0.24) : .clear, lineWidth: 2))
                 .animation(.easeOut(duration: 0.18), value: speaking)
-                .overlay {
-                    KikiMicDecoration(decorationID: member.flatMap { gifts.appearance(for: $0.userID).micEffect },
-                                      isSpeaking: speaking, size: avatarSize + 6)
-                        .saturation(online ? 1 : 0).opacity(online ? 1 : 0.25)
-                }
                 if member != nil || slot.audioLocked {
                     Image(systemName: slot.audioLocked ? "lock.fill" : (participant?.microphoneEnabled == true ? "mic.fill" : "mic.slash.fill"))
                         .font(.system(size: 9)).foregroundStyle(.white)

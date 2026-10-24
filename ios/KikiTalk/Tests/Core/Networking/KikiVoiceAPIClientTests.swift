@@ -27,6 +27,36 @@ final class KikiVoiceAPIClientTests: XCTestCase {
         }
     }
 
+    func testRoomBackgroundUpdateIsValidatedAndMustMatchAuthoritativeState() async throws {
+        let server = KikiVoiceAPIMockServer { request in
+            let body = try voiceRequestBody(request)
+            XCTAssertEqual(Set(body.keys), ["title", "theme"])
+            XCTAssertEqual(body["theme"] as? Int, 4)
+            var state = labRoomStateFixture
+            var room = labRoomFixture; room["title"] = "新背景"; room["theme"] = 4
+            state["room"] = room
+            return (200, try labJSON(state))
+        }
+        let state = try await server.client.updateRoomTitle("voice_lab_1", title: "新背景", theme: 4, token: "owner-session")
+        XCTAssertEqual(state.room.theme, 4)
+        let invalid = KikiVoiceAPIMockServer { _ in XCTFail("Invalid background must fail before network"); return (500, Data()) }
+        for theme in [-1, 5] {
+            do {
+                _ = try await invalid.client.updateRoomTitle("voice_lab_1", title: "新背景", theme: theme, token: "owner-session")
+                XCTFail("Expected invalid background")
+            } catch let error as KikiAPIError {
+                guard case .security = error else { return XCTFail("Expected input rejection") }
+            }
+        }
+        let mismatched = KikiVoiceAPIMockServer { _ in (200, try labJSON(labRoomStateFixture)) }
+        do {
+            _ = try await mismatched.client.updateRoomTitle("voice_lab_1", title: "LiveKit 语聊", theme: 4, token: "owner-session")
+            XCTFail("An uncommitted background must not be presented as saved")
+        } catch let error as KikiAPIError {
+            guard case .invalidResponse = error else { return XCTFail("Expected authoritative-state validation") }
+        }
+    }
+
     func testRoomCatalogWatchUsesVoiceSessionAndBoundedLongPoll() async throws {
         let paths = LabRequestLog()
         let server = KikiVoiceAPIMockServer { request in
@@ -180,6 +210,31 @@ final class KikiVoiceAPIClientTests: XCTestCase {
                 XCTFail("Invalid seat must fail")
             } catch let error as KikiAPIError { guard case .security = error else { return XCTFail("Expected validation") } }
         }
+    }
+
+    func testSeatInvitationUsesStableTargetAndExplicitAcceptOrDeclineWithoutChoosingASeat() async throws {
+        let actions = LabRequestLog()
+        let server = KikiVoiceAPIMockServer { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/v1/rooms/voice_lab_1/actions")
+            let body = try voiceRequestBody(request)
+            let action = try XCTUnwrap(body["action"] as? String)
+            actions.append(action)
+            if action == "invite_seat" {
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer owner-session")
+                XCTAssertEqual(Set(body.keys), ["action", "targetUserID"])
+                XCTAssertEqual(body["targetUserID"] as? String, "listener_1")
+            } else {
+                XCTAssertTrue(["accept_invite", "decline_invite"].contains(action))
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer listener-session")
+                XCTAssertEqual(Set(body.keys), ["action"])
+            }
+            return (200, try labJSON(labRoomStateFixture))
+        }
+        _ = try await server.client.roomAction(.inviteSeat, roomID: "voice_lab_1", targetUserID: "listener_1", token: "owner-session")
+        _ = try await server.client.roomAction(.acceptInvite, roomID: "voice_lab_1", token: "listener-session")
+        _ = try await server.client.roomAction(.declineInvite, roomID: "voice_lab_1", token: "listener-session")
+        XCTAssertEqual(actions.values, ["invite_seat", "accept_invite", "decline_invite"])
     }
 
     func testAuthoritativeChatUsesSameNonceAndNeverAcceptsClaimedSender() async throws {
@@ -913,16 +968,6 @@ extension KikiVoiceAPIClientTests {
         XCTAssertEqual(logs.values, ["POST", "POST"])
     }
 
-    func testSocialMediaRejectsExternalOrMismatchedPathBeforeAttachingAccountToken() async throws {
-        let server = KikiAPIMockServer { _ in XCTFail("Invalid media must not reach network"); return (500, Data()) }
-        let id = UUID().uuidString
-        for path in ["https://example.com/image.jpg", "/v1/avatars/public.jpg", "/v1/social/media/\(UUID().uuidString).jpg", "/v1/social/media/\(id).jpg?token=bad"] {
-            let media = KikiSocialMedia(id: id, path: path, width: 100, height: 100)
-            do { _ = try await server.client.socialImage(media, token: "private"); XCTFail("Invalid path must be rejected") }
-            catch let error as KikiAPIError { guard case .security = error else { return XCTFail("Expected security validation") } }
-        }
-    }
-
     func testHistoryDeletionUsesVoiceBearerAndSupportsWholeHistory() async throws {
         let methods = LabRequestLog()
         let server = KikiVoiceAPIMockServer { request in
@@ -936,17 +981,7 @@ extension KikiVoiceAPIClientTests {
         XCTAssertEqual(methods.values, ["/v1/history/lk_" + String(repeating: "a", count: 32), "/v1/history"])
     }
 
-    @MainActor
-    func testPhotoProcessorProducesSmallStaticJPEGWithoutLocationMetadata() throws {
-        let picture = UIGraphicsImageRenderer(size: CGSize(width: 2400, height: 1800)).image { context in
-            UIColor.systemPurple.setFill(); context.fill(CGRect(x: 0, y: 0, width: 2400, height: 1800))
-        }
-        let original = try XCTUnwrap(picture.jpegData(compressionQuality: 1))
-        let data = try KikiSocialPhotoProcessor.jpeg(original)
-        XCTAssertLessThanOrEqual(data.count, 2 * 1024 * 1024)
-        let image = try XCTUnwrap(UIImage(data: data))
-        XCTAssertLessThanOrEqual(max(image.size.width, image.size.height), 1600)
-    }
+
 }
 
 // Captured from the account backend's real FastAPI handlers using isolated fixture accounts.
@@ -1015,177 +1050,12 @@ extension KikiVoiceAPIClientTests {
         "text": "关注了你",
         "createdAt": 1792414070,
         "readAt": null,
-        "roomID": null,
-        "momentID": null
-      },
-      {
-        "id": "728030be-74e4-4d04-9ce1-1fe40a4a7cf3",
-        "kind": "system",
-        "actor": {
-          "id": "kiki_bdf9daeb7db3d0eb",
-          "name": "contract-beta",
-          "bio": "",
-          "avatarIndex": 0,
-          "avatarURL": null,
-          "following": true,
-          "followsYou": true,
-          "mutual": true,
-          "followingCount": 1,
-          "followerCount": 1,
-          "currentRoomID": null
-        },
-        "text": "评论了你的动态",
-        "createdAt": 1792414070,
-        "readAt": null,
-        "roomID": null,
-        "momentID": "bde78550-1524-4809-938d-c6665c85e4d9"
-      },
-      {
-        "id": "41a35d2a-93e1-401f-9ca1-900d6121d2e7",
-        "kind": "system",
-        "actor": {
-          "id": "kiki_bdf9daeb7db3d0eb",
-          "name": "contract-beta",
-          "bio": "",
-          "avatarIndex": 0,
-          "avatarURL": null,
-          "following": true,
-          "followsYou": true,
-          "mutual": true,
-          "followingCount": 1,
-          "followerCount": 1,
-          "currentRoomID": null
-        },
-        "text": "赞了你的动态",
-        "createdAt": 1792414070,
-        "readAt": null,
-        "roomID": null,
-        "momentID": "bde78550-1524-4809-938d-c6665c85e4d9"
+        "roomID": null
       }
     ],
-    "unreadCount": 3,
+    "unreadCount": 1,
     "nextCursor": null,
     "retentionDays": 30
-  },
-  "media": {
-    "id": "d967fb81-1092-45d4-8283-c36d7ce365d1",
-    "path": "/v1/social/media/d967fb81-1092-45d4-8283-c36d7ce365d1.jpg",
-    "width": 240,
-    "height": 320
-  },
-  "moment": {
-    "moment": {
-      "id": "bde78550-1524-4809-938d-c6665c85e4d9",
-      "author": {
-        "id": "kiki_6b5907a2d4cb3fb5",
-        "name": "contract-alpha",
-        "bio": "",
-        "avatarIndex": 0,
-        "avatarURL": null,
-        "following": false,
-        "followsYou": false,
-        "mutual": false,
-        "followingCount": 1,
-        "followerCount": 1,
-        "currentRoomID": null
-      },
-      "text": "合约示例：今天一起聊聊音乐。",
-      "media": [
-        {
-          "id": "d967fb81-1092-45d4-8283-c36d7ce365d1",
-          "path": "/v1/social/media/d967fb81-1092-45d4-8283-c36d7ce365d1.jpg",
-          "width": 240,
-          "height": 320
-        }
-      ],
-      "createdAt": 1792414070.640032,
-      "likeCount": 1,
-      "commentCount": 1,
-      "liked": false,
-      "canDelete": true
-    }
-  },
-  "moments": {
-    "moments": [
-      {
-        "id": "bde78550-1524-4809-938d-c6665c85e4d9",
-        "author": {
-          "id": "kiki_6b5907a2d4cb3fb5",
-          "name": "contract-alpha",
-          "bio": "",
-          "avatarIndex": 0,
-          "avatarURL": null,
-          "following": false,
-          "followsYou": false,
-          "mutual": false,
-          "followingCount": 1,
-          "followerCount": 1,
-          "currentRoomID": null
-        },
-        "text": "合约示例：今天一起聊聊音乐。",
-        "media": [
-          {
-            "id": "d967fb81-1092-45d4-8283-c36d7ce365d1",
-            "path": "/v1/social/media/d967fb81-1092-45d4-8283-c36d7ce365d1.jpg",
-            "width": 240,
-            "height": 320
-          }
-        ],
-        "createdAt": 1792414070.640032,
-        "likeCount": 1,
-        "commentCount": 1,
-        "liked": false,
-        "canDelete": true
-      }
-    ],
-    "nextCursor": null
-  },
-  "comment": {
-    "comment": {
-      "id": "c73f2b0c-6d32-48aa-8677-39bc6522e42a",
-      "momentID": "bde78550-1524-4809-938d-c6665c85e4d9",
-      "author": {
-        "id": "kiki_bdf9daeb7db3d0eb",
-        "name": "contract-beta",
-        "bio": "",
-        "avatarIndex": 0,
-        "avatarURL": null,
-        "following": false,
-        "followsYou": false,
-        "mutual": false,
-        "followingCount": 1,
-        "followerCount": 1,
-        "currentRoomID": null
-      },
-      "text": "合约示例评论。",
-      "createdAt": 1792414070.655947,
-      "canDelete": true
-    }
-  },
-  "comments": {
-    "comments": [
-      {
-        "id": "c73f2b0c-6d32-48aa-8677-39bc6522e42a",
-        "momentID": "bde78550-1524-4809-938d-c6665c85e4d9",
-        "author": {
-          "id": "kiki_bdf9daeb7db3d0eb",
-          "name": "contract-beta",
-          "bio": "",
-          "avatarIndex": 0,
-          "avatarURL": null,
-          "following": true,
-          "followsYou": true,
-          "mutual": true,
-          "followingCount": 1,
-          "followerCount": 1,
-          "currentRoomID": null
-        },
-        "text": "合约示例评论。",
-        "createdAt": 1792414070.655947,
-        "canDelete": false
-      }
-    ],
-    "nextCursor": null
   },
   "messageReceipt": {
     "message": {
@@ -1246,7 +1116,7 @@ extension KikiVoiceAPIClientTests {
   "reportReceipt": {
     "report": {
       "id": "75662da2-f82b-40ee-b8b2-7b5302713055",
-      "targetType": "moment",
+      "targetType": "profile",
       "reason": "other",
       "status": "pending",
       "createdAt": 1792414070,
@@ -1258,7 +1128,7 @@ extension KikiVoiceAPIClientTests {
     "reports": [
       {
         "id": "75662da2-f82b-40ee-b8b2-7b5302713055",
-        "targetType": "moment",
+        "targetType": "profile",
         "reason": "other",
         "status": "pending",
         "createdAt": 1792414070,
@@ -1273,18 +1143,11 @@ extension KikiVoiceAPIClientTests {
         let values = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
         func data(_ key: String) throws -> Data { try JSONSerialization.data(withJSONObject: XCTUnwrap(values[key])) }
         struct PersonResponse: Decodable { let person: KikiPerson }
-        struct MomentResponse: Decodable { let moment: KikiMoment }
-        struct CommentResponse: Decodable { let comment: KikiMomentComment }
         let decoder = JSONDecoder()
         _ = try decoder.decode(PersonResponse.self, from: data("person"))
         _ = try decoder.decode(KikiPeoplePage.self, from: data("people"))
         _ = try decoder.decode(KikiFollowingIDs.self, from: data("followingIDs"))
         _ = try decoder.decode(KikiNotificationsPage.self, from: data("notifications"))
-        _ = try decoder.decode(KikiSocialMedia.self, from: data("media"))
-        _ = try decoder.decode(MomentResponse.self, from: data("moment"))
-        _ = try decoder.decode(KikiMomentsPage.self, from: data("moments"))
-        _ = try decoder.decode(CommentResponse.self, from: data("comment"))
-        _ = try decoder.decode(KikiCommentsPage.self, from: data("comments"))
         _ = try decoder.decode(KikiDirectMessageReceipt.self, from: data("messageReceipt"))
         _ = try decoder.decode(KikiDirectMessagesPage.self, from: data("messages"))
         _ = try decoder.decode(KikiConversationsPage.self, from: data("conversations"))
@@ -1315,5 +1178,26 @@ extension KikiVoiceAPIClientTests {
         XCTAssertFalse(KikiDirectTimeline.needsTimestamp(previous: start, current: start + 60, calendar: calendar))
         XCTAssertTrue(KikiDirectTimeline.needsTimestamp(previous: start, current: start + 120, calendar: calendar), "Crossing midnight needs context even with a short gap")
         XCTAssertTrue(KikiDirectTimeline.needsTimestamp(previous: start - 1000, current: start - 700, calendar: calendar))
+    }
+}
+
+extension KikiVoiceAPIClientTests {
+    func testReusablePublicNumbersKeepPermanentAccountAndRoomIdentity() throws {
+        let user = try JSONDecoder().decode(KikiUser.self, from: Data(#"{"id":"kiki_permanent0001","displayID":"kiki_000001","sdkUserID":"sdk_permanent0001","name":"小岛","bio":"","avatarIndex":0,"notificationsEnabled":true}"#.utf8))
+        XCTAssertEqual(user.publicID, "kiki_000001")
+        XCTAssertEqual(user.id, "kiki_permanent0001")
+        XCTAssertEqual(user.sdkUserID, "sdk_permanent0001")
+        let legacy = try JSONDecoder().decode(KikiUser.self, from: Data(#"{"id":"kiki_permanent0001","sdkUserID":"sdk_permanent0001","name":"小岛","bio":"","avatarIndex":0,"notificationsEnabled":true}"#.utf8))
+        XCTAssertEqual(legacy.publicID, legacy.id)
+        let peer = try JSONDecoder().decode(KikiPerson.self, from: Data(#"{"id":"kiki_permanent0002","displayID":"kiki_000002","name":"朋友","bio":"","avatarIndex":0,"following":true,"followsYou":false,"mutual":false,"followingCount":0,"followerCount":0}"#.utf8))
+        XCTAssertEqual(peer.publicID, "kiki_000002")
+        XCTAssertEqual(peer.id, "kiki_permanent0002")
+        var state = labRoomStateFixture
+        var me = try XCTUnwrap(state["me"] as? [String: Any])
+        me["displayID"] = "kiki_000001"; state["me"] = me
+        let decoded = try JSONDecoder().decode(KikiRoomState.self, from: labJSON(state))
+        XCTAssertEqual(decoded.me.displayID, "kiki_000001")
+        XCTAssertEqual(decoded.me.id, me["userID"] as? String)
+        XCTAssertNotEqual(decoded.me.id, decoded.me.displayID)
     }
 }

@@ -143,7 +143,7 @@ struct KikiChatSyncHint: Codable {
 /// member identity, or a permission grant. The same envelope can be emitted by
 /// a committed client operation or the server without another connection.
 struct KikiRoomSyncHint: Codable {
-    enum Resource: String, Codable, CaseIterable { case state, chat, gifts }
+    enum Resource: String, Codable, CaseIterable { case state, chat }
     let version: Int
     let resources: [Resource]
     static let topic = "kiki.room.sync"
@@ -279,7 +279,6 @@ enum KikiRoomRefreshPolicy {
     // Reliable invalidations are the fast path. One bounded recovery interval
     // also covers a lost packet, an older client, or a partially failed send.
     static let compensationInterval: TimeInterval = 12
-    static let appearanceInterval: TimeInterval = 60
     static let metricsInterval: TimeInterval = 10
 }
 

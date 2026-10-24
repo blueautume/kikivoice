@@ -118,6 +118,8 @@ final class KikiConsentStore: ObservableObject {
     static let storageKey = "kiki.legalConsent.v1"
     static let documentsStorageKey = "kiki.legalDocuments.v1"
 
+    enum Presentation: Equatable { case checking, acceptanceRequired, accepted, withdrawing }
+
     struct Receipt: Codable, Equatable {
         enum Status: String, Codable { case accepted, withdrawing, updateRequired }
         var versions: KikiLegalVersions
@@ -160,6 +162,14 @@ final class KikiConsentStore: ObservableObject {
     }
 
     var isWithdrawalPending: Bool { receipt?.status == .withdrawing }
+    /// An unverified receipt is an unresolved startup check, not a request for
+    /// another signature. Keep the launch screen visible until the public
+    /// manifest tells us whether the user's existing decision is still current.
+    var presentation: Presentation {
+        if isWithdrawalPending { return .withdrawing }
+        if requiresRemoteDocuments && !hasVerifiedRemoteDocuments { return .checking }
+        return hasCurrentConsent ? .accepted : .acceptanceRequired
+    }
     var requiresAppUpdate: Bool {
         false // Content updates are downloaded; they do not require a binary update.
     }

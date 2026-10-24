@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "service": "account",
   "baseURL": "https://kiki.group",
-  "scope": "P1 confirmed: follows, public profiles, in-app notifications, reply-gated text direct messages (five introductions before recipient replies), static-image moments, likes/comments, social reports and independent community moderation. Native APNs provides authorized, preference-aware alerts for social events and followed hosts starting voice rooms. No payments, gifts, VIP or realtime voice changes.",
+  "scope": "Follows, mutuals, followers, public profiles, in-app notifications, reply-gated text direct messages (five introductions before recipient replies), profile/direct-message reports and independent community moderation. APNs supplies preference-aware private-message, follow, room-started and safety alerts.",
   "authentication": "Ordinary account bearer, current adult legal consent and completed nickname. Operations endpoints require independent community Passkey permission.",
   "privacy": "Every ordinary social request fetches one signed, uncached voice policy snapshot; unavailable/malformed policy fails closed with 503. Bilateral blocked people are absent with 404 for direct lookup and omitted from lists/notifications. Login and account deletion never depend on social policy availability.",
   "person": {
@@ -46,7 +46,7 @@
       "method": "GET",
       "path": "/v1/social/relationships",
       "query": {
-        "kind": "following|followers|mutual",
+        "kind": "mutual|following|followers; client order is mutual, following, followers",
         "limit": "1..50 default20",
         "cursor": "optional opaque"
       },
@@ -76,7 +76,8 @@
       },
       "response": {
         "person": "Person"
-      }
+      },
+      "behavior": "Direct immediate mutation without confirmation. Explicit PUT/DELETE and actor-bound request UUID/hash make retries idempotent; current account, consent, rate, privacy and self-follow checks remain authoritative."
     },
     {
       "method": "DELETE",
@@ -86,7 +87,8 @@
       },
       "response": {
         "person": "Person"
-      }
+      },
+      "behavior": "Direct immediate mutation without confirmation. Explicit PUT/DELETE and actor-bound request UUID/hash make retries idempotent; current account, consent, rate, privacy and self-follow checks remain authoritative."
     },
     {
       "method": "GET",
@@ -140,7 +142,7 @@
       },
       "response": {
         "notifications": [
-          "Notification DTO (see notification schema including optional momentID)"
+          "Notification DTO"
         ],
         "unreadCount": "integer",
         "nextCursor": "string|null",
@@ -168,93 +170,6 @@
         "blocked": "boolean"
       },
       "behavior": "Fixed signed account→voice social-block; request UUID persists and old retry never reapplies after newer block request. Successful block drops both follow directions."
-    },
-    {
-      "method": "POST",
-      "path": "/v1/social/media",
-      "body": "raw static JPEG <=2MiB; Content-Type image/jpeg",
-      "response": "Media; bare object",
-      "behavior": "Source <=10M pixels, re-encode metadata-free RGB JPEG longest dimension1280; private directory0700/file0600."
-    },
-    {
-      "method": "GET",
-      "path": "/v1/social/media/{id}.jpg",
-      "response": "image/jpeg no-store",
-      "behavior": "Account bearer, current consent, authoritative bilateral block check; visible submitted moment or own unsubmitted upload<24h."
-    },
-    {
-      "method": "GET",
-      "path": "/v1/social/moments",
-      "query": {
-        "kind": "all|following|mine defaultall",
-        "userID": "optional public user profile feed",
-        "limit": "1..50 default20",
-        "cursor": "opaque"
-      },
-      "response": {
-        "moments": [
-          "Moment"
-        ],
-        "nextCursor": "opaque|null"
-      }
-    },
-    {
-      "method": "GET",
-      "path": "/v1/social/moments/{id}",
-      "response": {
-        "moment": "Moment"
-      }
-    },
-    {
-      "method": "POST",
-      "path": "/v1/social/moments",
-      "body": "momentCreate schema",
-      "response": {
-        "moment": "Moment"
-      }
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/social/moments/{id}",
-      "response": {
-        "ok": true
-      },
-      "behavior": "Author only; repeated delete succeeds without leaking other author content."
-    },
-    {
-      "method": "PUT|DELETE",
-      "path": "/v1/social/moments/{id}/like",
-      "body": "mutation schema",
-      "response": {
-        "moment": "Moment"
-      }
-    },
-    {
-      "method": "GET",
-      "path": "/v1/social/moments/{id}/comments",
-      "query": "limit1..50,cursor",
-      "response": {
-        "comments": [
-          "Comment"
-        ],
-        "nextCursor": "opaque|null"
-      }
-    },
-    {
-      "method": "POST",
-      "path": "/v1/social/moments/{id}/comments",
-      "body": "commentCreate schema",
-      "response": {
-        "comment": "Comment"
-      }
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/social/comments/{id}",
-      "response": {
-        "ok": true
-      },
-      "behavior": "Author only"
     },
     {
       "method": "GET",
@@ -367,12 +282,6 @@
       "behavior": "community only; exact operator+body hash idempotence90d; sourceReportID permits restore after original report expires."
     },
     {
-      "method": "GET",
-      "path": "/admin/v2/services/account/social/media/{id}.jpg",
-      "response": "image/jpeg no-store",
-      "behavior": "community Passkey scope plus unexpired report reference; does not expose arbitrary social images."
-    },
-    {
       "method": "PUT",
       "path": "/v1/social/conversations/{personID}/pin",
       "body": "conversationPin schema",
@@ -415,7 +324,6 @@
         "type": "notification",
         "notificationID": "owned UUID",
         "roomID": "optional active room ID",
-        "momentID": "optional visible moment UUID",
         "personID": "optional visible public person ID"
       },
       "behavior": "Current ordinary session and consent, owner-only, retained, not deleted or viewer-cleared. Read notices remain clickable here. room_started additionally requires current eligible follow, host consent epoch, bilateral block policy and signed active-room status. Network/policy unavailable503; invisible/ended404."
@@ -453,27 +361,13 @@
     "readRequestsPerMinute": 120,
     "notificationRetentionDays": 30,
     "receiptRetentionDays": 30,
-    "maxMomentsPerAccount": 200,
-    "maxMediaPerAccount": 600,
-    "momentsPerHour": 10,
-    "momentsPerDay": 30,
-    "uploadsPerHour": 40,
-    "uploadsPerDay": 90,
-    "maxStaticImagesPerMoment": 3,
-    "maxImageBytes": 2097152,
-    "maxSourcePixels": 10000000,
-    "imageLongestDimension": 1280,
     "directMessagesPerHour": 300,
     "directMessagesPerDay": 1000,
-    "commentsPerHour": 120,
-    "commentsPerDay": 300,
-    "likesPerHour": 600,
-    "likesPerDay": 1000,
     "reportsPerHour": 10,
     "reportsPerDay": 20,
     "maxBlocks": 500
   },
-  "cleanup": "Withdrawal or deletion removes both directions of follows, actor/recipient notifications, both sides of conversations and minimal DM introduction direction counters, authored moments/comments/likes, owned images and related report evidence. Logout retains persistent social data. Active timed posting restrictions survive withdrawal and expire automatically; account deletion removes them. Opaque case action audit remains bounded90days with target and reason unlinked; mutation UUID/hash receipts are bounded30days and actor-owned receipts are cleared on withdrawal.",
+  "cleanup": "Withdrawal or deletion removes both directions of follows, actor/recipient notifications, both sides of conversations and minimal DM introduction direction counters, and related current profile/direct-message report evidence. Logout retains persistent social data. Active timed social restrictions survive withdrawal and expire automatically; account deletion removes them. Action audit lasts90days with identifying note and target unlinked on withdrawal. Retired feed data is not exposed or created; existing historical tables and private media remain only for rollback and protected backup.",
   "errors": {
     "401": "account session expired",
     "403": "social publishing restricted",
@@ -486,44 +380,13 @@
   },
   "notification": {
     "id": "UUID",
-    "kind": "follow|like|comment|system|safety|room_started",
+    "kind": "follow|system|safety|room_started",
     "actor": "Person|null",
     "text": "server-authored text",
     "createdAt": "Unix seconds",
     "readAt": "Unix seconds|null",
     "roomID": "lk_<32 lowercase hex>|null; room_started links to the authoritative active room, never grants admission",
-    "momentID": "UUID|null; referenced moment may have been removed",
     "seq": "monotonic integer insertion sequence; defaults0 only for legacy clients"
-  },
-  "media": {
-    "id": "UUID",
-    "path": "/v1/social/media/<UUID>.jpg; authenticated relative path, never a public URL",
-    "width": "positive integer <=1280",
-    "height": "positive integer <=1280"
-  },
-  "moment": {
-    "id": "UUID",
-    "author": "Person",
-    "text": "string 0..1000",
-    "media": [
-      "Media max3"
-    ],
-    "createdAt": "Unix seconds (fraction permitted)",
-    "likeCount": "integer",
-    "commentCount": "integer; total comments visible to this viewer",
-    "commentPreview": [
-      "Comment max3; same visibility as comments, ordered createdAt DESC then id DESC; additive field, legacy responses may omit it"
-    ],
-    "liked": "boolean",
-    "canDelete": "boolean author is viewer"
-  },
-  "comment": {
-    "id": "UUID",
-    "momentID": "UUID",
-    "author": "Person",
-    "text": "1..300",
-    "createdAt": "Unix seconds",
-    "canDelete": "boolean author is viewer"
   },
   "message": {
     "id": "UUID",
@@ -546,7 +409,7 @@
   },
   "report": {
     "id": "UUID",
-    "targetType": "profile|moment|comment|direct_message",
+    "targetType": "profile|direct_message",
     "reason": "harassment|spam|sexual|fraud|other",
     "status": "pending|resolved|dismissed",
     "createdAt": "Unix seconds",
@@ -562,10 +425,8 @@
     "contentID": "UUID|null",
     "details": "0..500",
     "evidence": {
-      "text": "server-resolved profile/content/message body snapshot",
-      "media": [
-        "Media; operators must use separate authenticated case media path"
-      ]
+      "text": "server-resolved profile or participated message snapshot",
+      "media": []
     }
   },
   "bodySchemas": {
@@ -613,35 +474,6 @@
       "title": "ReadNotifications",
       "type": "object"
     },
-    "momentCreate": {
-      "additionalProperties": false,
-      "properties": {
-        "requestID": {
-          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
-          "title": "Requestid",
-          "type": "string"
-        },
-        "text": {
-          "default": "",
-          "maxLength": 1000,
-          "title": "Text",
-          "type": "string"
-        },
-        "mediaIDs": {
-          "items": {
-            "type": "string"
-          },
-          "maxItems": 3,
-          "title": "Mediaids",
-          "type": "array"
-        }
-      },
-      "required": [
-        "requestID"
-      ],
-      "title": "MomentCreate",
-      "type": "object"
-    },
     "messageCreate": {
       "additionalProperties": false,
       "properties": {
@@ -679,28 +511,6 @@
       "title": "MessageRead",
       "type": "object"
     },
-    "commentCreate": {
-      "additionalProperties": false,
-      "properties": {
-        "requestID": {
-          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
-          "title": "Requestid",
-          "type": "string"
-        },
-        "text": {
-          "maxLength": 300,
-          "minLength": 1,
-          "title": "Text",
-          "type": "string"
-        }
-      },
-      "required": [
-        "requestID",
-        "text"
-      ],
-      "title": "CommentCreate",
-      "type": "object"
-    },
     "reportCreate": {
       "additionalProperties": false,
       "properties": {
@@ -712,8 +522,6 @@
         "targetType": {
           "enum": [
             "profile",
-            "moment",
-            "comment",
             "direct_message"
           ],
           "title": "Targettype",
@@ -970,13 +778,11 @@
   "retention": {
     "directMessages": "rolling30days",
     "notifications": "30days",
-    "unsubmittedMedia": "24hours",
-    "moments": "until author deletes, withdrawal or account deletion; capped200/account",
-    "reportsAndEvidence": "30days including reported image reference; public content deletion does not make case media publicly readable",
+    "reportsAndEvidence": "30days; only current profile and participated text direct-message evidence is returned",
     "moderationAuditAndIdempotency": "90days; withdrawal/deletion unlinks target and reason, opaque receipt remains untilTTL",
     "mutations": "30day dedupe receipts",
     "restrictions": "60sec..30days; survives consent withdrawal to prevent bypass, deleted on account deletion",
-    "mediaCleanup": "unreferenced file cleanup every60sec, only after committed row deletion; files younger60sec protected from in-flight upload race"
+    "retiredData": "Existing historical tables and media remain private for rollback; no routes, creation or public reads; old interaction notices are marked retired and absent from inbox/badges/destinations."
   },
   "delivery": "Authenticated in-app notification lists plus native APNs with current notification and content-hiding preferences; APNs acceptance is not proof of device receipt or read state.",
   "accountReadOnlyMetrics": {
@@ -985,9 +791,6 @@
     "fields": [
       "follows",
       "mutualPairs",
-      "moments",
-      "comments",
-      "privateMedia",
       "messagesLast30Days",
       "pendingReports",
       "activePostingRestrictions",
@@ -1040,7 +843,6 @@
         "response": {
           "type": "direct_message|notification",
           "personID": "optional current public kiki_ ID",
-          "momentID": "optional UUID",
           "notificationID": "optional UUID",
           "roomID": "optional active room ID for room_started"
         }

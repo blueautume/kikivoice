@@ -3,20 +3,15 @@
 The voice policy boundary is mocked here, with a bilateral canonical relation.
 Actual HMAC/epoch behavior is covered by the voice service's social-policy tests.
 """
-from io import BytesIO
 import base64
+import hmac
 from dataclasses import replace
 import hashlib
-import hmac
-import importlib.util
 import json
-import os
-from pathlib import Path
 from types import SimpleNamespace
 import time
 import uuid
 
-from PIL import Image
 from fastapi import HTTPException
 import pytest
 
@@ -82,19 +77,6 @@ def send(env,a,b,text="私聊边界",request=None):
                       json=request or mutation(text=text))
 
 
-def upload(env,a):
-    response = env.c.post(BASE+"/media",headers={**authorization(a),"Content-Type":"image/jpeg"},
-                          content=jpeg_bytes(with_metadata=True))
-    assert response.status_code == 200,response.text
-    return response.json()
-
-
-def moment(env,a,text="简洁的动态",media=()):
-    response = env.c.post(BASE+"/moments",headers=authorization(a),json=mutation(text=text,mediaIDs=list(media)))
-    assert response.status_code == 200,response.text
-    return response.json()["moment"]
-
-
 def report(env,a,kind,target):
     response = env.c.post(BASE+"/reports",headers=authorization(a),
                           json=mutation(targetType=kind,targetID=target,reason="other",details="边界验收"))
@@ -156,23 +138,18 @@ def test_dm_same_second_order_cursor_and_read_watermark_use_sequence(social_env)
     assert e.c.get(BASE+"/conversations/"+b["user"]["id"]+"/messages",headers=authorization(a),params={"cursor":page.json()["nextCursor"]}).status_code == 422
 
 
-def test_bilateral_block_hides_dm_profile_moment_and_media(social_env):
+def test_bilateral_block_hides_dm_profile_and_relations(social_env):
     e = social_env
     a,b = person(e,"屏蔽甲"),person(e,"屏蔽乙")
     friends(e,a,b)
     message = send(e,a,b)
     assert message.status_code == 200,message.text
-    image = upload(e,a)
-    post = moment(e,a,media=[image["id"]])
     e.blocks.add((a["user"]["id"],b["user"]["id"]))
     for actor,target in ((a,b),(b,a)):
         assert e.c.get(BASE+"/people/"+target["user"]["id"],headers=authorization(actor)).status_code == 404
         assert e.c.get(BASE+"/conversations/"+target["user"]["id"]+"/messages",headers=authorization(actor)).status_code == 404
         assert send(e,actor,target).status_code == 404
         assert e.c.get(BASE+"/relationships?kind=mutual",headers=authorization(actor)).json()["people"] == []
-    assert e.c.get(image["path"],headers=authorization(b)).status_code == 404
-    assert e.c.get(BASE+"/moments",headers=authorization(b)).json()["moments"] == []
-    assert e.c.get(BASE+"/moments/"+post["id"]+"/comments",headers=authorization(b)).status_code == 404
     assert e.c.get(BASE+"/conversations",headers=authorization(b)).json()["unreadCount"] == 0
 
 
@@ -193,74 +170,6 @@ def test_dm_persistent_rate_limit_and_expiry_are_enforced(social_env):
     path = BASE+"/conversations/"+a["user"]["id"]
     assert e.c.get(path+"/messages",headers=authorization(b)).json()["messages"] == []
     assert e.c.post(path+"/read",headers=authorization(b),json={"throughMessageID":committed.json()["message"]["id"]}).status_code == 404
-
-
-def test_upload_is_private_strips_metadata_and_only_owner_can_attach_once(social_env):
-    e = social_env
-    a,b = person(e,"图片甲"),person(e,"图片乙")
-    image = upload(e,a)
-    assert e.c.get(image["path"]).status_code == 401
-    assert e.c.get(image["path"],headers=authorization(b)).status_code == 404
-    content = e.c.get(image["path"],headers=authorization(a))
-    assert content.status_code == 200 and content.headers["Cache-Control"] == "no-store"
-    with Image.open(BytesIO(content.content)) as clean:
-        assert not clean.getexif() and not clean.info.get("icc_profile")
-        assert clean.size == (240,320)
-    assert b"private artist" not in content.content and b"private location" not in content.content
-    assert e.c.post(BASE+"/moments",headers=authorization(b),json=mutation(text="借图",mediaIDs=[image["id"]])).status_code == 422
-    post = moment(e,a,media=[image["id"]])
-    assert e.c.get(image["path"],headers=authorization(b)).status_code == 200
-    assert e.c.post(BASE+"/moments",headers=authorization(a),json=mutation(text="重复图",mediaIDs=[image["id"]])).status_code == 422
-    assert e.c.delete(BASE+"/moments/"+post["id"],headers=authorization(b)).status_code == 404
-    assert e.c.post(BASE+"/media",headers={**authorization(a),"Content-Type":"image/png"},content=jpeg_bytes()).status_code == 422
-    assert e.c.post(BASE+"/media",headers={**authorization(a),"Content-Type":"image/jpeg"},content=b"not an image").status_code == 422
-
-
-def test_deleted_moment_loses_media_reference_and_orphan_file_is_swept(social_env):
-    e = social_env
-    a,b = person(e,"删图甲"),person(e,"删图乙")
-    image = upload(e,a)
-    post = moment(e,a,media=[image["id"]])
-    path = e.service.media_directory/(image["id"]+".jpg")
-    assert path.stat().st_mode & 0o777 == 0o600
-    os.utime(path,(time.time()-61,time.time()-61))
-    assert e.c.delete(BASE+"/moments/"+post["id"],headers=authorization(a)).status_code == 200
-    assert e.c.get(image["path"],headers=authorization(a)).status_code == 404
-    assert e.c.get(image["path"],headers=authorization(b)).status_code == 404
-    assert not path.exists()
-    with database(e.c.settings) as db:
-        assert db.execute("SELECT COUNT(*) FROM social_media").fetchone()[0] == 0
-        assert db.execute("SELECT COUNT(*) FROM social_moment_media").fetchone()[0] == 0
-
-
-def test_report_case_media_retained_for_authorized_operator_only_until_30_days(social_env):
-    e = social_env
-    a,b,c = (person(e,name) for name in ("证据甲","证据乙","证据丙"))
-    image = upload(e,a)
-    post = moment(e,a,media=[image["id"]])
-    case = report(e,b,"moment",post["id"])
-    operator_session = operator(e)
-    unprivileged,_ = register(e.ops,"无权审核")
-    grant(e.ops,unprivileged,"account")
-    op_path = MOD+"/media/"+image["id"]+".jpg"
-    assert e.c.get(op_path,headers=authorization(unprivileged)).status_code == 403
-    assert e.c.get(op_path,headers=authorization(c)).status_code == 401
-    media_path = e.service.media_directory/(image["id"]+".jpg")
-    os.utime(media_path,(time.time()-61,time.time()-61))
-    assert e.c.delete(BASE+"/moments/"+post["id"],headers=authorization(a)).status_code == 200
-    assert media_path.exists()
-    assert e.c.get(image["path"],headers=authorization(b)).status_code == 404
-    assert e.c.get(op_path,headers=authorization(operator_session)).status_code == 200
-    query = e.c.post(MOD+"/moderation/query",headers=authorization(operator_session),json={"status":"all"})
-    assert query.status_code == 200,query.text
-    assert query.json()["reports"][0]["id"] == case["id"]
-    with database(e.c.settings) as db:
-        db.execute("UPDATE social_reports SET created_at=? WHERE id=?",(int(time.time())-30*86400,case["id"]))
-        db.execute("UPDATE social_media SET created_at=? WHERE id=?",(int(time.time())-86401,image["id"]))
-        purge(db)
-    e.service.sweep_media()
-    assert e.c.get(op_path,headers=authorization(operator_session)).status_code == 404
-    assert not media_path.exists()
 
 
 def test_direct_message_reports_require_participation_and_keep_server_evidence(social_env):
@@ -290,97 +199,55 @@ def test_moderation_idempotency_restore_after_report_expiry_and_90_day_receipt(s
     assert response.status_code == 200,response.text
     assert e.c.post(MOD+"/moderation/action",headers=authorization(op),json=request).json() == response.json()
     assert e.c.post(MOD+"/moderation/action",headers=authorization(op),json={**request,"note":"修改内容"}).status_code == 409
-    assert e.c.post(BASE+"/moments",headers=authorization(a),json=mutation(text="被限制")).status_code == 403
+    assert send(e,a,b,text="被限制").status_code == 403
     with database(e.c.settings) as db:
         db.execute("UPDATE social_reports SET created_at=? WHERE id=?",(int(time.time())-30*86400,case["id"]))
         purge(db)
     assert e.c.post(MOD+"/moderation/action",headers=authorization(op),json=request).json() == response.json()
     restore = mutation(reportID=case["id"],action="restore_user",note="提前解除")
     assert e.c.post(MOD+"/moderation/action",headers=authorization(op),json=restore).status_code == 200
-    assert moment(e,a)["author"]["id"] == a["user"]["id"]
+    assert send(e,a,b,text="已恢复").status_code == 200
     with database(e.c.settings) as db:
         db.execute("UPDATE social_actions SET created_at=?",(int(time.time())-90*86400,))
         purge(db)
         assert db.execute("SELECT COUNT(*) FROM social_actions").fetchone()[0] == 0
 
 
-def test_withdrawal_erases_social_graph_dm_posts_reports_media_but_not_active_sanction(social_env):
+def test_withdrawal_erases_social_graph_dm_and_reports_but_not_active_sanction(social_env):
     e = social_env
     a,b = person(e,"撤回甲"),person(e,"撤回乙")
     friends(e,a,b)
     assert send(e,a,b).status_code == 200
-    image = upload(e,a)
-    post = moment(e,a,media=[image["id"]])
-    case = report(e,b,"moment",post["id"])
+    case = report(e,b,"profile",a["user"]["id"])
     op = operator(e)
     assert e.c.post(MOD+"/moderation/action",headers=authorization(op),json=mutation(reportID=case["id"],action="restrict_posting",durationSeconds=3600,note="限制不可撤回绕过")).status_code == 200
     uid = internal_id(e,a)
-    path = e.service.media_directory/(image["id"]+".jpg")
-    os.utime(path,(time.time()-61,time.time()-61))
     assert e.c.delete("/v1/me/legal-consent",headers=authorization(a)).status_code == 200
-    e.service.sweep_media()
     with database(e.c.settings) as db:
-        for table in ("social_follows","social_messages","social_dm_contact_state","social_moments","social_comments","social_media","social_reports"):
+        for table in ("social_follows","social_messages","social_dm_contact_state","social_reports"):
             assert db.execute("SELECT COUNT(*) FROM "+table).fetchone()[0] == 0,table
         assert db.execute("SELECT COUNT(*) FROM social_restrictions WHERE account_id=?",(uid,)).fetchone()[0] == 1
         row = db.execute("SELECT target_id,note FROM social_actions").fetchone()
         assert row[0] is None and row[1] is None
-    assert not path.exists()
-    assert e.c.get(BASE+"/moments",headers=authorization(a)).status_code == 401
+    assert e.c.get(BASE+"/relationships",headers=authorization(a)).status_code == 401
     fresh = person(e,"撤回甲")
-    assert e.c.post(BASE+"/moments",headers=authorization(fresh),json=mutation(text="仍受限制")).status_code == 403
+    assert send(e,fresh,b,text="仍受限制").status_code == 403
 
 
-def test_account_deletion_cascades_both_sides_and_private_image_files(social_env):
+def test_account_deletion_cascades_both_sides_of_social_data(social_env):
     e = social_env
     a,b = person(e,"注销甲"),person(e,"注销乙")
     friends(e,a,b)
     assert send(e,b,a).status_code == 200
-    image = upload(e,a)
-    post = moment(e,a,media=[image["id"]])
-    report(e,b,"moment",post["id"])
-    path = e.service.media_directory/(image["id"]+".jpg")
-    os.utime(path,(time.time()-61,time.time()-61))
+    report(e,b,"profile",a["user"]["id"])
     assert e.c.delete("/v1/account",headers=authorization(a)).status_code == 200
-    e.service.sweep_media()
-    assert not path.exists()
     assert e.c.get(BASE+"/people/"+a["user"]["id"],headers=authorization(b)).status_code == 404
     assert e.c.get(BASE+"/conversations",headers=authorization(b)).json()["conversations"] == []
     with database(e.c.settings) as db:
         assert db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 1
-        for table in ("social_conversations","social_messages","social_dm_contact_state","social_media","social_reports","social_follows"):
+        for table in ("social_conversations","social_messages","social_dm_contact_state","social_reports","social_follows"):
             assert db.execute("SELECT COUNT(*) FROM "+table).fetchone()[0] == 0,table
         assert not db.execute("PRAGMA foreign_key_check").fetchall()
-
-
-def test_logout_during_upload_policy_recheck_cannot_publish_or_leave_orphan(social_env,monkeypatch):
-    e = social_env
-    a = person(e,"竞态图片")
-    original = e.service.policy
-    def raced(user,target_ids=()):
-        snapshot = original(user,target_ids)
-        assert e.c.post("/v1/auth/logout",headers=authorization(a)).status_code == 200
-        return snapshot
-    monkeypatch.setattr(e.service,"policy",raced)
-    response = e.c.post(BASE+"/media",headers={**authorization(a),"Content-Type":"image/jpeg"},content=jpeg_bytes())
-    assert response.status_code == 401,response.text
-    assert list(e.service.media_directory.iterdir()) == []
-    with database(e.c.settings) as db:
-        assert db.execute("SELECT COUNT(*) FROM social_media").fetchone()[0] == 0
-
-
-def test_expired_unsubmitted_upload_is_unreadable_and_swept(social_env):
-    e = social_env
-    a = person(e,"过期图片")
-    image = upload(e,a)
-    path = e.service.media_directory/(image["id"]+".jpg")
-    os.utime(path,(time.time()-61,time.time()-61))
-    with database(e.c.settings) as db:
-        db.execute("UPDATE social_media SET created_at=?",(int(time.time())-86400,))
-    assert e.c.get(image["path"],headers=authorization(a)).status_code == 404
-    assert e.c.post(BASE+"/moments",headers=authorization(a),json=mutation(text="失效附件",mediaIDs=[image["id"]])).status_code == 422
-    e.service.sweep_media()
-    assert not path.exists()
 
 
 def test_read_only_grant_cannot_moderate_and_revoked_operator_cannot_replay(social_env):
@@ -415,99 +282,6 @@ def test_social_cursor_cannot_be_forged_with_retired_empty_tencent_key(social_en
     assert service.cursor(actor,"cursor-boundary",value=genuine) == [1,"known"]
 
 
-def test_public_acceptance_driver_runs_locally_with_actual_asgi_and_hmac(real_voice_service,tmp_path,monkeypatch):
-    """Exercise the opt-in driver without SSH, public HTTP, Apple or real users."""
-    import httpx
-    import secrets
-    import subprocess
-    from app.main import load_legal_requirements
-    from app.ops_auth import change_grant
-    from app.social import erase
-    from app.voice_bridge import signed_headers
-    pair = real_voice_service
-    c = pair.account
-    settings = replace(c.settings,admin_auth_mode="passkey",ops_bridge_secret="p1-ops-local-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-    c.app.state.ops.settings = settings
-    script = Path(__file__).resolve().parents[2]/"experiments/livekit/validation/p1-social-2026-10-19/verify_public.py"
-    spec = importlib.util.spec_from_file_location("p1_public_local_driver",script)
-    driver = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(driver)
-    def forbid_subprocess(*args,**kwargs):
-        raise AssertionError("Public acceptance local test must never use SSH/subprocess")
-    monkeypatch.setattr(subprocess,"run",forbid_subprocess)
-    def remote(op,args):
-        if op == "create":
-            stem = args["stem"];assert stem.startswith("p1social_")
-            public = "kiki_"+stem;name = "社交验收-"+args["nonce"]
-            token = secrets.token_urlsafe(32);now = int(time.time());legal = load_legal_requirements()
-            with database(settings) as db:
-                db.execute("INSERT INTO accounts(account_id,login_id,sdk_user_id,name,bio,needs_nickname,notifications,created_at) VALUES(?,?,?,?,?,0,0,?)",(stem,public,public,name,"Synthetic local driver fixture",now))
-                db.execute("INSERT INTO identities(provider,subject,account_id) VALUES('apple',?,?)",("codex-p1social-validation:"+stem,stem))
-                db.execute("INSERT INTO sessions VALUES(?,?,?,?)",(hashlib.sha256(token.encode()).hexdigest(),stem,now+1800,now))
-                event = db.execute("INSERT INTO legal_consent_events(account_id,privacy_version,terms_version,document_hash,accepted,adult_confirmed,recorded_at) VALUES(?,?,?,?,1,1,?)",(stem,legal["privacyVersion"],legal["termsVersion"],legal["documentHash"],now)).lastrowid
-            return {"accountID":stem,"publicID":public,"name":name,"token":token,"consentEpoch":event,"legalVersion":legal["privacyVersion"]}
-        if op in {"grant","revoke","delete-ops"}:
-            item = args["fixture"]
-            assert item["name"].startswith("社交验收-")
-            if op == "delete-ops":
-                with database(settings) as db:
-                    db.execute("DELETE FROM social_actions WHERE actor_id=?",(item["accountID"],))
-            change_grant(settings,database,account_id=item["accountID"],name=item["name"],
-                         service=args.get("scope","voice"),action="delete" if op=="delete-ops" else op,actor="local-p1-driver")
-            return {"ok":True}
-        if op in {"social-policy-probe","policy-state","late-block"}:
-            actor,target = args["fixture"],args["target"]
-            path = "/internal/v1/account/social-policy"
-            value = {"accountID":actor["publicID"],"targetIDs":[target["publicID"]]}
-            if op == "late-block":
-                path = "/internal/v1/account/social-block"
-                value = {"accountID":actor["publicID"],"targetID":target["publicID"],"blocked":True,"consentEpoch":actor["consentEpoch"],"lastWithdrawalEpoch":0}
-            body = json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(",",":")).encode()
-            hs = signed_headers(settings.voice_bridge_secret,path,body)
-            first = pair.voice.post(path,headers=hs,content=body)
-            if op == "late-block":return {"status":first.status_code}
-            assert first.status_code == 200,first.text
-            if op == "policy-state":
-                result = first.json()
-                return {"blocked":target["publicID"] in result["blockedUserIDs"],"roomCount":len(result["currentRooms"]),"roomsStale":result["roomsStale"]}
-            return {"first":first.status_code,"replay":pair.voice.post(path,headers=hs,content=body).status_code,
-                    "tamperedBody":pair.voice.post(path,headers=signed_headers(settings.voice_bridge_secret,path,body),content=body+b" ").status_code,
-                    "queryVariant":pair.voice.post(path+"?unexpected=1",headers=signed_headers(settings.voice_bridge_secret,path,body),content=body).status_code}
-        if op == "media-proof":
-            item = args["fixture"];media_id = args["mediaID"]
-            return {"id":media_id,"proof":hmac.new(settings.voice_bridge_secret.encode(),("p1social-media:"+item["publicID"]+":"+media_id).encode(),hashlib.sha256).hexdigest()}
-        if op == "cleanup":
-            for item in args["fixtures"]:
-                c.app.state.voice_bridge.post("/internal/v1/account/delete",{"accountID":item["publicID"]})
-                with database(settings) as db:
-                    erase(db,item["accountID"])
-                    db.execute("DELETE FROM accounts WHERE account_id=?",(item["accountID"],))
-                for media in item["media"]:
-                    (c.app.state.social.media_directory/(media["id"]+".jpg")).unlink(missing_ok=True)
-            with database(settings) as db:
-                return {"remainingBusinessAccounts":db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0],
-                        "remainingMediaRows":db.execute("SELECT COUNT(*) FROM social_media").fetchone()[0]}
-        if op == "audit-ops":
-            with database(settings) as db:return {"remainingOpsAccounts":db.execute("SELECT COUNT(*) FROM ops_accounts").fetchone()[0]}
-        raise AssertionError("Unsupported local driver operation "+op)
-    def audit(ids):
-        return {"remainingBlocks":sum(pair.app.state.db.execute("SELECT COUNT(*) FROM safety_blocks WHERE user_id=? OR blocked_user_id=?",(uid,uid)).fetchone()[0] for uid in ids),
-                "remainingUsers":pair.app.state.db.execute("SELECT COUNT(*) FROM users").fetchone()[0]}
-    class LocalHTTP:
-        def request(self,method,url,**kwargs):
-            assert url.startswith("https://kiki.group/")
-            return c.request(method,url,**kwargs)
-        def close(self):pass
-    monkeypatch.setattr(driver,"remote",remote)
-    monkeypatch.setattr(driver,"voice_audit",audit)
-    monkeypatch.setattr(httpx,"Client",lambda *args,**kwargs:LocalHTTP())
-    output = tmp_path/"local-public-driver-result.json"
-    assert driver.run(output) == 0,json.loads(output.read_text())
-    result = json.loads(output.read_text())
-    assert result["passed"] and result["cleanup"]["verified"]
-    assert len(result["checks"]) >= 24
-
-
 def test_real_account_only_social_block_withdrawal_reconsent_rejects_late_epoch(real_voice_service):
     """No voice user/session is needed to enforce one durable shared policy."""
     from app.voice_bridge import signed_headers
@@ -517,7 +291,8 @@ def test_real_account_only_social_block_withdrawal_reconsent_rejects_late_epoch(
     aid,bid = a["user"]["id"],b["user"]["id"]
     assert c.put(BASE+"/follows/"+bid,headers=authorization(a),json=mutation()).status_code == 200
     assert c.put(BASE+"/follows/"+aid,headers=authorization(b),json=mutation()).status_code == 200
-    post = c.post(BASE+"/moments",headers=authorization(a),json=mutation(text="真实HMAC桥接动态")).json()["moment"]
+    message = c.post(BASE+"/conversations/"+b["user"]["id"]+"/messages",headers=authorization(a),json=mutation(text="真实HMAC桥接私信"))
+    assert message.status_code == 200,message.text
     assert c.post(BASE+"/conversations/"+bid+"/messages",headers=authorization(a),json=mutation(text="真实HMAC桥接消息")).status_code == 200
     assert c.put(BASE+"/blocks/"+bid,headers=authorization(a),json=mutation()).status_code == 200
     old = next(r for r in reversed(pair.captured) if r.url.path.endswith("/social-block"))
@@ -527,7 +302,7 @@ def test_real_account_only_social_block_withdrawal_reconsent_rejects_late_epoch(
     for actor,target in ((a,b),(b,a)):
         assert c.get(BASE+"/people/"+target["user"]["id"],headers=authorization(actor)).status_code == 404
         assert c.get(BASE+"/conversations/"+target["user"]["id"]+"/messages",headers=authorization(actor)).status_code == 404
-    assert c.get(BASE+"/moments/"+post["id"],headers=authorization(b)).status_code == 404
+    assert c.get(BASE+"/conversations/"+a["user"]["id"]+"/messages",headers=authorization(b)).status_code == 404
     assert c.delete("/v1/me/legal-consent",headers=authorization(a)).status_code == 200
     c.app.state.voice_bridge.retry_revocations()
     withdrawal = next(r for r in reversed(pair.captured) if r.url.path.endswith("/revoke") and json.loads(r.content).get("reason")=="withdrawal")

@@ -6,8 +6,6 @@ import XCTest
 @MainActor
 final class KikiSeatRequestSheetTests: XCTestCase {
     func testSeatRequestHalfSheetEmptyAndPopulatedFixtureScreenshots() async throws {
-        let gifts = KikiGiftStore()
-        defer { gifts.reset() }
         let populated = fixtureState(populated: true)
         let empty = fixtureState(populated: false)
         XCTAssertEqual(populated.queue.filter { $0.status == "pending" }.count, 3)
@@ -39,7 +37,7 @@ final class KikiSeatRequestSheetTests: XCTestCase {
             for (label, size, typeSize, scheme) in sizes {
                 window.rootViewController?.dismiss(animated: false)
                 try await Task.sleep(nanoseconds: 100_000_000)
-                let sheet = KikiSeatRequestSheet(roomState: state, gifts: gifts, isWorking: false, isAvailable: true,
+                let sheet = KikiSeatRequestSheet(roomState: state, isWorking: false, isAvailable: true,
                     errorMessage: nil, onApprove: { _ in approvalCalls += 1 }, onReject: { _ in rejectionCalls += 1 },
                     onOpenPerson: { _ in profileCalls += 1 }, onDismiss: { dismissalCalls += 1 })
                     .dynamicTypeSize(typeSize)
@@ -85,14 +83,9 @@ final class KikiSeatRequestSheetTests: XCTestCase {
         XCTAssertEqual(rejectionCalls, 0, "Presentation must not reject automatically")
         XCTAssertEqual(profileCalls, 0)
         XCTAssertEqual(dismissalCalls, 0)
-        XCTAssertFalse(gifts.isAvailable, "The sheet renders local fixture state without an API session or RTC")
-        XCTAssertNil(gifts.wallet)
-        XCTAssertNil(gifts.catalog)
     }
 
     func testSharedRoomSheetsStartMediumExpandLargeAndInheritBothAppearances() async throws {
-        let gifts = KikiGiftStore()
-        defer { gifts.reset() }
         var saveCalls = 0
         let announcement = "欢迎来到房间。请友好交流，尊重每位朋友。"
         let contents: [(String, AnyView)] = [
@@ -104,8 +97,6 @@ final class KikiSeatRequestSheetTests: XCTestCase {
                 canUseRoom: true, isSaving: true, announcement: announcement, onSave: { saveCalls += 1 }, onClose: {}))),
             ("announcement-disabled", AnyView(KikiRoomAnnouncementContent(text: .constant(announcement), canManageRoom: true,
                 canUseRoom: false, isSaving: false, announcement: announcement, onSave: { saveCalls += 1 }, onClose: {}))),
-            ("gift-panel", AnyView(KikiGiftPanel(gifts: gifts, roomID: "fixture-room", members: [], hostID: nil))),
-            ("experience-center", AnyView(KikiExperienceCenterView(gifts: gifts))),
             ("scrollable-content", AnyView(NavigationStack {
                 ScrollView {
                     LazyVStack { ForEach(1...40, id: \.self) { Text("房内内容 \($0)").frame(maxWidth: .infinity).padding(20) } }
@@ -166,7 +157,133 @@ final class KikiSeatRequestSheetTests: XCTestCase {
             }
         }
         XCTAssertEqual(saveCalls, 0, "Rendering an enabled or loading save button must never submit an announcement")
-        XCTAssertFalse(gifts.isAvailable)
+    }
+
+    func testSeatInvitationControlsFitSmallScreensAndRequireExplicitActions() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive })
+        let previous = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        let originalFrame = window.frame
+        defer {
+            window.isHidden = true
+            previous?.makeKeyAndVisible()
+        }
+        let scenarios: [(String, Bool, Bool, Bool, DynamicTypeSize)] = [
+            ("ready", false, true, false, .large),
+            ("full-room", false, true, true, .large),
+            ("busy", true, true, false, .large),
+            ("unavailable", false, false, false, .large),
+            ("full-room-large-text", false, true, true, .accessibility3)
+        ]
+        var observations: [[String: Any]] = []
+        for scheme in [ColorScheme.light, .dark] {
+            for (name, busy, enabled, full, textSize) in scenarios {
+                let model = KikiSeatInvitationFixtureModel()
+                let fixture = KikiSeatInvitationControlsFixture(model: model, isBusy: busy,
+                    isEnabled: enabled, isRoomFull: full)
+                    .dynamicTypeSize(textSize).preferredColorScheme(scheme)
+                let host = UIHostingController(rootView: fixture)
+                window.rootViewController = host
+                window.frame = CGRect(origin: originalFrame.origin, size: CGSize(width: 375, height: 812))
+                host.view.frame = window.bounds
+                window.makeKeyAndVisible()
+                try await Task.sleep(nanoseconds: 350_000_000)
+                window.layoutIfNeeded()
+
+                func frame(_ key: String) throws -> CGRect {
+                    let probe = try XCTUnwrap(model.probes[key]?.last {
+                        $0.window === window && $0.bounds.width > 1 && $0.bounds.height > 1
+                    }, "The fixture must measure visible production content: \(key)")
+                    return probe.convert(probe.bounds, to: window)
+                }
+                let invite = try frame("invite")
+                let card = try frame("card")
+                XCTAssertGreaterThanOrEqual(invite.height, 44, "A compact visual button must keep a 44-point touch target")
+                XCTAssertGreaterThan(invite.width, 64)
+                XCTAssertGreaterThanOrEqual(invite.minX, 0)
+                XCTAssertLessThanOrEqual(invite.maxX, 375)
+                XCTAssertEqual(card.width, 343, accuracy: 1)
+                XCTAssertEqual(card.minX, 16, accuracy: 1)
+                XCTAssertGreaterThan(card.height, 110)
+                XCTAssertLessThan(card.height, 650, "Large text must fit in the phone viewport without clipping the actions")
+                XCTAssertGreaterThan(card.minY, invite.maxY)
+                XCTAssertEqual(model.invites, 0)
+                XCTAssertEqual(model.acceptances, 0, "Showing an invitation must never accept it or open the microphone")
+                XCTAssertEqual(model.declines, 0)
+
+                try capture(window: window, name: "invitation-controls-" + name + (scheme == .dark ? "-dark" : "-light"))
+                var activationResults: [String: Bool] = [:]
+                for identifier in ["social.profile.inviteSeat", "livekit.room.acceptSeatInvitation", "livekit.room.declineSeatInvitation"] {
+                    let node = invitationAccessibilityNodes(in: host.view).first {
+                        ($0 as? UIAccessibilityIdentification)?.accessibilityIdentifier == identifier
+                    }
+                    if let node {
+                        activationResults[identifier] = activateInvitationControl(node)
+                    } else {
+                        activationResults[identifier] = false
+                    }
+                }
+                await Task.yield()
+                if busy || !enabled {
+                    XCTAssertEqual(model.invites, 0, "Busy and disabled invitation controls must not submit")
+                    XCTAssertEqual(model.acceptances, 0)
+                    XCTAssertEqual(model.declines, 0)
+                } else {
+                    XCTAssertEqual(model.invites, activationResults["social.profile.inviteSeat"] == true ? 1 : 0)
+                    XCTAssertEqual(model.acceptances, activationResults["livekit.room.acceptSeatInvitation"] == true ? 1 : 0)
+                    XCTAssertEqual(model.declines, activationResults["livekit.room.declineSeatInvitation"] == true ? 1 : 0)
+                }
+                observations.append([
+                    "scenario": name, "appearance": scheme == .dark ? "dark" : "light",
+                    "inviteFrame": NSCoder.string(for: invite), "cardFrame": NSCoder.string(for: card),
+                    "accessibilityActivation": activationResults,
+                    "callbackCounts": ["invite": model.invites, "accept": model.acceptances, "decline": model.declines]
+                ])
+            }
+        }
+        // Some test-host runtimes omit SwiftUI's virtual accessibility nodes.
+        // Keep the layout evidence and report activation availability explicitly.
+        let report = try JSONSerialization.data(withJSONObject: observations, options: [.prettyPrinted, .sortedKeys])
+        let attachment = XCTAttachment(data: report, uniformTypeIdentifier: "public.json")
+        attachment.name = "seat-invitation-layout-and-activation"; attachment.lifetime = .keepAlways; add(attachment)
+        let folder = URL(fileURLWithPath: "/tmp/kiki-seat-request-sheet-screenshots", isDirectory: true)
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        try report.write(to: folder.appendingPathComponent(device + "-seat-invitation-validation.json"))
+    }
+
+    private func invitationAccessibilityNodes(in root: UIView) -> [NSObject] {
+        var nodes: [NSObject] = []
+        var visited = Set<ObjectIdentifier>()
+        func visit(_ object: NSObject) {
+            guard nodes.count < 2_000, visited.insert(ObjectIdentifier(object)).inserted else { return }
+            nodes.append(object)
+            if let view = object as? UIView { view.subviews.forEach(visit) }
+            if let elements = object.accessibilityElements {
+                for case let element as NSObject in elements { visit(element) }
+            }
+            let count = object.accessibilityElementCount()
+            if count > 0, count < 500 {
+                for index in 0..<count {
+                    if let element = object.accessibilityElement(at: index) as? NSObject { visit(element) }
+                }
+            }
+        }
+        visit(root)
+        return nodes
+    }
+
+    private func activateInvitationControl(_ object: NSObject) -> Bool {
+        if object.accessibilityActivate() { return true }
+        guard let control = object as? UIControl, control.isEnabled else { return false }
+        if control.allControlEvents.contains(.primaryActionTriggered) {
+            control.sendActions(for: .primaryActionTriggered)
+        } else if control.allControlEvents.contains(.touchUpInside) {
+            control.sendActions(for: .touchUpInside)
+        } else {
+            return false
+        }
+        return true
     }
 
     private func capture(window: UIWindow, name: String) throws {
@@ -222,5 +339,62 @@ private struct KikiSeatRequestSheetFixtureLauncher: View {
     var body: some View {
         KikiPalette.background.ignoresSafeArea()
             .sheet(isPresented: $isPresented) { sheet.kikiRoomSheet() }
+    }
+}
+
+@MainActor
+private final class KikiSeatInvitationFixtureModel: ObservableObject {
+    var invites = 0
+    var acceptances = 0
+    var declines = 0
+    var probes: [String: [UIView]] = [:]
+}
+
+private struct KikiSeatInvitationControlsFixture: View {
+    let model: KikiSeatInvitationFixtureModel
+    let isBusy: Bool
+    let isEnabled: Bool
+    let isRoomFull: Bool
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                KikiIncomingSeatInvitationCard(isBusy: isBusy, isEnabled: isEnabled, isRoomFull: isRoomFull,
+                    onAccept: { model.acceptances += 1 }, onDecline: { model.declines += 1 })
+                    .background(KikiSeatInvitationLayoutProbe(key: "card", model: model))
+                    .padding(16)
+            }
+            .background(KikiPalette.background.ignoresSafeArea())
+            .navigationTitle("个人主页").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if #available(iOS 26.0, *) {
+                    ToolbarItem(placement: .topBarLeading) { inviteButton }
+                        .sharedBackgroundVisibility(.hidden)
+                } else {
+                    ToolbarItem(placement: .topBarLeading) { inviteButton }
+                }
+                ToolbarItem(placement: .confirmationAction) { Button("完成") {} }
+            }
+        }
+    }
+
+    private var inviteButton: some View {
+        KikiProfileSeatInviteButton(title: "邀请", isBusy: isBusy, isEnabled: isEnabled) { model.invites += 1 }
+            .background(KikiSeatInvitationLayoutProbe(key: "invite", model: model))
+    }
+}
+
+private struct KikiSeatInvitationLayoutProbe: UIViewRepresentable {
+    let key: String
+    let model: KikiSeatInvitationFixtureModel
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        model.probes[key, default: []].append(view)
+        return view
+    }
+    func updateUIView(_ view: UIView, context: Context) {}
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
     }
 }

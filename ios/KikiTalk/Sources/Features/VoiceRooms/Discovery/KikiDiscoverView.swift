@@ -32,6 +32,7 @@ struct KikiDiscoverView: View {
                 .frame(maxWidth: 1120)
                 .frame(maxWidth: .infinity)
         }
+        .background(KikiPalette.background.ignoresSafeArea())
         .sheet(isPresented: $showsCreate, onDismiss: openPendingRoom) {
             KikiCreateRoomView(isLive: false) { pendingRoom = $0; query = ""; followingOnly = false }.environmentObject(store)
         }
@@ -73,9 +74,8 @@ struct KikiDiscoverView: View {
                     if let error = store.loadingError { KikiInlineError(message: error) { Task { await store.refreshRooms() } } }
                     if filteredRooms.isEmpty {
                         KikiEmptyState(symbol: followingOnly ? "person.2.wave.2" : "waveform", title: followingOnly ? "关注的人还没有开房" : "此刻，等一个声音",
-                            message: followingOnly ? "去找朋友，或切换「全部」认识更多人。" : "可以换个关键词，或创建一个自己的中文语聊房。")
-                        Button(followingOnly ? "找朋友" : "创建语聊房") { endSearch(); if followingOnly { showsPeople = true } else { presentCreate() } }
-                            .font(.body.weight(.semibold)).padding(.bottom, 25)
+                            message: "")
+
                     }
                     LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                         ForEach(filteredRooms) { room in

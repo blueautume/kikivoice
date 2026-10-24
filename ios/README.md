@@ -1,10 +1,10 @@
 # iOS 工程
 
-两个 App 均为 iOS 17+、支持 iPhone/iPad 的独立工程；应用容器、Bundle ID 和凭据各自独立。
+用户端可见名称为 Kiki，用户工程及 scheme 保留 KikiTalk；管理端可见名称为 Kiki运维，工程及 scheme 保留 KikiVoiceOps。两个 App 均为 iOS 17+、支持 iPhone/iPad 的独立工程；应用容器、Bundle ID 和凭据各自独立。
 
 | App | 工作区 / Scheme | 说明 |
 | --- | --- | --- |
-| KikiTalk | [KikiTalk/KikiTalk.xcworkspace](KikiTalk/KikiTalk.xcworkspace) / KikiTalk | [中文](KikiTalk/README.cn.md) · [English](KikiTalk/README.md) |
+| Kiki | [KikiTalk/KikiTalk.xcworkspace](KikiTalk/KikiTalk.xcworkspace) / KikiTalk | [中文](KikiTalk/README.cn.md) · [English](KikiTalk/README.md) |
 | KikiVoiceOps | [KikiVoiceOps/KikiVoiceOps.xcworkspace](KikiVoiceOps/KikiVoiceOps.xcworkspace) / KikiVoiceOps | [管理端说明](KikiVoiceOps/README.zh-CN.md) |
 
 ## 共同目录约定

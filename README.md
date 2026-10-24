@@ -1,14 +1,16 @@
-# KikiTalk
+# Kiki
 
 [简体中文](README.cn.md) · [iOS projects](ios/README.md) · [Architecture](docs/ARCHITECTURE.zh-CN.md) · [Project handover](docs/PROJECT_HANDOVER.zh-CN.md)
 
-KikiTalk is an iOS voice community with Apple sign-in, eight-seat voice rooms, moments, private messages, notifications, and a personal profile. Audio uses self-hosted LiveKit. Account/social and voice APIs are separate services.
+Kiki is an iOS voice community with Apple sign-in, eight-seat voice rooms, private messages, notifications, and a personal profile. Audio uses self-hosted LiveKit. Account/social and voice APIs are separate services.
+
+The visible app name is Kiki, with an uppercase initial; project names and paths remain KikiTalk. Startup checks consent silently and presents the consent page only when needed. Room creation and editing offer five native gradient backgrounds that adapt to light and dark appearance. See [room backgrounds and deployment](docs/ROOM_BACKGROUNDS.zh-CN.md).
 
 ## Run the iOS apps
 
 | App | Workspace | Scheme |
 | --- | --- | --- |
-| KikiTalk user app | `ios/KikiTalk/KikiTalk.xcworkspace` | KikiTalk |
+| Kiki user app | `ios/KikiTalk/KikiTalk.xcworkspace` | KikiTalk |
 | KikiVoiceOps operations app | `ios/KikiVoiceOps/KikiVoiceOps.xcworkspace` | KikiVoiceOps |
 
 Open the desired workspace in Xcode. Both apps require iOS 17 or later and support iPhone/iPad. KikiTalk resolves its pinned LiveKit packages through Swift Package Manager; KikiVoiceOps uses system frameworks. Use the existing simulator signing settings, or an authorized development team and device for a physical build.
@@ -34,7 +36,7 @@ The `experiments/livekit` name is historical; its backend, infrastructure, and c
 ## Service boundaries
 
 - `https://kiki.group`: Apple authentication, profiles, social content, APNs, legal consent, and operations identity.
-- `https://furby.top` / `wss://furby.top`: voice authorization, rooms, seats, room chat, gifts/decorations, and LiveKit signaling/media.
+- `https://furby.top` / `wss://furby.top`: voice authorization, rooms, seats, room chat, five room backgrounds, and LiveKit signaling/media.
 
 Account, voice, room, and operations credentials serve different purposes. Client code receives server-issued credentials; signing secrets stay outside the app.
 

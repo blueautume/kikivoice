@@ -93,7 +93,7 @@ private struct PasskeyLoginView: View {
                             OpsPrivacyLink()
                         }
                     }
-                    Text("运维账户独立于 KikiTalk 的 Apple 登录账户。通行密钥私钥与 Face ID 数据由系统管理，应用不会读取。")
+                    Text("运维账户独立于 Kiki 的 Apple 登录账户。通行密钥私钥与 Face ID 数据由系统管理，应用不会读取。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }.padding(24).padding(.top, 36)
             }.background(Color(.systemGroupedBackground))
@@ -354,8 +354,6 @@ struct AccountOverviewView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("社区使用").font(.headline)
                             DataRow("关注关系 / 互关对", value: "\(social.follows) / \(social.mutualPairs)")
-                            DataRow("动态 / 评论", value: "\(social.moments) / \(social.comments)")
-                            DataRow("私有图片", value: String(social.privateMedia))
                             DataRow("近 30 天私聊消息", value: String(social.messagesLast30Days))
                             DataRow("待处理社交举报", value: String(social.pendingReports))
                             DataRow("有效社交禁言", value: String(social.activePostingRestrictions))

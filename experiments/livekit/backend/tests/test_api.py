@@ -393,7 +393,12 @@ def test_health_uses_real_connectivity_and_never_exposes_config(lab):
 
 def test_unsupported_features_body_limit_and_rate_limiting(lab):
     account = login(lab)
-    assert lab.client.get("/v1/gifts/catalog", headers=headers(account)).status_code == 200
+    assert lab.client.get("/v1/gifts/catalog", headers=headers(account)).status_code == 404
+    assert lab.client.get("/v1/decorations/catalog", headers=headers(account)).status_code == 404
+    assert lab.client.get("/v1/me/decorations", headers=headers(account)).status_code == 404
+    assert lab.client.get("/v1/decorations/users?ids=test", headers=headers(account)).status_code == 404
+    assert lab.client.put("/v1/me/decorations/equipped", headers=headers(account),
+        json={"kind": "avatarFrame", "decorationID": None}).status_code == 404
     assert lab.client.post("/v1/me/avatar", headers=headers(account), content=b"image").status_code == 501
     assert lab.client.post("/v1/auth/lab", content=b"x" * 16385).status_code == 413
     assert lab.client.post("/v1/auth/lab", content=b"{}", headers={"content-length": "20000"}).status_code == 413

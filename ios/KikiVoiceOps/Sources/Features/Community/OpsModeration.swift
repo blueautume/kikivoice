@@ -16,10 +16,13 @@ struct OpsModerationPage: Decodable {
 
 struct OpsActiveRestriction: Decodable, Identifiable {
     let reportID, targetUserID: String
+    let targetDisplayID: String?
+    var accountLabel: String { targetDisplayID ?? targetUserID }
     let chatMutedUntil, voiceMutedUntil, bannedUntil: Double?
     var id: String { targetUserID }
     func validate() throws {
-        guard !reportID.isEmpty, reportID.utf8.count <= 128, !targetUserID.isEmpty, targetUserID.utf8.count <= 128,
+        guard OpsPublicAccountNumber.isValid(targetDisplayID),
+              !reportID.isEmpty, reportID.utf8.count <= 128, !targetUserID.isEmpty, targetUserID.utf8.count <= 128,
               [chatMutedUntil, voiceMutedUntil, bannedUntil].compactMap({ $0 }).allSatisfy({ $0.isFinite && $0 > 0 })
         else { throw OpsError.invalidResponse }
     }
@@ -34,6 +37,9 @@ enum OpsReportFilter: String, CaseIterable, Identifiable {
 struct OpsReport: Decodable, Identifiable {
     let id, status, targetType, roomID, roomTitle, reporterID, reporterName: String
     let targetUserID, targetName, messageID: String?
+    let reporterDisplayID, targetDisplayID: String?
+    var reporterLabel: String { reporterDisplayID ?? reporterID }
+    var targetLabel: String? { targetDisplayID ?? targetUserID }
     let reason, details: String
     let messageExcerpt: String?
     let createdAt: Double
@@ -53,7 +59,8 @@ struct OpsReport: Decodable, Identifiable {
         return targetUserID?.isEmpty == false
     }
     func validate() throws {
-        guard !id.isEmpty, id.utf8.count <= 128, !roomID.isEmpty,
+        guard OpsPublicAccountNumber.isValid(reporterDisplayID), OpsPublicAccountNumber.isValid(targetDisplayID),
+              !id.isEmpty, id.utf8.count <= 128, !roomID.isEmpty,
               ["pending", "resolved", "dismissed"].contains(status),
               ["room", "user", "message"].contains(targetType),
               details.utf8.count <= 4096, (messageExcerpt?.utf8.count ?? 0) <= 8192,
@@ -116,5 +123,14 @@ struct OpsMaintenance: Decodable {
         let healthy: Bool?
         let lastError: String?
         let retentionDays: Int
+    }
+}
+
+/// A recyclable presentation number; moderation requests use immutable report/user IDs.
+enum OpsPublicAccountNumber {
+    static func isValid(_ value: String?) -> Bool {
+        guard let value else { return true }
+        return value.utf8.count == 11 && value != "kiki_000000"
+            && value.range(of: "^kiki_[0-9]{6}$", options: .regularExpression) != nil
     }
 }

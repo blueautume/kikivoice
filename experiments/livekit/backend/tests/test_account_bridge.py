@@ -121,3 +121,58 @@ def test_mode_switch_rejects_existing_lab_tokens(lab):
     settings=replace(lab.settings,auth_mode="account",account_bridge_secret=SECRET)
     with TestClient(create_app(settings,FakeLiveKit(settings))) as client:
         assert client.get("/v1/me",headers=headers(old)).status_code == 401
+
+
+def test_public_number_is_optional_and_never_replaces_voice_identity(account_service):
+    s = account_service
+    old = exchange(s).json()
+    assert old["user"]["displayID"] is None
+    user = profile(); user["displayID"] = "kiki_000001"
+    current = exchange(s, user=user).json()
+    assert current["token"] == old["token"]
+    assert current["user"]["id"] == current["sdk"]["userID"] == user["id"]
+    assert current["user"]["displayID"] == "kiki_000001"
+    room = create_room(s, current)
+    s.rtc.rooms[room["id"]].add(user["id"])
+    state = s.client.get(f'/v1/rooms/{room["id"]}/state', headers=headers(current))
+    assert state.status_code == 200, state.text
+    value = state.json()
+    assert value["room"]["hostID"] == value["me"]["userID"] == user["id"]
+    assert value["room"]["hostDisplayID"] == value["me"]["displayID"] == "kiki_000001"
+    assert s.app.state.db.execute("SELECT owner_id FROM rooms WHERE id=?", (room["id"],)).fetchone()[0] == user["id"]
+    user["displayID"] = "kiki_000002"
+    changed = exchange(s, user=user).json()
+    assert changed["token"] == current["token"]
+    assert changed["user"]["id"] == user["id"]
+    assert changed["user"]["displayID"] == "kiki_000002"
+    assert s.client.get("/v1/me", headers=headers(old)).json()["displayID"] == "kiki_000002"
+    assert signed(s, "delete", {"accountID": user["id"]}).status_code == 200
+    assert s.app.state.db.execute("SELECT display_id FROM users WHERE id=?", (user["id"],)).fetchone()[0] is None
+    new_user = profile("新用户", "kiki_newstable00001"); new_user["displayID"] = "kiki_000002"
+    new = exchange(s, auth=hashlib.sha256(b"new-number-owner").hexdigest(), user=new_user).json()
+    assert new["user"]["displayID"] == changed["user"]["displayID"]
+    assert new["user"]["id"] != current["user"]["id"]
+    assert s.client.get("/v1/me", headers=headers(current)).status_code == 401
+
+
+@pytest.mark.parametrize("number", ["kiki_000000", "kiki_12345", "kiki_1234567", "kiki_abcdef", "Kiki_000001"])
+def test_public_number_bridge_rejects_malformed_display_only_values(account_service, number):
+    user = profile(); user["displayID"] = number
+    assert exchange(account_service, user=user).status_code == 422
+
+
+def test_public_number_cannot_be_used_as_stable_account_identity(account_service):
+    user = profile(account_id="kiki_000001"); user["displayID"] = "kiki_000001"
+    assert exchange(account_service, user=user).status_code == 422
+
+
+def test_deletion_clears_cached_public_number_without_any_voice_authorization(account_service):
+    s = account_service
+    user = profile(); user["displayID"] = "kiki_000001"
+    assert exchange(s, user=user).status_code == 200
+    with s.app.state.db:
+        s.app.state.db.execute("DELETE FROM account_authorization_privacy")
+        s.app.state.db.execute("DELETE FROM account_authorizations")
+        s.app.state.db.execute("DELETE FROM sessions")
+    assert signed(s, "delete", {"accountID": user["id"]}).status_code == 200
+    assert s.app.state.db.execute("SELECT display_id FROM users WHERE id=?", (user["id"],)).fetchone()[0] is None

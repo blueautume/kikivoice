@@ -9,7 +9,7 @@ struct OpsSocialModerationView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("账号社区 · kiki.group").font(.subheadline.bold())
-                Text("处理个人资料、动态、评论和私聊举报。社交禁言只限制发布与发送，不影响 Apple 登录或语音房间权限。")
+                Text("处理个人资料和私聊举报。社交禁言限制私聊发送及关注操作，不影响 Apple 登录或语音房间权限。")
                     .font(.caption).foregroundStyle(.secondary)
                 Picker("举报状态", selection: Binding(get: { store.filter }, set: { value in Task { await store.load(filter: value) } })) {
                     ForEach(OpsReportFilter.allCases) { Text($0.label).tag($0) }
@@ -37,7 +37,7 @@ struct OpsSocialModerationView: View {
                                 OpsCard {
                                     VStack(alignment: .leading, spacing: 6) {
                                         Text(item.userName).font(.headline)
-                                        Text(item.userID).font(.caption).foregroundStyle(.secondary)
+                                        Text(item.accountLabel).font(.caption).foregroundStyle(.secondary)
                                         Text("至 \(Date(timeIntervalSince1970: item.until).formatted(date: .abbreviated, time: .shortened))")
                                             .font(.caption).foregroundStyle(.secondary)
                                         Label("核对并解除", systemImage: "lock.open").font(.subheadline)
@@ -60,7 +60,6 @@ struct OpsSocialModerationView: View {
                                     }
                                     Text("\(report.typeTitle) · \(report.targetName)").font(.subheadline)
                                     Text(report.details.isEmpty ? "未填写补充说明" : report.details).font(.caption).foregroundStyle(.secondary).lineLimit(3)
-                                    if !report.evidence.media.isEmpty { Label("含 \(report.evidence.media.count) 张图片证据", systemImage: "photo").font(.caption) }
                                     Text(Date(timeIntervalSince1970: report.createdAt).formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.secondary)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -105,22 +104,17 @@ struct OpsSocialReportDetail: View {
                     Section("举报信息") {
                         DataRow("对象", value: report.typeTitle)
                         DataRow("被举报用户", value: report.targetName)
-                        Text(report.targetUserID).font(.caption.monospaced()).textSelection(.enabled)
+                        Text(report.targetLabel).font(.subheadline.monospaced()).textSelection(.enabled)
+                        Text("审核编号：\(report.targetUserID)").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                         DataRow("举报人", value: report.reporterName)
+                        Text(report.reporterLabel).font(.caption.monospaced()).textSelection(.enabled)
                         DataRow("原因", value: report.reasonTitle)
                         Text(report.details.isEmpty ? "未填写补充说明" : report.details)
                         Text(report.id).font(.caption.monospaced()).textSelection(.enabled)
                     }
                     Section("按需保留的证据") {
                         Text(report.evidence.text.isEmpty ? "没有文字证据" : report.evidence.text).textSelection(.enabled)
-                        ForEach(report.evidence.media) { media in
-                            if let data = store.images[media.id], let image = UIImage(data: data) {
-                                Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 300)
-                            } else {
-                                Button { Task { await store.loadImage(media.id) } } label: { Label("查看图片证据", systemImage: "photo") }
-                            }
-                        }
-                        Text("私聊证据由参与者举报后保存，仅限本案。图片按需读取，不写入系统相册。")
+                        Text("私聊证据由参与者举报后保存，仅限本案。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Section("处理") {
@@ -135,7 +129,7 @@ struct OpsSocialReportDetail: View {
                             Picker("禁言期限", selection: $duration) {
                                 Text("1 小时").tag(3600); Text("1 天").tag(86400); Text("7 天").tag(604800); Text("30 天").tag(2592000)
                             }
-                            Text("禁止发布动态、评论和私聊；语音房间限制在语聊举报页单独处理。")
+                            Text("禁止发送私聊和关注；语音房间限制在语聊举报页单独处理。")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         TextField("必填处理说明，最多 500 字", text: $note, axis: .vertical).lineLimit(3...6)
@@ -173,7 +167,11 @@ private struct OpsSocialRestoreView: View {
         Form {
             if parent.canAccessSelectedService, parent.service == .community,
                store.page?.activeRestrictions.contains(where: { $0.userID == restriction.userID && $0.sourceReportID == restriction.sourceReportID }) == true {
-                Section("核对账号") { Text(restriction.userName); Text(restriction.userID).font(.caption.monospaced()).textSelection(.enabled) }
+                Section("核对账号") {
+                    Text(restriction.userName)
+                    Text(restriction.accountLabel).font(.subheadline.monospaced()).textSelection(.enabled)
+                    Text("审核编号：\(restriction.userID)").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                }
                 Section("解除理由") {
                     TextField("必填，最多 500 字", text: $note, axis: .vertical).lineLimit(3...6)
                     if let error = store.error { Text(error).foregroundStyle(.red) }

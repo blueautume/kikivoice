@@ -1,8 +1,12 @@
-# KikiTalk iOS
+# Kiki iOS
 
 [English](README.md) · [iOS 导航](../README.md) · [仓库总览](../../README.cn.md) · [当前架构](../../docs/ARCHITECTURE.zh-CN.md) · [接手指南](../../docs/PROJECT_HANDOVER.zh-CN.md)
 
-用 Xcode 打开 **KikiTalk.xcworkspace**，选择 **KikiTalk** scheme。最低 iOS 17，支持 iPhone/iPad；测试 target 为 KikiTalkTests。
+应用可见名称为首字母大写的 **Kiki**，工程名、路径及 scheme 继续使用 KikiTalk。用 Xcode 打开 **KikiTalk.xcworkspace**，选择 **KikiTalk** scheme。最低 iOS 17，支持 iPhone/iPad；测试 target 为 KikiTalkTests。
+
+## 启动与外观
+
+正常启动只展示品牌图标和 Kiki，协议签署状态静默核对；只有需要确认当前协议时才进入签署页。已签署用户继续恢复会话，不再经过协议检查说明页。房间背景使用原生 SwiftUI 渐变和独立深浅色调色，未拷贝系统壁纸。
 
 ## 依赖与签名
 
@@ -20,19 +24,18 @@ Xcode 通过 Swift Package Manager 解析 LiveKit，工作区 `xcshareddata/swif
 | `Sources/Core/DesignSystem/` | 共用调色板及头像绘制 |
 | `Sources/Core/Notifications/`、`Diagnostics/` | APNs 登记/路由、故障关联与上报 |
 | `Sources/Features/Authentication/`、`Privacy/` | Apple 授权与登录、协议确认和撤回 |
-| `Sources/Features/VoiceRooms/` | Models、Discovery、Services、Views、Presentation、Chat |
-| `Sources/Features/Gifts/` | 体验余额、礼物队列/效果和装扮 |
-| `Sources/Features/Social/`、`Moments/`、`Messaging/` | 用户/关系、动态/评论、收件箱/私聊 |
+| `Sources/Features/VoiceRooms/` | 房间模型、五款背景、建房/编辑、RTC、房间视图与聊天 |
+| `Sources/Features/Social/`、`Messaging/` | 用户/互关/关注/粉丝、收件箱/文字私聊 |
 | `Sources/Features/Profile/` | 资料、设置、房间收藏/足迹和安全入口 |
 | `Tests/` | 镜像 App/Core/Features 的回归及显式开启的 Integration |
-| `Resources/` | Assets、礼物、协议副本、启动页和隐私清单 |
+| `Resources/` | Assets、协议副本、启动页和隐私清单 |
 | `Configuration/` | Info.plist、KikiTalk.entitlements |
 
 AppStore 保留跨页面业务状态和会话编排，RootView 保留门禁与导航。原有调色板、头像、房间模型、大厅、未读门禁及房间辅助视图等完整顶层类型已抽成独立文件。Social、Profile 和部分测试文件仍集中多个职责，本轮没有把所有大文件改造成细粒度模块，也没有为每个目录新建 Swift package。
 
 ## 资源工具
 
-仓库根 `tools/` 的生成器已指向本项目 `Resources/`。在仓库根执行 `python3 tools/build_legal_documents.py --check` 只检查协议产物，不修改文件。品牌与礼物生成仍属于明确的资源制作操作；移动目录无需重新生成图片或修改协议正文。
+仓库根 `tools/` 的品牌生成器指向本项目 `Resources/`。在仓库根执行 `python3 tools/build_legal_documents.py --check` 只检查协议产物，不修改文件。房间提供“简约、晨光、晴空、暮色、薄荷”五款随系统深浅色变化的预设背景，可在建房时选择或由房主编辑，见[房间背景说明](../../docs/ROOM_BACKGROUNDS.zh-CN.md)。独立装饰系统已移除。
 
 ## 验证范围
 

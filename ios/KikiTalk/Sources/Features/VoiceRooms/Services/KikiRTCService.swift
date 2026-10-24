@@ -64,11 +64,9 @@ protocol KikiRTCServicing: AnyObject {
     func updateProfile(userID: String, name: String, bio: String, avatarURL: String) async throws
     func createRoom(roomID: String, title: String, category: String, isLive: Bool, theme: Int) async throws
     func presentRoom(roomID: String, isLive: Bool, isOwner: Bool) async throws
-    func configureGifts(_ gifts: KikiGiftStore?)
 }
 
 extension KikiRTCServicing {
-    func configureGifts(_ gifts: KikiGiftStore?) { }
     var roomPresentationChanges: AnyPublisher<Bool, Never>? { nil }
 }
 
@@ -121,12 +119,11 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
     @Published private(set) var announcement = KikiRoomAnnouncement.empty
     @Published private(set) var chatSyncNotice: String?
     @Published private(set) var isSavingAnnouncement = false
-    @Published private(set) var isUpdatingRoomTitle = false
+    @Published private(set) var isUpdatingRoomDetails = false
     @Published private(set) var serverDiagnostics: KikiServerDiagnostics?
     @Published private(set) var diagnosticsError: String?
     @Published private(set) var isLoadingDiagnostics = false
     weak var socialStore: KikiAppStore?
-    @Published private(set) var gifts = KikiGiftStore()
     @Published private(set) var roomInfo: KikiRoom?
     @Published private(set) var roomState: KikiRoomState?
     @Published private(set) var isPerformingRoomAction = false
@@ -173,9 +170,6 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
     private var recoveryTask: Task<Void, Never>?
     private var nextChatSyncAt = Date.distantPast
     private var nextRoomSyncAt = Date.distantPast
-    private var nextGiftSyncAt = Date.distantPast
-    private var nextAppearanceSyncAt = Date.distantPast
-    private var roomExperienceVisible = false
     private var chatFailureCount = 0
     private var stateFailureCount = 0
     private var lastQualityReportAt = Date.distantPast
@@ -250,30 +244,6 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
     }
 
     func configure(api: KikiAPIClient) { self.api = api }
-    func configureGifts(_ store: KikiGiftStore?) {
-        if store == nil || gifts !== store {
-            gifts.onRoomGiftCommitted = nil
-            gifts.stopRoom()
-            gifts = store ?? KikiGiftStore()
-        }
-        gifts.onRoomGiftCommitted = { [weak self] roomID in
-            guard let self, self.currentRoomID == roomID else { return }
-            self.publishRoomSyncHint([.gifts])
-        }
-    }
-
-    /// The UIKit room view supplies visibility; only this service owns the
-    /// network driver, cursor, and cancellation. Audio is independent of it.
-    func setRoomExperienceVisible(_ visible: Bool) {
-        let visible = visible && canUseRoom && currentRoomID != nil
-        guard roomExperienceVisible != visible else { return }
-        roomExperienceVisible = visible
-        nextGiftSyncAt = .distantPast
-        nextAppearanceSyncAt = .distantPast
-        if !visible { gifts.stopRoom() }
-        else if let room { requestRoomRefresh([.gifts], in: room) }
-    }
-
     func isCurrentRoom(_ roomID: String) -> Bool {
         currentRoomID == roomID && disconnectionReason == nil
     }
@@ -644,9 +614,10 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
         }
     }
 
-    func performRoomAction(_ action: KikiRoomAction, targetUserID: String? = nil, seatIndex: Int? = nil, enabled: Bool? = nil) async {
+    @discardableResult
+    func performRoomAction(_ action: KikiRoomAction, targetUserID: String? = nil, seatIndex: Int? = nil, enabled: Bool? = nil) async -> Bool {
         guard canUseRoom, !isPerformingRoomAction, let roomID = currentRoomID,
-              let token = sessionToken, let liveRoom = room else { return }
+              let token = sessionToken, let liveRoom = room else { return false }
         let generation = lifecycleGeneration
         isPerformingRoomAction = true
         defer { if generation == lifecycleGeneration, room === liveRoom { isPerformingRoomAction = false } }
@@ -654,30 +625,33 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
             let state = try await observed(.roomAction) { try await api.roomAction(action, roomID: roomID, targetUserID: targetUserID,
                                                 seatIndex: seatIndex, enabled: enabled, token: token) }
             try checkLifecycle(generation)
-            guard room === liveRoom, currentRoomID == roomID else { return }
+            guard room === liveRoom, currentRoomID == roomID else { return false }
             await applyRoomState(state, to: liveRoom)
+            guard generation == lifecycleGeneration, room === liveRoom, currentRoomID == roomID else { return false }
             publishRoomSyncHint([.state])
+            return true
         } catch {
-            guard generation == lifecycleGeneration, room === liveRoom else { return }
+            guard generation == lifecycleGeneration, room === liveRoom else { return false }
             if (error as? KikiAPIError)?.isUnauthorized == true { expireSession() }
             else if !(error is CancellationError) { roomError = error.localizedDescription }
+            return false
         }
     }
 
-    func updateRoomTitle(_ proposedTitle: String) async throws {
-        guard canUseRoom, isRoomOwner, !isUpdatingRoomTitle,
+    func updateRoomDetails(_ proposedTitle: String, theme: Int) async throws {
+        guard canUseRoom, isRoomOwner, !isUpdatingRoomDetails,
               let roomID = currentRoomID, let liveRoom = room, let socialStore else {
-            throw KikiRTCError.unavailable("只有房主可以在当前房间修改名称。")
+            throw KikiRTCError.unavailable("只有房主可以在当前房间编辑房间。")
         }
         let generation = lifecycleGeneration
         let title = try KikiRoomTitlePolicy.resolved(proposedTitle, nickname: socialStore.profileName)
-        isUpdatingRoomTitle = true
-        defer { if generation == lifecycleGeneration, room === liveRoom { isUpdatingRoomTitle = false } }
-        let state = try await observed(.roomAction) { try await socialStore.updateRoomTitle(roomID: roomID, title: title) }
+        isUpdatingRoomDetails = true
+        defer { if generation == lifecycleGeneration, room === liveRoom { isUpdatingRoomDetails = false } }
+        let state = try await observed(.roomAction) { try await socialStore.updateRoomTitle(roomID: roomID, title: title, theme: KikiRoomBackgroundStyle(theme: theme).rawValue) }
         try checkLifecycle(generation)
         guard room === liveRoom, currentRoomID == roomID else { throw CancellationError() }
         // The write returns its complete authoritative state/revision. No
-        // secondary GET can falsely report that an already saved rename failed.
+        // secondary GET can falsely report that an already saved edit failed.
         await applyRoomState(state, to: liveRoom)
         publishRoomSyncHint([.state])
         updateFloatingStatus()
@@ -786,7 +760,6 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
                 await self.synchronizeChat(roomID: roomID, token: token, liveRoom: liveRoom, generation: generation)
                 guard self.room === liveRoom, generation == self.lifecycleGeneration,
                       self.disconnectionReason == nil, !self.privacySuspended else { return }
-                await self.synchronizeRoomExperience(roomID: roomID, liveRoom: liveRoom, generation: generation)
                 if Date() >= self.nextMetricsSyncAt {
                     self.nextMetricsSyncAt = Date().addingTimeInterval(KikiRoomRefreshPolicy.metricsInterval)
                     self.refreshNetworkMetrics(liveRoom)
@@ -794,24 +767,6 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
                 await self.reportQualityIfNeeded(roomID: roomID, token: token, liveRoom: liveRoom, generation: generation)
             }
         }
-    }
-
-    private func synchronizeRoomExperience(roomID: String, liveRoom: Room, generation: Int, invalidated: Bool = false) async {
-        guard roomExperienceVisible, canUseRoom, room === liveRoom,
-              generation == lifecycleGeneration else { return }
-        if invalidated || gifts.hasPendingRoomInvalidation || Date() >= nextGiftSyncAt {
-            nextGiftSyncAt = Date().addingTimeInterval(KikiRoomRefreshPolicy.compensationInterval)
-            await gifts.pollRoom(roomID: roomID, invalidated: invalidated)
-        }
-        guard roomExperienceVisible, canUseRoom, room === liveRoom,
-              generation == lifecycleGeneration, !Task.isCancelled,
-              Date() >= nextAppearanceSyncAt else { return }
-        nextAppearanceSyncAt = Date().addingTimeInterval(KikiRoomRefreshPolicy.appearanceInterval)
-        await gifts.refresh()
-        guard roomExperienceVisible, canUseRoom, room === liveRoom,
-              generation == lifecycleGeneration, !Task.isCancelled else { return }
-        let ids = (roomState?.members.map(\.userID) ?? []) + [roomInfo?.hostID ?? ""]
-        await gifts.refreshDecorations(userIDs: ids.filter { !$0.isEmpty })
     }
 
     private func publishRoomSyncHint(_ resources: Set<KikiRoomSyncHint.Resource>) {
@@ -872,9 +827,6 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
                           !Task.isCancelled, !self.privacySuspended else { return }
                     if self.chatFailureCount == 0 { self.nextChatSyncAt = .distantPast }
                     await self.synchronizeChat(roomID: roomID, token: currentToken, liveRoom: liveRoom, generation: generation)
-                }
-                if resources.contains(.gifts), self.roomExperienceVisible {
-                    await self.synchronizeRoomExperience(roomID: roomID, liveRoom: liveRoom, generation: generation, invalidated: true)
                 }
             }
         }
@@ -1320,7 +1272,6 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
         let closedID = currentRoomID
         lifecycleGeneration += 1
         safetyReads.cancel(); reportReads.cancel(); safetyLoadingWaiters = []; isLoadingSafety = false
-        gifts.stopRoom()
         audioPolicyGeneration += 1
         roomStateTask?.cancel()
         roomStateTask = nil
@@ -1365,15 +1316,12 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
         chatSyncNotice = nil
         nextChatSyncAt = .distantPast
         nextRoomSyncAt = .distantPast
-        nextGiftSyncAt = .distantPast
-        nextAppearanceSyncAt = .distantPast
         nextMetricsSyncAt = .distantPast
-        roomExperienceVisible = false
         lastQualityReportAt = .distantPast
         chatFailureCount = 0
         stateFailureCount = 0
         isSavingAnnouncement = false
-        isUpdatingRoomTitle = false
+        isUpdatingRoomDetails = false
         isLoadingDiagnostics = false
         serverDiagnostics = nil
         diagnosticsError = nil

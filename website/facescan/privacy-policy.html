@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="FaceScan 隐私政策：了解本地面部扫描、数据保存与清除、文件导入导出及权限管理。">
+  <meta name="color-scheme" content="light">
+  <title>FaceScan 隐私政策</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: #3e3023;
+      background: #fcf6ea;
+      line-height: 1.85;
+      -webkit-text-size-adjust: 100%;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 48px 20px; }
+    main {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 48px;
+      background: #fffaf1;
+      border: 1px solid #dac7a8;
+      border-radius: 20px;
+    }
+    h1 { margin: 0 0 20px; font-size: 30px; line-height: 1.4; }
+    h2 { margin: 32px 0 12px; font-size: 20px; line-height: 1.5; }
+    p { margin: 12px 0; }
+    ul { margin: 12px 0; padding-left: 1.5em; }
+    li { margin: 6px 0; }
+    .metadata {
+      margin-bottom: 28px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid #dac7a8;
+      color: #75634f;
+      font-size: 14px;
+    }
+    .metadata p { margin: 4px 0; }
+    a { color: #855722; text-underline-offset: 3px; overflow-wrap: anywhere; }
+    a:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+    @media (max-width: 600px) {
+      body { padding: 20px 12px; }
+      main { padding: 28px 20px; border-radius: 14px; }
+      h1 { font-size: 26px; }
+      h2 { font-size: 19px; }
+    }
+    @media print {
+      :root { color: #000; background: #fff; }
+      body { padding: 0; }
+      main { max-width: none; padding: 0; border: 0; border-radius: 0; background: #fff; }
+      h2 { break-after: avoid; }
+      a { color: inherit; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>FaceScan 隐私政策</h1>
+      <div class="metadata">
+        <p>更新日期：<time datetime="2026-10-24">2026年10月24日</time></p>
+        <p>生效日期：<time datetime="2026-10-24">2026年10月24日</time></p>
+        <p>开发者：李浩（个人开发者）</p>
+        <p>联系邮箱：<a href="mailto:2114581274@qq.com">2114581274@qq.com</a></p>
+      </div>
+      <p>FaceScan 是一款在设备本地进行面部三维扫描和 PLY 模型查看的应用。本政策说明本应用如何处理数据，以及你如何管理相关权限和文件。</p>
+    </header>
+
+    <section aria-labelledby="camera-data">
+      <h2 id="camera-data">一、相机与面部数据</h2>
+      <p>在你同意隐私政策、主动使用扫描功能并授予相机权限后，本应用会使用前置摄像头及 TrueDepth 原深感功能，在设备本地处理以下数据：</p>
+      <ul>
+        <li>相机画面及颜色信息；</li>
+        <li>面部深度、面部几何与头部姿态信息；</li>
+        <li>用于判断扫描状态的面部追踪和表情状态信息；</li>
+        <li>根据上述数据生成的彩色点云和三维模型。</li>
+      </ul>
+      <p>这些数据仅用于扫描引导、三维重建、模型展示及你主动发起的文件导出，不用于身份识别、身份验证、广告营销或模型训练。</p>
+      <p>本应用不录制或保存原始相机照片、视频，不将面部数据上传给开发者或其他服务器。</p>
+      <p>面部图像、深度数据和三维模型可能涉及敏感个人信息。处理这些数据是实现面部扫描功能所必需的；你可以拒绝使用扫描功能，仍可查看自行选择的 PLY 文件。</p>
+    </section>
+
+    <section aria-labelledby="local-files">
+      <h2 id="local-files">二、本地文件与设置</h2>
+      <p>当你选择打开 PLY 文件时，本应用仅在设备本地读取和展示文件，不改写源文件。查看 PLY 文件不需要相机权限。</p>
+      <p>本应用仅在设备本地记录你已同意的隐私政策版本，以判断是否需要再次征求同意。该记录不发送给开发者。</p>
+      <p>本应用无需注册账号，不接入第三方 SDK，不包含广告、用户行为分析或第三方追踪功能。</p>
+    </section>
+
+    <section aria-labelledby="retention">
+      <h2 id="retention">三、数据保存与清除</h2>
+      <p>未主动导出的扫描结果仅保留在应用运行内存中，不作为扫描历史持久保存。重新扫描会替换当前扫描结果；撤回同意或应用进程终止后，当前内存中的扫描数据不再保留。</p>
+      <p>主动导出时，本应用会生成临时 PLY 文件。导出完成、取消或保存面板关闭后，应用会清理临时文件；因应用异常中断而遗留的临时导出文件，会在下次启动时清理。</p>
+      <p>你通过系统文件面板保存的文件，由你自行管理，不会因撤回同意而自动删除。</p>
+    </section>
+
+    <section aria-labelledby="file-services">
+      <h2 id="file-services">四、文件导出与第三方服务</h2>
+      <p>只有在你主动选择导出后，本应用才会通过系统文件面板，让你决定文件名和保存位置。</p>
+      <p>导出的 PLY 文件可能包含三维坐标、顶点颜色、三角面，以及扫描帧数、视角覆盖等信息。三维模型可能呈现面部外观，请根据自己的意愿决定保存和分享方式。</p>
+      <p>如果你在导入或导出时选择 iCloud Drive 或其他文件服务，相关文件的下载、上传、同步和保存由操作系统及所选服务处理，并适用其隐私政策。本应用自身不提供云端上传或云同步功能。</p>
+      <p>开发者不会通过本应用获取、出售或向第三方提供你的扫描数据及导入文件。</p>
+    </section>
+
+    <section aria-labelledby="your-choices">
+      <h2 id="your-choices">五、你的选择与控制</h2>
+      <p>你可以：</p>
+      <ul>
+        <li>拒绝相机权限，继续使用 PLY 文件查看功能；</li>
+        <li>在 iOS 系统设置中关闭本应用的相机权限；</li>
+        <li>点击应用顶部的手掌图标，查看隐私政策并选择“撤回同意并清除扫描”；</li>
+        <li>通过系统“文件”应用或相应文件服务，删除已导出的文件。</li>
+      </ul>
+      <p>撤回同意后，本应用会停止相机采集，取消正在进行的导入和导出，清除当前扫描、当前查看的模型缓存、临时导出文件及本地同意记录。此操作不会删除你打开的源文件或此前自行保存的文件。</p>
+      <p>由于开发者不持有你的扫描数据，无法替你恢复或远程删除设备及文件服务中的模型文件。</p>
+    </section>
+
+    <section aria-labelledby="policy-updates">
+      <h2 id="policy-updates">六、隐私政策更新</h2>
+      <p>当应用功能或数据处理方式发生变化时，我们会相应更新本政策并注明更新日期。</p>
+      <p>涉及需要重新取得同意的变化时，我们会在相关处理开始前说明并征求同意。你可以选择不接受并停止使用相关功能。</p>
+    </section>
+
+    <section aria-labelledby="contact">
+      <h2 id="contact">七、联系我们</h2>
+      <p>如果你对本政策、数据处理方式或隐私保护有疑问，请联系：</p>
+      <p>开发者：李浩（个人开发者）<br>电子邮箱：<a href="mailto:2114581274@qq.com">2114581274@qq.com</a></p>
+      <p>如你主动通过邮件联系我们，我们会收到你提供的邮箱地址、邮件内容及附件，仅用于沟通和处理相关问题。联系时无需提供面部模型或原始扫描数据。</p>
+    </section>
+  </main>
+</body>
+</html>

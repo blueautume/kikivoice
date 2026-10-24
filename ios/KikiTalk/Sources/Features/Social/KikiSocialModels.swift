@@ -12,7 +12,9 @@ struct KikiPerson: Codable, Equatable, Identifiable {
     var followingCount: Int
     var followerCount: Int
     var currentRoomID: String?
+    var displayID: String? = nil
 
+    var publicID: String { displayID ?? id }
     var relationshipLabel: String { mutual ? "互相关注" : (following ? "已关注" : "关注") }
 }
 
@@ -60,19 +62,18 @@ struct KikiSocialNotification: Decodable, Identifiable, Equatable {
     let createdAt: Double
     let readAt: Double?
     let roomID: String?
-    let momentID: String?
     let seq: Int
-    init(id: String, kind: String, actor: KikiPerson?, text: String, createdAt: Double, readAt: Double?, roomID: String?, momentID: String?, seq: Int = 0) {
+    init(id: String, kind: String, actor: KikiPerson?, text: String, createdAt: Double, readAt: Double?, roomID: String?, seq: Int = 0) {
         self.id = id; self.kind = kind; self.actor = actor; self.text = text; self.createdAt = createdAt
-        self.readAt = readAt; self.roomID = roomID; self.momentID = momentID; self.seq = seq
+        self.readAt = readAt; self.roomID = roomID; self.seq = seq
     }
-    private enum CodingKeys: String, CodingKey { case id, kind, actor, text, createdAt, readAt, roomID, momentID, seq }
+    private enum CodingKeys: String, CodingKey { case id, kind, actor, text, createdAt, readAt, roomID, seq }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id); kind = try c.decode(String.self, forKey: .kind)
         actor = try c.decodeIfPresent(KikiPerson.self, forKey: .actor); text = try c.decode(String.self, forKey: .text)
         createdAt = try c.decode(Double.self, forKey: .createdAt); readAt = try c.decodeIfPresent(Double.self, forKey: .readAt)
-        roomID = try c.decodeIfPresent(String.self, forKey: .roomID); momentID = try c.decodeIfPresent(String.self, forKey: .momentID)
+        roomID = try c.decodeIfPresent(String.self, forKey: .roomID)
         seq = try c.decodeIfPresent(Int.self, forKey: .seq) ?? 0
     }
     var isUnread: Bool { readAt == nil }
@@ -82,8 +83,6 @@ struct KikiSocialNotification: Decodable, Identifiable, Equatable {
         case "mutual_follow": return "你们互相关注了"
         case "room_invite": return "房间邀请"
         case "room_started": return "开播提醒"
-        case "like": return "新的点赞"
-        case "comment": return "新的评论"
         default: return "社区通知"
         }
     }
@@ -96,10 +95,10 @@ struct KikiNotificationsPage: Decodable {
 }
 
 enum KikiRelationshipKind: String, CaseIterable, Identifiable {
-    case following, followers, mutual
+    case mutual, following, followers
     var id: String { rawValue }
     var title: String {
-        switch self { case .following: return "关注"; case .followers: return "粉丝"; case .mutual: return "互关" }
+        switch self { case .mutual: return "互相关注"; case .following: return "正在关注"; case .followers: return "粉丝" }
     }
 }
 
@@ -107,56 +106,6 @@ struct KikiPersonDestination: Identifiable {
     let id: String
 }
 
-struct KikiSocialMedia: Codable, Equatable, Identifiable {
-    let id: String
-    let path: String
-    let width: Int
-    let height: Int
-}
-struct KikiMoment: Decodable, Identifiable, Equatable {
-    let id: String
-    let author: KikiPerson
-    let text: String
-    let media: [KikiSocialMedia]
-    let createdAt: Double
-    let likeCount: Int
-    let commentCount: Int
-    let liked: Bool
-    let canDelete: Bool
-    let commentPreview: [KikiMomentComment]
-
-    init(id: String, author: KikiPerson, text: String, media: [KikiSocialMedia], createdAt: Double,
-         likeCount: Int, commentCount: Int, liked: Bool, canDelete: Bool, commentPreview: [KikiMomentComment] = []) {
-        self.id = id; self.author = author; self.text = text; self.media = media; self.createdAt = createdAt
-        self.likeCount = likeCount; self.commentCount = commentCount; self.liked = liked; self.canDelete = canDelete
-        self.commentPreview = Array(commentPreview.filter { $0.momentID == id }.prefix(3))
-    }
-    private enum CodingKeys: String, CodingKey {
-        case id, author, text, media, createdAt, likeCount, commentCount, liked, canDelete, commentPreview
-    }
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(id: try c.decode(String.self, forKey: .id), author: try c.decode(KikiPerson.self, forKey: .author),
-                  text: try c.decode(String.self, forKey: .text), media: try c.decode([KikiSocialMedia].self, forKey: .media),
-                  createdAt: try c.decode(Double.self, forKey: .createdAt), likeCount: try c.decode(Int.self, forKey: .likeCount),
-                  commentCount: try c.decode(Int.self, forKey: .commentCount), liked: try c.decode(Bool.self, forKey: .liked),
-                  canDelete: try c.decode(Bool.self, forKey: .canDelete),
-                  commentPreview: try c.decodeIfPresent([KikiMomentComment].self, forKey: .commentPreview) ?? [])
-    }
-}
-struct KikiMomentsPage: Decodable { let moments: [KikiMoment]; let nextCursor: String? }
-struct KikiMomentComment: Decodable, Identifiable, Equatable {
-    let id: String
-    let momentID: String
-    let author: KikiPerson
-    let text: String
-    let createdAt: Double
-    let canDelete: Bool
-}
-struct KikiCommentsPage: Decodable { let comments: [KikiMomentComment]; let nextCursor: String? }
-enum KikiMomentKind: String {
-    case all, following, mine
-}
 struct KikiDirectMessage: Decodable, Identifiable, Equatable {
     let id: String
     let seq: Int
@@ -366,7 +315,7 @@ struct KikiSocialReportReceipt: Decodable {
     let report: Report
 }
 struct KikiSocialReportTarget: Identifiable {
-    enum Kind: String { case profile, moment, comment; case directMessage = "direct_message" }
+    enum Kind: String { case profile; case directMessage = "direct_message" }
     let kind: Kind
     let targetID: String
     let name: String

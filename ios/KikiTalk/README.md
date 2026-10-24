@@ -1,8 +1,12 @@
-# KikiTalk iOS
+# Kiki iOS
 
 [简体中文](README.cn.md) · [iOS projects](../README.md) · [Repository](../../README.md) · [Architecture](../../docs/ARCHITECTURE.zh-CN.md) · [Project handover](../../docs/PROJECT_HANDOVER.zh-CN.md)
 
-Open **KikiTalk.xcworkspace** in Xcode and select **KikiTalk**. The app requires iOS 17 or later and supports iPhone/iPad; the test target is KikiTalkTests.
+The visible app name is **Kiki**, with an uppercase initial; the project, paths, and scheme remain KikiTalk. Open **KikiTalk.xcworkspace** in Xcode and select **KikiTalk**. The app requires iOS 17 or later and supports iPhone/iPad; the test target is KikiTalkTests.
+
+## Startup and appearance
+
+Normal startup displays only the brand icon and Kiki while silently checking consent. The consent page appears only when acceptance of the current documents is required; users with current consent continue to session restoration. Room backgrounds use native SwiftUI gradients with separate light and dark palettes; they do not copy system wallpapers.
 
 ## Dependencies and signing
 
@@ -20,19 +24,18 @@ Review Apple sign-in, push notification, and background-audio capabilities when 
 | `Sources/Core/DesignSystem/` | Shared palette and avatar rendering |
 | `Sources/Core/Notifications/`, `Diagnostics/` | APNs routing/registration and incident reporting |
 | `Sources/Features/Authentication/`, `Privacy/` | Apple authorization/login, legal consent and withdrawal |
-| `Sources/Features/VoiceRooms/` | Models, discovery, RTC services, room views, presentation, chat |
-| `Sources/Features/Gifts/` | Experience balance, gift queue/effects, decorations |
-| `Sources/Features/Social/`, `Moments/`, `Messaging/` | People/relationships, feed/comments, inbox/private conversations |
+| `Sources/Features/VoiceRooms/` | Room models, five backgrounds, creation/editing, RTC, room views, chat |
+| `Sources/Features/Social/`, `Messaging/` | People, mutuals/following/followers, inbox/private text conversations |
 | `Sources/Features/Profile/` | Profile editing, settings, room collections, safety entry points |
 | `Tests/` | App/Core/Features tests and explicitly enabled Integration checks |
-| `Resources/` | Assets, gifts, legal-document copy, launch storyboard, privacy manifest |
+| `Resources/` | Assets, legal-document copy, launch storyboard, privacy manifest |
 | `Configuration/` | Info.plist and KikiTalk.entitlements |
 
 The app store coordinates shared business/session state; the root view handles gates and navigation. Existing complete top-level types such as palette, avatar, room models, discovery views, unread gate, and room helper views have been extracted into their own files. Larger Social/Profile/Consent test files still retain multiple responsibilities; this organization does not introduce a separate package per folder.
 
 ## Resource tools
 
-Repository tools now target this project's `Resources/` directory. From the repository root, `python3 tools/build_legal_documents.py --check` checks legal outputs without changing them. Brand and gift generation remain explicit asset-authoring commands; moving a source directory does not require regenerating assets or changing legal text.
+Brand tools target this project's `Resources/` directory. From the repository root, `python3 tools/build_legal_documents.py --check` checks legal outputs without changing them. Rooms offer five presets that adapt to the system appearance: 简约, 晨光, 晴空, 暮色, and 薄荷. Select a preset when creating a room or edit it as the owner; see [room backgrounds](../../docs/ROOM_BACKGROUNDS.zh-CN.md). The separate decoration system has been removed.
 
 ## Validation scope
 

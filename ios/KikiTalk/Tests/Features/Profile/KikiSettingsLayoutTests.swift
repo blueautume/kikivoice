@@ -140,6 +140,132 @@ final class KikiSettingsLayoutTests: XCTestCase {
         XCTAssertEqual(deleteCalls, 0)
     }
 
+    func testProfileIdentityRowsFitSmallScreensAndKeepReadableAccessibilityLayout() async throws {
+        let folder = URL(fileURLWithPath: "/tmp/kiki-settings-previews", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let cases: [(String, CGSize, ColorScheme, DynamicTypeSize)] = [
+            ("320-light", CGSize(width: 320, height: 568), .light, .large),
+            ("320-dark", CGSize(width: 320, height: 568), .dark, .large),
+            ("375-light", CGSize(width: 375, height: 812), .light, .large),
+            ("375-dark", CGSize(width: 375, height: 812), .dark, .large),
+            ("320-accessibility3", CGSize(width: 320, height: 568), .light, .accessibility3),
+            ("375-accessibility5", CGSize(width: 375, height: 812), .dark, .accessibility5)
+        ]
+        try await withWindow { window in
+            for (label, size, scheme, typeSize) in cases {
+                let geometry = ProfileIdentityGeometry()
+                let host = await render(AnyView(ProfileIdentityFixture(geometry: geometry)), title: "我", in: window,
+                                        size: size, scheme: scheme, typeSize: typeSize)
+                func rect(_ key: String) throws -> CGRect {
+                    let candidates = geometry.probes[key, default: []]
+                    let probe = try XCTUnwrap(candidates.filter {
+                        $0.window === window && $0.bounds.width > 0 && $0.bounds.height > 0
+                    }.max { $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height },
+                        "Missing visible profile geometry: " + key + " candidates=" + String(candidates.count))
+                    return probe.convert(probe.bounds, to: window)
+                }
+                let avatar = try rect("avatar"), details = try rect("details")
+                let name = try rect("name"), account = try rect("account"), social = try rect("social")
+                let firstGap = account.minY - name.maxY, secondGap = social.minY - account.maxY
+                XCTAssertEqual(avatar.height, 82, accuracy: 0.5)
+                XCTAssertEqual(firstGap, secondGap, accuracy: 0.5, "The three visible rows must have equal vertical gaps")
+                XCTAssertGreaterThanOrEqual(firstGap, -0.5, "Visible profile rows must never overlap")
+                XCTAssertEqual(name.minY, details.minY, accuracy: 0.5)
+                XCTAssertEqual(social.maxY, details.maxY, accuracy: 0.5)
+                for row in [name, account, social] {
+                    XCTAssertGreaterThanOrEqual(row.minX, details.minX - 0.5)
+                    XCTAssertLessThanOrEqual(row.maxX, details.maxX + 0.5, "Profile text must remain within the available width")
+                }
+                if typeSize.isAccessibilitySize {
+                    XCTAssertGreaterThan(details.height, 82, "Larger text must expand naturally rather than squeeze into the avatar height")
+                    XCTAssertGreaterThanOrEqual(details.minY - avatar.maxY, 15.5,
+                                                "Accessibility text must receive the full row below the avatar")
+                    XCTAssertGreaterThanOrEqual(firstGap, 9.5)
+                } else {
+                    XCTAssertEqual(details.height, 82, accuracy: 0.5)
+                    XCTAssertEqual(details.minY, avatar.minY, accuracy: 0.5)
+                    XCTAssertEqual(details.maxY, avatar.maxY, accuracy: 0.5)
+                    let font = UIFont.monospacedSystemFont(ofSize: 13, weight: .medium)
+                    XCTAssertEqual(account.height, ceil(font.lineHeight), accuracy: 1,
+                                   "The ordinary account ID uses the readable 13 pt font on one line")
+                    let fullIDWidth = ("账号 ID · kiki_000001" as NSString).size(withAttributes: [.font: font]).width
+                    XCTAssertGreaterThanOrEqual(account.width, floor(fullIDWidth) - 1,
+                                                "The full six-digit public ID must be visible even on a 320 pt screen")
+                }
+                let scroll = try XCTUnwrap(scrollViews(in: host.view).max { $0.bounds.width < $1.bounds.width })
+                XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 1,
+                                         "Larger text may scroll vertically but must never overflow horizontally")
+                // Some simulator runtimes omit SwiftUI's virtual accessibility
+                // nodes. Geometry and screenshots above still execute there.
+                if node(in: host.view, identifier: "profile.identity.name") != nil {
+                    for kind in [KikiRelationshipKind.following, .followers] {
+                        let button = try XCTUnwrap(node(in: host.view, identifier: "profile.relationship." + kind.rawValue))
+                        XCTAssertGreaterThanOrEqual(button.accessibilityFrame.height, 43.5)
+                        XCTAssertGreaterThanOrEqual(button.accessibilityFrame.width, 43.5)
+                    }
+                }
+                try capture(window: window, name: "profile-identity-" + label, folder: folder)
+                XCTAssertEqual(geometry.selections.count, 0, "Rendering the profile must never open relationships")
+            }
+        }
+    }
+
+    private final class ProfileIdentityGeometry {
+        var probes: [String: [UIView]] = [:]
+        var selections: [KikiRelationshipKind] = []
+
+        func register(_ view: UIView, key: String) {
+            guard !probes[key, default: []].contains(where: { $0 === view }) else { return }
+            probes[key, default: []].append(view)
+        }
+    }
+
+    private struct ProfileIdentityProbe: UIViewRepresentable {
+        let key: String
+        let geometry: ProfileIdentityGeometry
+        func makeUIView(context: Context) -> UIView {
+            let view = UIView()
+            view.isUserInteractionEnabled = false
+            geometry.register(view, key: key)
+            return view
+        }
+        func updateUIView(_ view: UIView, context: Context) { geometry.register(view, key: key) }
+        func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
+            CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
+        }
+    }
+
+    private struct ProfileIdentityFixture: View {
+        let geometry: ProfileIdentityGeometry
+        @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+        var body: some View {
+            let details = KikiProfileIdentityDetails(name: "Kiki 的朋友", displayID: "kiki_000001", followingCount: 39,
+                                                    followerCount: 36) { geometry.selections.append($0) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    KikiProfileIdentityHeader {
+                        KikiAvatar(index: 1, size: 82)
+                            .background(ProfileIdentityProbe(key: "avatar", geometry: geometry))
+                    } details: {
+                        // The production rows and layout are reused directly;
+                        // the backgrounds only report their actual UIKit frames.
+                        KikiProfileIdentityRows(minimumSpacing: dynamicTypeSize.isAccessibilitySize ? 10 : 0) {
+                            details.nameRow.background(ProfileIdentityProbe(key: "name", geometry: geometry))
+                            details.accountRow.background(ProfileIdentityProbe(key: "account", geometry: geometry))
+                            details.relationshipsRow.background(ProfileIdentityProbe(key: "social", geometry: geometry))
+                        }
+                        .background(ProfileIdentityProbe(key: "details", geometry: geometry))
+                    }
+                    Text("Kiki 让世界听见你").font(.footnote).foregroundStyle(KikiPalette.muted)
+                }
+                .padding(.horizontal, 22).padding(.top, 18).padding(.bottom, 30)
+                .frame(maxWidth: 720).frame(maxWidth: .infinity)
+            }
+            .background(KikiPalette.background.ignoresSafeArea())
+        }
+    }
+
     private func withWindow(_ operation: (UIWindow) async throws -> Void) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive })

@@ -187,7 +187,7 @@ def test_delayed_privacy_withdrawal_cannot_clear_new_consent_or_new_safety_data(
 
 
 @pytest.mark.parametrize("updates", [{"voice_base_url":"http://furby.top"},
-    {"voice_base_url":"https://evil.test"},{"voice_bridge_secret":"a"*64},{"qa_gifts_enabled":True}])
+    {"voice_base_url":"https://evil.test"},{"voice_bridge_secret":"a"*64}])
 def test_bridge_requires_fixed_tls_endpoint_and_independent_entropy(bridge_client,updates):
     with pytest.raises(RuntimeError):
         create_app(replace(bridge_client.settings,**updates))

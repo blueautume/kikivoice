@@ -103,13 +103,12 @@ final class KikiAccountAPIClient: @unchecked Sendable {
 
     func me(token: String) async throws -> KikiUser { try await request("/v1/me", token: token) }
 
-    func updateProfile(name: String, bio: String, avatarIndex: Int? = nil, token: String) async throws -> KikiUser {
+    func updateProfile(name: String, bio: String, token: String) async throws -> KikiUser {
         struct Body: Encodable {
-            let name: String; let bio: String; let avatarIndex: Int?
+            let name: String; let bio: String
         }
-        // Omitting avatarIndex preserves a custom photo; explicitly sending an
-        // index switches back to that preset on the server.
-        return try await send("/v1/me", method: "PATCH", body: Body(name: name, bio: bio, avatarIndex: avatarIndex), token: token)
+        // Profile text edits never replace an avatar. Photos use the upload route.
+        return try await send("/v1/me", method: "PATCH", body: Body(name: name, bio: bio), token: token)
     }
 
     func uploadAvatar(jpegData: Data, token: String) async throws -> KikiUser {
@@ -335,73 +334,6 @@ extension KikiAccountAPIClient {
 extension KikiAccountAPIClient {
     private func validateSocialUUID(_ id: String) throws {
         guard UUID(uuidString: id) != nil else { throw KikiAPIError.security("内容编号无法验证。") }
-    }
-    func socialUpload(jpeg: Data, token: String) async throws -> KikiSocialMedia {
-        guard !jpeg.isEmpty, jpeg.count <= 2 * 1024 * 1024 else { throw KikiAPIError.server(422, "图片过大，请重新选择。") }
-        return try await request("/v1/social/media", method: "POST", data: jpeg, token: token, contentType: "image/jpeg")
-    }
-    func socialImage(_ media: KikiSocialMedia, token: String) async throws -> UIImage {
-        try validateSocialUUID(media.id)
-        guard media.path == "/v1/social/media/\(media.id).jpg", let url = URL(string: media.path, relativeTo: baseURL)?.absoluteURL else {
-            throw KikiAPIError.security("图片地址无法验证。")
-        }
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("image/jpeg", forHTTPHeaderField: "Accept")
-        let (data, response) = try await session.data(for: request)
-        try Task.checkCancellation()
-        guard let http = response as? HTTPURLResponse else { throw KikiAPIError.invalidResponse }
-        if http.statusCode == 428 {
-            let error = try? JSONDecoder().decode(ErrorResponse.self, from: data)
-            throw KikiAPIError.legalUpdateRequired(error?.detail ?? "协议已更新，请重新确认。", error?.requiredVersions)
-        }
-        guard http.statusCode == 200 else { throw KikiAPIError.server(http.statusCode, "图片暂时不可查看。") }
-        guard http.mimeType == "image/jpeg", data.count <= 2 * 1024 * 1024,
-              let image = UIImage(data: data), image.size.width <= 4096, image.size.height <= 4096 else { throw KikiAPIError.invalidResponse }
-        return image
-    }
-    func socialMoments(kind: KikiMomentKind, userID: String? = nil, cursor: String?, token: String) async throws -> KikiMomentsPage {
-        var path = try socialPath("moments", cursor: cursor) + "&kind=" + kind.rawValue
-        if let userID { try validateSocialID(userID); path += "&userID=" + userID }
-        return try await request(path, token: token)
-    }
-    func socialMoment(_ id: String, token: String) async throws -> KikiMoment {
-        try validateSocialUUID(id)
-        struct Response: Decodable { let moment: KikiMoment }
-        let result: Response = try await request("/v1/social/moments/\(id)", token: token)
-        return result.moment
-    }
-    func socialPublishMoment(requestID: UUID, text: String, mediaIDs: [String], token: String) async throws -> KikiMoment {
-        struct Body: Encodable { let requestID: UUID; let text: String; let mediaIDs: [String] }
-        struct Response: Decodable { let moment: KikiMoment }
-        let result: Response = try await send("/v1/social/moments", method: "POST", body: Body(requestID: requestID, text: text, mediaIDs: mediaIDs), token: token)
-        return result.moment
-    }
-    func socialDeleteMoment(_ id: String, token: String) async throws {
-        try validateSocialUUID(id)
-        let _: Success = try await request("/v1/social/moments/\(id)", method: "DELETE", token: token)
-    }
-    func socialLike(_ id: String, enabled: Bool, requestID: UUID, token: String) async throws -> KikiMoment {
-        try validateSocialUUID(id)
-        struct Body: Encodable { let requestID: UUID }
-        struct Response: Decodable { let moment: KikiMoment }
-        let result: Response = try await send("/v1/social/moments/\(id)/like", method: enabled ? "PUT" : "DELETE", body: Body(requestID: requestID), token: token)
-        return result.moment
-    }
-    func socialComments(_ id: String, cursor: String?, token: String) async throws -> KikiCommentsPage {
-        try validateSocialUUID(id)
-        return try await request(socialPath("moments/\(id)/comments", cursor: cursor), token: token)
-    }
-    func socialComment(_ id: String, text: String, requestID: UUID, token: String) async throws -> KikiMomentComment {
-        try validateSocialUUID(id)
-        struct Body: Encodable { let requestID: UUID; let text: String }
-        struct Response: Decodable { let comment: KikiMomentComment }
-        let result: Response = try await send("/v1/social/moments/\(id)/comments", method: "POST", body: Body(requestID: requestID, text: text), token: token)
-        return result.comment
-    }
-    func socialDeleteComment(_ id: String, token: String) async throws {
-        try validateSocialUUID(id)
-        let _: Success = try await request("/v1/social/comments/\(id)", method: "DELETE", token: token)
     }
     func socialConversations(cursor: String?, token: String) async throws -> KikiConversationsPage {
         try await request(socialPath("conversations", cursor: cursor), token: token)

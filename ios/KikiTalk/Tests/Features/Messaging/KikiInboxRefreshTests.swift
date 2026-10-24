@@ -57,7 +57,6 @@ final class KikiInboxRefreshTests: XCTestCase {
         XCTAssertEqual(notice.roomID, roomID)
         XCTAssertEqual(notice.actor?.id, InboxRefreshResponses.peer)
         XCTAssertEqual(notice.text, "开始语聊了，点击进入房间")
-        XCTAssertNil(notice.momentID)
         XCTAssertEqual(push.foregroundNotice?.candidate.id, notice.id)
         XCTAssertEqual(push.foregroundNotice?.candidate.kind, .room(roomID: roomID))
         XCTAssertEqual(push.foregroundNotice?.title, "消息好友")
@@ -174,172 +173,6 @@ final class KikiInboxRefreshTests: XCTestCase {
             XCTAssertEqual(push.foregroundNotice?.candidate.kind, .room(roomID: roomID))
             await store.logout()
         }
-    }
-
-    func testMomentNotificationsSeedThenInvalidateReadInteractionsWithoutPushOrAccountAlerts() async throws {
-        let fixture = try await fixture(), store = fixture.store
-        try await store.setNotificationsEnabled(false)
-        store.pushController = nil
-        let initial = store.momentContentRevision
-        fixture.responses.momentNotifications([.init(id: "old-comment", seq: 10)], status: 503)
-        do { _ = try await store.socialNotifications(); XCTFail("Failed snapshots must not establish a baseline") } catch { }
-        fixture.responses.momentNotifications([.init(id: "old-comment", seq: 10)])
-        _ = try await store.socialNotifications()
-        XCTAssertEqual(store.momentContentRevision, initial + 1, "A first snapshot may contain an interaction newer than the initial feed GET")
-        fixture.responses.momentNotifications([.init(id: "new-comment", seq: 11, kind: "comment", read: true),
-                                               .init(id: "new-like", seq: 12, kind: "like", read: true)])
-        _ = try await store.socialNotifications()
-        XCTAssertEqual(store.unreadNotificationCount, 0)
-        XCTAssertEqual(store.momentContentRevision, initial + 2, "Read interactions still invalidate content; one accepted page produces one revision")
-        _ = try await store.socialNotifications()
-        XCTAssertEqual(store.momentContentRevision, initial + 2)
-        fixture.responses.momentNotifications([.init(id: "new-follow", seq: 13, kind: "follow", momentID: nil),
-                                               .init(id: "invalid-moment", seq: 14, momentID: "untrusted-id")])
-        _ = try await store.socialNotifications()
-        XCTAssertEqual(store.momentContentRevision, initial + 2)
-        fixture.responses.momentNotifications([.init(id: "historical-page", seq: 100)], isPage: true)
-        _ = try await store.socialNotifications(cursor: "older-page")
-        XCTAssertEqual(store.momentContentRevision, initial + 2, "Loading history must not invalidate or advance the live high-water mark")
-        fixture.responses.momentNotifications([.init(id: "same-second-next", seq: 15, read: true)])
-        _ = try await store.socialNotifications()
-        XCTAssertEqual(store.momentContentRevision, initial + 3, "Sequence order detects same-second events even after a historical page")
-        await store.logout()
-    }
-
-    func testFirstNotificationSnapshotInvalidatesAnEarlierFeedWithoutReplayingOldBanner() async throws {
-        let fixture = try await fixture(), store = fixture.store, push = fixture.push
-        fixture.responses.setMomentFeedCommentCount(0)
-        let earlierFeed = try await store.socialMoments(kind: .all)
-        XCTAssertEqual(earlierFeed.moments.first?.commentCount, 0)
-        XCTAssertTrue(earlierFeed.moments.first?.commentPreview.isEmpty == true)
-        let initial = store.momentContentRevision
-
-        // The first inbox snapshot arrives after the feed GET. Treating it as
-        // a completely silent content baseline would leave this comment stale.
-        fixture.responses.setMomentFeedCommentCount(1)
-        fixture.responses.momentNotifications([.init(id: "first-system-interaction", seq: 1, read: true)])
-        _ = try await store.socialNotifications()
-        XCTAssertEqual(store.momentContentRevision, initial + 1)
-        XCTAssertNil(push.foregroundNotice, "A content refresh does not turn the initial inbox snapshot into a banner")
-        let refreshedFeed = try await store.socialMoments(kind: .all)
-        XCTAssertEqual(refreshedFeed.moments.first?.commentCount, 1)
-        XCTAssertEqual(refreshedFeed.moments.first?.commentPreview.first?.text, "远端新增评论")
-        _ = try await store.socialNotifications()
-        XCTAssertEqual(store.momentContentRevision, initial + 1, "The same first-snapshot sequence cannot trigger another refresh")
-        XCTAssertFalse(fixture.responses.requests.contains { $0.hasPrefix("/v1/social/moments/") }, "Refreshing uses the ordinary permission-checked feed, with no detail-page round trip")
-        await store.logout()
-    }
-
-    func testLegacyMomentNotificationDeduplicationSurvivesPrivacyAndSessionRebaselines() async throws {
-        let fixture = try await fixture(), store = fixture.store
-        fixture.responses.momentNotifications([.init(id: "legacy-old")])
-        _ = try await store.socialNotifications()
-        let baseline = store.momentContentRevision
-        fixture.responses.momentNotifications([.init(id: "legacy-new", read: true), .init(id: "legacy-old")])
-        _ = try await store.socialNotifications()
-        _ = try await store.socialNotifications()
-        XCTAssertEqual(store.momentContentRevision, baseline + 1)
-        store.socialPolicyChanged(userID: InboxRefreshResponses.peer, blocked: true)
-        let afterPrivacy = store.momentContentRevision
-        XCTAssertEqual(afterPrivacy, baseline + 2, "Privacy resets invalidate old view writes immediately")
-        _ = try await store.socialNotifications()
-        XCTAssertEqual(store.momentContentRevision, afterPrivacy + 1, "The new privacy scope requests one safe content refresh without replaying a banner")
-        await store.logout()
-        let afterLogout = store.momentContentRevision
-        XCTAssertGreaterThan(afterLogout, afterPrivacy)
-        try await store.loginWithApple()
-        _ = try await store.socialNotifications()
-        XCTAssertEqual(store.momentContentRevision, afterLogout + 1)
-        fixture.responses.momentNotifications([.init(id: "next-session-comment", seq: 20)])
-        _ = try await store.socialNotifications()
-        XCTAssertEqual(store.momentContentRevision, afterLogout + 2)
-        await store.logout()
-    }
-
-    func testLateMomentNotificationResponseCannotCrossPrivacyOrSessionScope() async throws {
-        for switchSession in [false, true] {
-            let fixture = try await fixture(), store = fixture.store
-            fixture.responses.momentNotifications([.init(id: "baseline", seq: 10)])
-            _ = try await store.socialNotifications()
-            fixture.responses.momentNotifications([.init(id: "late-before-boundary", seq: 11)])
-            let arrived = expectation(description: "old notification response is held")
-            let gate = fixture.responses.holdNextResponse(path: "/v1/social/notifications") { arrived.fulfill() }
-            defer { gate.signal() }
-            let old = Task { try await store.socialNotifications() }
-            await fulfillment(of: [arrived], timeout: 2)
-            if switchSession { await store.logout(); try await store.loginWithApple() }
-            else { store.socialPolicyChanged(userID: InboxRefreshResponses.peer, blocked: true) }
-            let boundary = store.momentContentRevision
-            fixture.responses.momentNotifications([.init(id: "new-scope-baseline", seq: 100)])
-            _ = try await store.socialNotifications()
-            gate.signal()
-            if case .success = await old.result { XCTFail("The old response must fail its account/privacy gate") }
-            XCTAssertEqual(store.momentContentRevision, boundary + 1)
-            fixture.responses.momentNotifications([.init(id: "new-scope-event", seq: 101)])
-            _ = try await store.socialNotifications()
-            XCTAssertEqual(store.momentContentRevision, boundary + 2)
-            await store.logout()
-        }
-    }
-
-    func testVerifiedForegroundPushInvalidatesMomentsWithoutReadingOpaqueContentOrFetchingDetails() async throws {
-        let fixture = try await fixture(), store = fixture.store, push = fixture.push
-        await push.refresh()
-        let initial = store.momentContentRevision, directInitial = store.directContentRevision
-        let wrong = try XCTUnwrap(KikiPushTap(payload: ["deliveryID": UUID().uuidString, "accountTag": "another-account",
-                                                       "momentID": InboxRefreshResponses.momentID, "body": "untrusted text"]))
-        push.receiveForeground(wrong)
-        push.receiveForeground(nil)
-        XCTAssertEqual(store.momentContentRevision, initial)
-        let valid = try XCTUnwrap(KikiPushTap(payload: ["deliveryID": UUID().uuidString, "accountTag": "inbox-fixture-account",
-                                                       "momentID": "forged-moment", "body": "untrusted text"]))
-        push.receiveForeground(valid)
-        let deadline = Date().addingTimeInterval(2)
-        while store.momentContentRevision == initial, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
-        XCTAssertEqual(store.momentContentRevision, initial + 1, "A verified APNs hint covers empty/cleared notification snapshots too")
-        XCTAssertEqual(store.directContentRevision, directInitial + 1, "Existing direct-chat invalidation remains intact")
-        XCTAssertFalse(fixture.responses.requests.contains { $0.hasPrefix("/v1/social/moments") }, "The hint must not fetch an untrusted target or bypass feed permissions")
-        let oldScope = try XCTUnwrap(push.currentForegroundScope)
-        store.socialPolicyChanged(userID: InboxRefreshResponses.peer, blocked: true)
-        let boundary = store.momentContentRevision
-        store.momentContentPushReceived(scope: oldScope)
-        XCTAssertEqual(store.momentContentRevision, boundary)
-        await store.logout()
-    }
-
-    func testOnlyConfirmedCurrentScopeMomentMutationsInvalidateContent() async throws {
-        let fixture = try await fixture(), store = fixture.store
-        let moment = try JSONDecoder().decode(KikiMoment.self, from: JSONSerialization.data(withJSONObject: InboxRefreshResponses.moment))
-        let initial = store.momentContentRevision
-        _ = try await store.publishMoment(requestID: UUID(), text: "动态", mediaIDs: [])
-        XCTAssertEqual(store.momentContentRevision, initial + 1)
-        _ = try await store.likeMoment(moment)
-        XCTAssertEqual(store.momentContentRevision, initial + 2)
-        _ = try await store.commentMoment(moment.id, text: "评论", requestID: UUID())
-        XCTAssertEqual(store.momentContentRevision, initial + 3)
-        try await store.deleteComment(InboxRefreshResponses.commentID)
-        XCTAssertEqual(store.momentContentRevision, initial + 4)
-        try await store.deleteMoment(moment.id)
-        XCTAssertEqual(store.momentContentRevision, initial + 5)
-        fixture.responses.setMomentMutationStatus(503)
-        do { _ = try await store.publishMoment(requestID: UUID(), text: "失败", mediaIDs: []); XCTFail("Failed publish accepted") } catch { }
-        do { _ = try await store.likeMoment(moment); XCTFail("Failed like accepted") } catch { }
-        do { _ = try await store.commentMoment(moment.id, text: "失败", requestID: UUID()); XCTFail("Failed comment accepted") } catch { }
-        do { try await store.deleteComment(InboxRefreshResponses.commentID); XCTFail("Failed comment deletion accepted") } catch { }
-        do { try await store.deleteMoment(moment.id); XCTFail("Failed moment deletion accepted") } catch { }
-        XCTAssertEqual(store.momentContentRevision, initial + 5)
-        fixture.responses.setMomentMutationStatus(200)
-        let arrived = expectation(description: "comment confirmation is waiting")
-        let gate = fixture.responses.holdNextResponse(path: "/v1/social/moments/" + moment.id + "/comments") { arrived.fulfill() }
-        defer { gate.signal() }
-        let old = Task { try await store.commentMoment(moment.id, text: "迟到", requestID: UUID()) }
-        await fulfillment(of: [arrived], timeout: 2)
-        store.socialPolicyChanged(userID: InboxRefreshResponses.peer, blocked: true)
-        let boundary = store.momentContentRevision
-        gate.signal()
-        if case .success = await old.result { XCTFail("An old-scope confirmation must not publish an invalidation") }
-        XCTAssertEqual(store.momentContentRevision, boundary)
-        await store.logout()
     }
 
     func testContentPreferenceDefaultsToDetailsHidesImmediatelyAndDoesNotReplayWhenRestored() async throws {
@@ -541,7 +374,7 @@ final class KikiInboxRefreshTests: XCTestCase {
             let fixture = try await fixture(), store = fixture.store
             let targetID = UUID().uuidString.lowercased(), olderID = UUID().uuidString.lowercased()
             let incomingID = UUID().uuidString.lowercased(), requestID = UUID()
-            fixture.responses.momentNotifications([.init(id: targetID, seq: 2), .init(id: olderID, seq: 1)])
+            fixture.responses.followNotifications([.init(id: targetID, seq: 2), .init(id: olderID, seq: 1)])
             let page = try await store.socialInbox()
             let entry = try XCTUnwrap(page.entries.first { $0.id == "notification:" + targetID })
             let history = store.notificationHistoryRevision
@@ -557,7 +390,7 @@ final class KikiInboxRefreshTests: XCTestCase {
             XCTAssertEqual(store.unreadNotificationCount, 2)
             let unchanged = try await store.socialInbox()
             XCTAssertTrue(unchanged.entries.contains { $0.id == entry.id })
-            fixture.responses.momentNotifications([.init(id: incomingID, seq: 3), .init(id: targetID, seq: 2), .init(id: olderID, seq: 1)])
+            fixture.responses.followNotifications([.init(id: incomingID, seq: 3), .init(id: targetID, seq: 2), .init(id: olderID, seq: 1)])
             fixture.responses.setNotificationDeleteStatus(200)
             fixture.responses.setNotificationDeleteCancelled(false)
             try await store.clearInboxEntry(entry, throughID: targetID, requestID: requestID)
@@ -577,7 +410,7 @@ final class KikiInboxRefreshTests: XCTestCase {
     func testDeletingReadNotificationKeepsOtherUnreadAndRejectsMismatchedRowBeforeNetwork() async throws {
         let fixture = try await fixture(), store = fixture.store
         let targetID = UUID().uuidString.lowercased(), unreadID = UUID().uuidString.lowercased()
-        fixture.responses.momentNotifications([.init(id: targetID, seq: 2, read: true), .init(id: unreadID, seq: 1)])
+        fixture.responses.followNotifications([.init(id: targetID, seq: 2, read: true), .init(id: unreadID, seq: 1)])
         let page = try await store.socialInbox()
         let entry = try XCTUnwrap(page.entries.first { $0.id == "notification:" + targetID })
         let history = store.notificationHistoryRevision
@@ -866,8 +699,6 @@ private final class InboxRefreshResponses: @unchecked Sendable {
     private var profileHold: (key: String, gate: DispatchSemaphore, arrived: () -> Void)?
     private var responseHold: (path: String, gate: DispatchSemaphore, arrived: () -> Void)?
     private var accountNotificationsEnabled = true
-    private var momentMutationStatus = 200
-    private var momentFeedCommentCount = 0
     private var notificationDeleteStatus = 200
     private var notificationDeleteCancelled = false
     private var notificationDeleteCalls: [(id: String, body: [String: Any])] = []
@@ -875,15 +706,6 @@ private final class InboxRefreshResponses: @unchecked Sendable {
     var notificationDeletions: [(id: String, body: [String: Any])] { lock.lock(); defer { lock.unlock() }; return notificationDeleteCalls }
     func setNotificationDeleteStatus(_ value: Int) { lock.lock(); defer { lock.unlock() }; notificationDeleteStatus = value }
     func setNotificationDeleteCancelled(_ value: Bool) { lock.lock(); defer { lock.unlock() }; notificationDeleteCancelled = value }
-    static let momentID = "11111111-1111-4111-8111-111111111111"
-    static let commentID = "22222222-2222-4222-8222-222222222222"
-    struct MomentNotice {
-        let id: String
-        var seq = 0
-        var kind = "system"
-        var momentID: String? = InboxRefreshResponses.momentID
-        var read = false
-    }
     struct RoomNotice {
         let id: String
         let roomID: String
@@ -895,13 +717,16 @@ private final class InboxRefreshResponses: @unchecked Sendable {
         responseHold = (path, gate, arrived)
         return gate
     }
-    func setMomentMutationStatus(_ value: Int) { lock.lock(); defer { lock.unlock() }; momentMutationStatus = value }
-    func setMomentFeedCommentCount(_ value: Int) { lock.lock(); defer { lock.unlock() }; momentFeedCommentCount = value }
-    func momentNotifications(_ values: [MomentNotice], isPage: Bool = false, status: Int = 200) {
+    struct FollowNotice {
+        let id: String
+        var seq = 0
+        var read = false
+    }
+    func followNotifications(_ values: [FollowNotice], isPage: Bool = false, status: Int = 200) {
         let notices = values.map { value -> [String: Any] in
-            ["id": value.id, "kind": value.kind, "actor": Self.person, "text": "新的动态互动", "createdAt": 1_792_260_000,
+            ["id": value.id, "kind": "follow", "actor": Self.person, "text": "关注了你", "createdAt": 1_792_260_000,
              "readAt": value.read ? 1_792_260_001 as Any : NSNull(), "roomID": NSNull(),
-             "momentID": value.momentID as Any? ?? NSNull(), "seq": value.seq]
+             "seq": value.seq]
         }
         let data = try! JSONSerialization.data(withJSONObject: ["notifications": notices, "unreadCount": values.filter { !$0.read }.count, "nextCursor": NSNull()])
         lock.lock(); defer { lock.unlock() }
@@ -912,7 +737,7 @@ private final class InboxRefreshResponses: @unchecked Sendable {
             ["id": value.id, "kind": "room_started", "actor": Self.person, "text": "开始语聊了，点击进入房间",
              "createdAt": Date().timeIntervalSince1970 - Double(offset),
              "readAt": value.read ? 1_792_260_001 as Any : NSNull(), "roomID": value.roomID,
-             "momentID": NSNull(), "seq": values.count - offset]
+             "seq": values.count - offset]
         }
         let data = try! JSONSerialization.data(withJSONObject: ["notifications": notices, "unreadCount": values.filter { !$0.read }.count,
                                                                 "nextCursor": NSNull(), "retentionDays": 30])
@@ -935,7 +760,7 @@ private final class InboxRefreshResponses: @unchecked Sendable {
     func notifications(_ ids: [String], unread: Int, isPage: Bool = false, status: Int = 200) {
         let notices: [[String: Any]] = ids.enumerated().map { offset, id in
             ["id": id, "kind": "follow", "actor": Self.person, "text": "收到一条互动消息", "createdAt": Date().timeIntervalSince1970 - Double(offset),
-             "readAt": NSNull(), "roomID": NSNull(), "momentID": NSNull(), "seq": ids.count - offset]
+             "readAt": NSNull(), "roomID": NSNull(), "seq": ids.count - offset]
         }
         let data = try! JSONSerialization.data(withJSONObject: ["notifications": notices, "unreadCount": unread, "nextCursor": NSNull(), "retentionDays": 30])
         lock.lock(); defer { lock.unlock() }
@@ -961,8 +786,6 @@ private final class InboxRefreshResponses: @unchecked Sendable {
         let status = isPage ? 200 : notificationStatus
         let conversations = isPage ? conversationPage ?? conversationBody : conversationBody
         let currentBulkStatus = bulkStatus
-        let mutationStatus = momentMutationStatus
-        let feedCommentCount = momentFeedCommentCount
         let deleteStatus = notificationDeleteStatus, deleteCancelled = notificationDeleteCancelled
         if let deletionBody { notificationDeleteCalls.append((request.url!.lastPathComponent, deletionBody)) }
         let heldResponse = responseHold?.path == path ? responseHold : nil
@@ -1008,23 +831,6 @@ private final class InboxRefreshResponses: @unchecked Sendable {
         case "/v1/social/people/" + Self.me:
             var me = Self.person; me["id"] = Self.me; body = ["person": me]
         case "/v1/social/relationships/ids": body = ["followingIDs": [], "followingCount": 0, "followerCount": 0]
-        case "/v1/social/moments" where request.httpMethod == "GET":
-            var moment = Self.moment
-            moment["commentCount"] = feedCommentCount
-            moment["commentPreview"] = feedCommentCount > 0
-                ? [["id": Self.commentID, "momentID": Self.momentID, "author": Self.person,
-                    "text": "远端新增评论", "createdAt": 1_792_260_001, "canDelete": false]] : []
-            body = ["moments": [moment], "nextCursor": NSNull()]
-        case "/v1/social/moments", "/v1/social/moments/" + Self.momentID + "/like":
-            if mutationStatus != 200 { return (mutationStatus, Data(#"{"detail":"动态操作未完成"}"#.utf8)) }
-            body = ["moment": Self.moment]
-        case "/v1/social/moments/" + Self.momentID + "/comments":
-            if mutationStatus != 200 { return (mutationStatus, Data(#"{"detail":"评论操作未完成"}"#.utf8)) }
-            body = ["comment": ["id": Self.commentID, "momentID": Self.momentID, "author": Self.person,
-                                 "text": "已确认评论", "createdAt": 1_792_260_000, "canDelete": true]]
-        case "/v1/social/moments/" + Self.momentID, "/v1/social/comments/" + Self.commentID:
-            if mutationStatus != 200 { return (mutationStatus, Data(#"{"detail":"删除未完成"}"#.utf8)) }
-            body = ["ok": true]
         case "/v1/me/legal-consent":
             var receipt = versions; receipt["acceptedAt"] = 1_792_180_000; receipt["withdrawnAt"] = NSNull()
             body = ["requiredVersions": versions, "requiresAcceptance": false, "legalConsent": receipt]
@@ -1063,10 +869,6 @@ private final class InboxRefreshResponses: @unchecked Sendable {
     private static var person: [String: Any] {
         ["id": peer, "name": "消息好友", "bio": "", "avatarIndex": 1, "following": true, "followsYou": true,
          "mutual": true, "followingCount": 1, "followerCount": 1]
-    }
-    static var moment: [String: Any] {
-        ["id": momentID, "author": person, "text": "动态内容", "media": [], "createdAt": 1_792_260_000,
-         "likeCount": 1, "commentCount": 1, "liked": true, "canDelete": true, "commentPreview": []]
     }
 }
 

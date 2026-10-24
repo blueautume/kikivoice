@@ -11,8 +11,8 @@ enum KikiSettingsDestination: String, CaseIterable, Identifiable {
         case .account: return "账户"
         case .notifications: return "通知"
         case .privacy: return "隐私中心"
-        case .rating: return "给 KikiTalk 评分"
-        case .about: return "关于 KikiTalk"
+        case .rating: return "给 Kiki 评分"
+        case .about: return "关于 Kiki"
         case .help: return "帮助与反馈"
         }
     }

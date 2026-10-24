@@ -1,4 +1,4 @@
-"""KikiTalk Apple account, profile and legal-consent API.
+"""kiki Apple account, profile and legal-consent API.
 
 Production voice authorization is exchanged with the independent LiveKit service.
 Legacy room metadata and Tencent credentials remain available only when the
@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from datetime import date
 import hashlib
 import hmac
-import ipaddress
 from io import BytesIO
 import json
 import logging
@@ -38,7 +37,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .usersig import generate_user_sig
 from .apple_auth import (AppleAuth, AppleGrantRevoked, CHALLENGE_SECONDS, VALIDATION_SECONDS,
                          NOTIFICATION_SECONDS, REVOCATION_SECONDS)
-from . import gifts, voice_bridge, voice_incidents, admin, ops_auth, activity, social, push, room_started
+from . import voice_bridge, voice_incidents, admin, ops_auth, activity, social, push, room_started, account_numbers
 from .community_content import PublicTextPolicy
 
 LOGGER = logging.getLogger("kikitalk")
@@ -124,9 +123,6 @@ class Settings:
     admin_passphrase_hash: str = ""
     admin_tls_cert_path: str = "/opt/kikitalk/shared/server-certificate.pem"
     admin_api_systemd_unit: str = "kikitalk.service"
-    qa_gifts_enabled: bool = False
-    qa_gifts_token: str = ""
-    qa_gifts_expires_at: int = 0
     public_content_blocklist: str = ""
     apns_enabled: bool = False
     apns_team_id: str = ""
@@ -158,9 +154,6 @@ class Settings:
                    admin_passphrase_hash=os.environ.get("ADMIN_PASSPHRASE_HASH", ""),
                    admin_tls_cert_path=os.environ.get("ADMIN_TLS_CERT_PATH", "/opt/kikitalk/shared/server-certificate.pem"),
                    admin_api_systemd_unit=os.environ.get("ADMIN_API_SYSTEMD_UNIT", "kikitalk.service"),
-                   qa_gifts_enabled=os.environ.get("QA_GIFTS_ENABLED", "") == "1",
-                   qa_gifts_token=os.environ.get("QA_GIFTS_TOKEN", ""),
-                   qa_gifts_expires_at=int(os.environ.get("QA_GIFTS_EXPIRES_AT", "0")),
                    public_content_blocklist=os.environ.get("PUBLIC_CONTENT_BLOCKLIST", ""),
                    apns_enabled=os.environ.get("APNS_ENABLED", "") == "1",
                    apns_team_id=os.environ.get("APNS_TEAM_ID", ""),
@@ -196,16 +189,6 @@ class AppleNotification(Model):
     payload: str = Field(min_length=64, max_length=12000)
 
 
-class QAGiftLogin(LegalConsentRequest):
-    userID: str = Field(pattern=r"^[a-zA-Z0-9_]{3,32}$")
-    name: str = Field(min_length=1, max_length=16)
-
-    @field_validator("name")
-    @classmethod
-    def clean_name(cls, value):
-        if any(ord(c) < 32 or ord(c) == 127 for c in value):
-            raise ValueError("昵称不能包含控制字符")
-        return value
 
 
 class ProfileUpdate(Model):
@@ -236,7 +219,7 @@ class RoomCreate(Model):
     title: str = Field(min_length=1, max_length=40)
     category: str = Field(min_length=1, max_length=12)
     isLive: bool = Field(strict=True)
-    theme: int = Field(strict=True, ge=0, le=5)
+    theme: int = Field(strict=True, ge=0, le=4)
 
     @field_validator("title", "category")
     @classmethod
@@ -267,6 +250,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   account_id TEXT PRIMARY KEY,
   login_id TEXT NOT NULL UNIQUE,
   sdk_user_id TEXT NOT NULL UNIQUE,
+  public_number INTEGER CHECK(public_number IS NULL OR (typeof(public_number)='integer' AND public_number BETWEEN 1 AND 999999)),
   name TEXT NOT NULL,
   bio TEXT NOT NULL DEFAULT '',
   avatar_index INTEGER NOT NULL DEFAULT 0,
@@ -397,7 +381,7 @@ def avatar_url(filename, settings):
 
 
 def serialize_user(row, settings):
-    return {"id": row["login_id"], "sdkUserID": row["sdk_user_id"],
+    return {"id": row["login_id"], "displayID": account_numbers.display_id(row), "sdkUserID": row["sdk_user_id"],
             "name": row["name"], "bio": row["bio"], "avatarIndex": row["avatar_index"],
             "avatarURL": avatar_url(row["avatar_filename"], settings),
             "needsNickname": bool(row["needs_nickname"]),
@@ -472,15 +456,6 @@ def create_app(settings: Settings | None = None):
     ops_auth.validate_settings(settings)
     if not settings.voice_bridge_enabled and (settings.sdk_app_id <= 0 or len(settings.secret_key) < 32):
         raise RuntimeError("请在服务端配置有效的 SDKAPPID 与 SECRETKEY")
-    if settings.qa_gifts_enabled:
-        # QA must never become an alternative production authentication path.
-        # A separately named database and short lifetime are mandatory even when
-        # this mode is accidentally enabled with the production environment.
-        if not re.fullmatch(r"qa-gifts(?:-[A-Za-z0-9_-]+)?\.sqlite3", Path(settings.db_path).name):
-            raise RuntimeError("礼物测试模式只能使用专用 qa-gifts*.sqlite3 数据库")
-        if (not 43 <= len(settings.qa_gifts_token) <= 256 or len(set(settings.qa_gifts_token)) < 16
-                or not int(time.time()) < settings.qa_gifts_expires_at <= int(time.time()) + 86400):
-            raise RuntimeError("礼物测试模式需要高熵临时令牌和24小时内的到期时间")
     legal_manifest = load_legal_manifest()
     legal_requirements = {key: legal_manifest[key] for key in ("privacyVersion", "termsVersion", "documentHash")}
     limits = RequestLimits()
@@ -491,14 +466,7 @@ def create_app(settings: Settings | None = None):
     incidents = voice_incidents.IncidentOutbox(settings, database, bridge)
     public_text = PublicTextPolicy(settings.public_content_blocklist)
 
-    def qa_active():
-        return settings.qa_gifts_enabled and int(time.time()) < settings.qa_gifts_expires_at
 
-    def loopback_request(request):
-        try:
-            return request.client is not None and ipaddress.ip_address(request.client.host).is_loopback
-        except ValueError:
-            return False
 
     def purge_apple_metadata(db, now):
         db.execute("DELETE FROM apple_challenges WHERE expires_at<=?", (now,))
@@ -540,14 +508,11 @@ def create_app(settings: Settings | None = None):
             db.execute("DELETE FROM legal_withdrawal_receipts WHERE expires_at<=?", (int(time.time()),))
             purge_apple_metadata(db, int(time.time()))
             ops_auth.purge_expired(db)
-            gifts.purge_gift_events(db, int(time.time()))
             activity.purge(db)
             social.purge(db)
             push.purge(db)
             if settings.voice_bridge_enabled:
                 voice_incidents.purge(db)
-        if hasattr(app.state,"social"):
-            app.state.social.sweep_media()
 
     async def maintain_withdrawal_receipts():
         while True:
@@ -581,7 +546,6 @@ def create_app(settings: Settings | None = None):
         settings.avatar_path.mkdir(mode=0o700, parents=True, exist_ok=True)
         with database(settings) as db:
             db.executescript(SCHEMA)
-            db.executescript(gifts.SCHEMA)
             activity.initialize(db)
             social.initialize(db)
             push.initialize(db)
@@ -593,8 +557,6 @@ def create_app(settings: Settings | None = None):
                 voice_bridge.initialize_database(db)
                 voice_incidents.initialize_database(db)
                 voice_incidents.purge(db)
-            if settings.qa_gifts_enabled and db.execute("""SELECT 1 FROM identities WHERE provider!='qa' LIMIT 1""").fetchone():
-                raise RuntimeError("礼物测试数据库不能包含正式账号")
             account_columns = {row["name"] for row in db.execute("PRAGMA table_info(accounts)")}
             if "hide_notification_content" not in account_columns:
                 db.execute("ALTER TABLE accounts ADD COLUMN hide_notification_content INTEGER NOT NULL DEFAULT 0 CHECK(hide_notification_content IN (0,1))")
@@ -606,6 +568,7 @@ def create_app(settings: Settings | None = None):
                 # characters. Preserve deliberate custom nicknames during upgrade.
                 db.execute("""UPDATE accounts SET needs_nickname=CASE
                     WHEN name=login_id OR name=substr(login_id,1,16) THEN 1 ELSE 0 END""")
+            account_numbers.initialize(db)
             columns = {row["name"] for row in db.execute("PRAGMA table_info(rooms)")}
             if "host_avatar_index" not in columns:
                 db.execute("ALTER TABLE rooms ADD COLUMN host_avatar_index INTEGER NOT NULL DEFAULT 0")
@@ -616,11 +579,8 @@ def create_app(settings: Settings | None = None):
             db.execute("DELETE FROM sessions WHERE expires_at<=?", (int(time.time()),))
             db.execute("DELETE FROM legal_withdrawal_receipts WHERE expires_at<=?", (int(time.time()),))
             purge_apple_metadata(db, int(time.time()))
-            gifts.migrate_wallets(db)
-            gifts.purge_gift_events(db, int(time.time()))
         app.state.ops = ops_auth.OpsService(settings, database)
         app.state.social.ops = app.state.ops
-        app.state.social.sweep_media()
         app.state.admin = admin.AdminService(settings, database)
         app.state.admin.start()
         receipt_cleanup = asyncio.create_task(maintain_withdrawal_receipts())
@@ -644,7 +604,7 @@ def create_app(settings: Settings | None = None):
                 await receipt_cleanup
             apple.close()
 
-    app = FastAPI(title="KikiTalk API", version="1.0.0", lifespan=lifespan,
+    app = FastAPI(title="kiki API", version="1.0.0", lifespan=lifespan,
                   docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
     app.state.voice_bridge = bridge
@@ -662,14 +622,10 @@ def create_app(settings: Settings | None = None):
         if settings.admin_auth_mode == "passkey" and request.url.path.startswith("/admin/v1"):
             return JSONResponse({"detail":"原口令管理入口已停用，请使用通行密钥登录"}, status_code=404,
                                 headers={"Cache-Control":"no-store"})
-        if request.url.path == "/v1/internal/qa/login" and not settings.qa_gifts_enabled:
-            return JSONResponse({"detail": "接口不存在"}, status_code=404)
-        if settings.qa_gifts_enabled and (not qa_active() or not loopback_request(request)):
-            return JSONResponse({"detail": "接口不存在"}, status_code=404)
         if settings.voice_bridge_enabled and request.url.path.startswith(("/v1/rooms", "/v1/library", "/v1/favorites", "/v1/history")):
             return JSONResponse({"detail": "语聊房已迁移，请更新应用", "provider": "livekit"}, status_code=426, headers={"Cache-Control": "no-store"})
         maximum = (ops_auth.MAX_BODY if request.url.path.startswith("/admin/v2/") else
-                   MAX_AVATAR_BODY if request.method == "POST" and request.url.path in ("/v1/me/avatar", "/v1/social/media") else MAX_BODY)
+                   MAX_AVATAR_BODY if request.method == "POST" and request.url.path == "/v1/me/avatar" else MAX_BODY)
         content_length = request.headers.get("content-length")
         if content_length and (not content_length.isdigit() or int(content_length) > maximum):
             return JSONResponse({"detail": "请求内容过大"}, status_code=413, headers={"Cache-Control":"no-store"})
@@ -691,7 +647,7 @@ def create_app(settings: Settings | None = None):
                 bearer = request.headers.get("authorization", "")
                 if business_path and bearer.startswith("Bearer ") and re.fullmatch(r"[A-Za-z0-9_-]{43}", bearer[7:]):
                     token_hash = hashlib.sha256(bearer[7:].encode()).hexdigest()
-                    provider = "qa" if settings.qa_gifts_enabled else "apple"
+                    provider = "apple"
                     with database(settings) as db:
                         row = db.execute("""SELECT s.token_hash FROM sessions s JOIN accounts a ON a.account_id=s.account_id
                             WHERE s.token_hash=? AND s.expires_at>? AND EXISTS(SELECT 1 FROM identities i
@@ -773,8 +729,6 @@ def create_app(settings: Settings | None = None):
                 legal_requirements["termsVersion"], legal_requirements["documentHash"], int(time.time())))
 
     def require_active_session(db, user, *, require_consent=True):
-        if settings.qa_gifts_enabled and not qa_active():
-            raise HTTPException(401, "测试会话已到期")
         session = db.execute("SELECT 1 FROM sessions WHERE token_hash=? AND account_id=? AND expires_at>?",
                              (user["token_hash"], user["account_id"], int(time.time()))).fetchone()
         if session is None:
@@ -789,10 +743,8 @@ def create_app(settings: Settings | None = None):
         return hashlib.sha256(header[7:].encode()).hexdigest()
 
     def authenticated(request: Request):
-        if settings.qa_gifts_enabled and not qa_active():
-            raise HTTPException(401, "测试会话已到期")
         token_hash = request_token_hash(request)
-        provider = "qa" if settings.qa_gifts_enabled else "apple"
+        provider = "apple"
         with database(settings) as db:
             row = db.execute("""SELECT a.*, s.token_hash FROM sessions s JOIN accounts a
                 ON a.account_id=s.account_id WHERE s.token_hash=? AND s.expires_at>? AND EXISTS
@@ -846,8 +798,6 @@ def create_app(settings: Settings | None = None):
 
     @app.post("/v1/auth/apple/challenge")
     def apple_challenge(request: Request):
-        if settings.qa_gifts_enabled:
-            raise HTTPException(404, "接口不存在")
         if settings.rate_limit_enabled:
             ip = request.client.host if request.client else "unknown"
             limits.check(("apple_challenge", ip), 20, 60)
@@ -861,8 +811,6 @@ def create_app(settings: Settings | None = None):
 
     @app.post("/v1/auth/apple")
     def login(payload: AppleLogin, request: Request):
-        if settings.qa_gifts_enabled:
-            raise HTTPException(404, "接口不存在")
         if settings.rate_limit_enabled:
             ip = request.client.host if request.client else "unknown"
             limits.check(("auth_ip", ip), 20, 60)
@@ -903,7 +851,7 @@ def create_app(settings: Settings | None = None):
                            (account_id, public_id, sdk_user_id, "新朋友", now))
                 db.execute("INSERT INTO identities(provider,subject,account_id) VALUES('apple',?,?)",
                            (claims["sub"], account_id))
-            gifts.initialize_wallet(db, account_id, now)
+            account_numbers.assign(db, account_id)
             generation = uuid.uuid4().hex
             db.execute("""INSERT INTO apple_credentials VALUES(?,?,?,?,?) ON CONFLICT(account_id) DO UPDATE SET
                 refresh_token_encrypted=excluded.refresh_token_encrypted,validated_at=excluded.validated_at,
@@ -923,50 +871,9 @@ def create_app(settings: Settings | None = None):
         return {"token": token, "user": serialize_user(user, settings),
                 **({} if settings.voice_bridge_enabled else {"sdk": sdk_credentials(user)})}
 
-    @app.post("/v1/internal/qa/login")
-    def qa_gift_login(payload: QAGiftLogin, request: Request):
-        if not qa_active() or not loopback_request(request):
-            raise HTTPException(404, "接口不存在")
-        header = request.headers.get("authorization", "")
-        if not hmac.compare_digest(header.encode(), ("Bearer " + settings.qa_gifts_token).encode()):
-            raise HTTPException(404, "接口不存在")
-        # Always rate-limit this bypass even if ordinary test traffic limits are
-        # disabled. Each QA identity is confined to the dedicated QA database.
-        limits.check(("qa_login", request.client.host), 20, 60)
-        validate_consent(payload.legalConsent)
-        now = int(time.time())
-        with database(settings) as db:
-            db.execute("BEGIN IMMEDIATE")
-            identity = db.execute("SELECT account_id FROM identities WHERE provider='qa' AND subject=?",
-                                  (payload.userID,)).fetchone()
-            if identity:
-                account_id = identity["account_id"]
-            else:
-                account_id = uuid.uuid4().hex
-                db.execute("""INSERT INTO accounts
-                    (account_id,login_id,sdk_user_id,name,needs_nickname,created_at) VALUES(?,?,?,?,0,?)""",
-                    (account_id, "qa_" + secrets.token_hex(8), "qa_" + secrets.token_hex(13), payload.name, now))
-                db.execute("INSERT INTO identities(provider,subject,account_id) VALUES('qa',?,?)",
-                           (payload.userID, account_id))
-            gifts.initialize_wallet(db, account_id, now)
-            record_acceptance(db, account_id)
-            db.execute("DELETE FROM sessions WHERE account_id=?", (account_id,))
-            token = secrets.token_urlsafe(32)
-            token_hash = hashlib.sha256(token.encode()).hexdigest()
-            db.execute("INSERT INTO sessions VALUES(?,?,?,?)",
-                       (token_hash, account_id, settings.qa_gifts_expires_at, now))
-            user = dict(db.execute("SELECT * FROM accounts WHERE account_id=?", (account_id,)).fetchone())
-            user["token_hash"] = token_hash
-        return {"token": token, "user": serialize_user(user, settings),
-                **({} if settings.voice_bridge_enabled else {"sdk": sdk_credentials(user)})}
 
     @app.post("/v1/auth/refresh")
     def refresh(user=Depends(consented_user)):
-        if settings.qa_gifts_enabled:
-            with database(settings) as db:
-                require_active_session(db, user)
-            return {"user": serialize_user(user, settings),
-                **({} if settings.voice_bridge_enabled else {"sdk": sdk_credentials(user)})}
         # Serialize once-per-day Apple checks for this account, without holding a
         # SQLite transaction across any external request.
         lock_index = int(hashlib.sha256(user["account_id"].encode()).hexdigest()[:8], 16) % len(refresh_locks)
@@ -1140,7 +1047,7 @@ def create_app(settings: Settings | None = None):
             user = db.execute("""SELECT a.* FROM sessions s JOIN accounts a ON a.account_id=s.account_id
                 WHERE s.token_hash=? AND s.expires_at>? AND EXISTS
                 (SELECT 1 FROM identities i WHERE i.account_id=a.account_id AND i.provider=?)""",
-                (token_hash, now, "qa" if settings.qa_gifts_enabled else "apple")).fetchone()
+                (token_hash, now, "apple")).fetchone()
             if user is None:
                 # Return after committing expiry cleanup, even for an expired
                 # retry token. A raised exception would roll that cleanup back.
@@ -1292,8 +1199,6 @@ def create_app(settings: Settings | None = None):
 
     @app.post("/v1/auth/apple/notifications")
     def apple_notification(payload: AppleNotification):
-        if settings.qa_gifts_enabled:
-            raise HTTPException(404, "接口不存在")
         notification_id, event = apple.verify_notification(payload.payload)
         filename = None
         with database(settings) as db:
@@ -1341,7 +1246,7 @@ def create_app(settings: Settings | None = None):
         require_nickname(user)
         if settings.rate_limit_enabled:
             limits.check(("room_create", user["account_id"]), 20, 3600)
-        prefix = ("qa_live_" if payload.isLive else "qa_voice_") if settings.qa_gifts_enabled else ("live_kiki_" if payload.isLive else "voice_kiki_")
+        prefix = "live_kiki_" if payload.isLive else "voice_kiki_"
         room_id = prefix + uuid.uuid4().hex[:24]
         with database(settings) as db:
             db.execute("BEGIN IMMEDIATE")
@@ -1431,9 +1336,6 @@ def create_app(settings: Settings | None = None):
                 (user["account_id"], user["account_id"]))
         return {"ok": True}
 
-    gifts.install_routes(app, settings, database=database, consented_user=consented_user,
-                         require_active_session=require_active_session, require_nickname=require_nickname,
-                         avatar_url=avatar_url, find_room=find_room, limits=limits)
     app.state.social = social.SocialService(settings, database, bridge, legal_requirements, require_active_session, limits)
     app.state.social.ops = app.state.ops if hasattr(app.state,"ops") else None
     app.state.push = push.PushService(settings,database,app.state.social,limits)

@@ -1,14 +1,16 @@
-# KikiTalk
+# Kiki
 
 [English](README.md) · [iOS 工程导航](ios/README.md) · [当前架构](docs/ARCHITECTURE.zh-CN.md) · [项目接手指南](docs/PROJECT_HANDOVER.zh-CN.md)
 
-KikiTalk 是中文 iOS 语聊社区，提供 Apple 登录、八麦语聊房、动态、私聊、通知和个人资料。主界面为“语聊、动态、消息、我”四个页签；音频使用自建 LiveKit，账号社交与语聊业务由独立后端管理。
+Kiki 是中文 iOS 语聊社区，提供 Apple 登录、八麦语聊房、私聊、通知和个人资料。主界面为“语聊、消息、我”三个页签；音频使用自建 LiveKit，账号社交与语聊业务由独立后端管理。
+
+应用可见名称统一为首字母大写的 Kiki，工程名和路径继续使用 KikiTalk。启动时静默核对协议，仅在需要签署时进入签署页；房间提供五款随深浅色模式适配的原生渐变，可在创建和编辑时选择。详见[房间背景与发布记录](docs/ROOM_BACKGROUNDS.zh-CN.md)。
 
 ## 运行两个 iOS App
 
 | App | 工作区 | Scheme |
 | --- | --- | --- |
-| KikiTalk 用户端 | `ios/KikiTalk/KikiTalk.xcworkspace` | KikiTalk |
+| Kiki 用户端 | `ios/KikiTalk/KikiTalk.xcworkspace` | KikiTalk |
 | KikiVoiceOps 管理端 | `ios/KikiVoiceOps/KikiVoiceOps.xcworkspace` | KikiVoiceOps |
 
 用 Xcode 打开相应工作区。两个 App 最低 iOS 17，支持 iPhone/iPad；KikiTalk 通过 Swift Package Manager 解析锁定的 LiveKit，KikiVoiceOps 使用系统框架。模拟器沿用工程签名配置，真机选择有权限的开发团队和设备。
@@ -34,7 +36,7 @@ KikiTalk 是中文 iOS 语聊社区，提供 Apple 登录、八麦语聊房、�
 ## 服务分工
 
 - `https://kiki.group`：Apple 认证、资料、社交内容、APNs、协议确认和运维身份。
-- `https://furby.top` / `wss://furby.top`：语聊授权、房间、麦位、房内消息、礼物/装扮和 LiveKit 信令/媒体。
+- `https://furby.top` / `wss://furby.top`：语聊授权、房间、麦位、房内消息、五款房间背景和 LiveKit 信令/媒体。
 
 账号、语聊、房间和运维凭据分别使用；客户端接收服务端凭证，服务签名密钥不进入 App。
 

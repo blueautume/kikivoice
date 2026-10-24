@@ -92,15 +92,13 @@ struct KikiRoomAudienceStrip<Avatar: View>: View {
 }
 
 /// The sender's avatar stays independent from the bubble, including local messages.
-struct KikiRoomChatBubbleRow<Avatar: View, BubbleBackground: View>: View {
+struct KikiRoomChatBubbleRow<Avatar: View>: View {
     let id: String
     let senderName: String
     let text: String
     let isLocal: Bool
-    var isGift = false
     let onOpenSender: () -> Void
     @ViewBuilder var avatar: () -> Avatar
-    @ViewBuilder var bubbleBackground: () -> BubbleBackground
 
     var body: some View {
         HStack(alignment: .top, spacing: 4) {
@@ -111,11 +109,11 @@ struct KikiRoomChatBubbleRow<Avatar: View, BubbleBackground: View>: View {
             .accessibilityLabel("查看\(senderName)的个人主页")
             .accessibilityIdentifier("livekit.room.messageAvatar.\(id)")
             (Text(senderName + "：").foregroundColor(isLocal ? KikiPalette.purple : KikiPalette.secondary)
-             + Text(isGift ? "🎁 " + text : text).foregroundColor(isGift ? KikiPalette.purple : KikiPalette.text))
+             + Text(text).foregroundColor(KikiPalette.text))
                 .font(.subheadline).lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 11).padding(.vertical, 8)
-                .background { bubbleBackground() }
+                .background(KikiPalette.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 15))
                 .accessibilityIdentifier("livekit.room.messageBubble.\(id)")
             Spacer(minLength: 8)
         }
@@ -160,13 +158,11 @@ struct KikiRoomAnnouncementChatRow: View {
 /// Rebuilding this list replaces that one row and never duplicates a polling response.
 enum KikiRoomChatEntry: Identifiable, Equatable {
     case message(KikiVoiceMessage)
-    case gift(KikiGiftEvent)
     case announcement(KikiRoomAnnouncement)
 
     var id: String {
         switch self {
         case .message(let value): return value.id
-        case .gift(let value): return "gift-" + value.id
         case .announcement(let value): return "announcement-\(value.revision)"
         }
     }
@@ -174,7 +170,6 @@ enum KikiRoomChatEntry: Identifiable, Equatable {
     var createdAt: Int {
         switch self {
         case .message(let value): return value.createdAt
-        case .gift(let value): return value.createdAt
         case .announcement(let value): return value.updatedAt
         }
     }
@@ -182,21 +177,17 @@ enum KikiRoomChatEntry: Identifiable, Equatable {
     var sequence: Int {
         switch self {
         case .message(let value): return value.sequence
-        case .gift(let value): return value.seq
         case .announcement(let value): return value.revision
         }
     }
 
     var kindOrder: Int {
-        switch self { case .message: return 0; case .gift: return 1; case .announcement: return 2 }
+        switch self { case .message: return 0; case .announcement: return 1 }
     }
 
-    static func timeline(messages: [KikiVoiceMessage], gifts: [KikiGiftEvent],
+    static func timeline(messages: [KikiVoiceMessage],
                          announcement: KikiRoomAnnouncement, blockedIDs: Set<String>) -> [Self] {
         var entries = messages.filter { !blockedIDs.contains($0.senderID) }.map(Self.message)
-        entries += gifts.filter {
-            !blockedIDs.contains($0.senderUserID) && !blockedIDs.contains($0.recipientUserID)
-        }.map(Self.gift)
         if !announcement.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            announcement.updatedByUserID.map({ !blockedIDs.contains($0) }) ?? true {
             entries.append(.announcement(announcement))

@@ -3,6 +3,7 @@ import Security
 
 struct KikiUser: Codable, Equatable {
     let id: String
+    let displayID: String?
     let sdkUserID: String
     var name: String
     var bio: String
@@ -13,12 +14,13 @@ struct KikiUser: Codable, Equatable {
     var needsNickname: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case id, sdkUserID, name, bio, avatarIndex, notificationsEnabled, hideNotificationContent, avatarURL, needsNickname
+        case id, displayID, sdkUserID, name, bio, avatarIndex, notificationsEnabled, hideNotificationContent, avatarURL, needsNickname
     }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(String.self, forKey: .id)
+        displayID = try values.decodeIfPresent(String.self, forKey: .displayID)
         sdkUserID = try values.decode(String.self, forKey: .sdkUserID)
         name = try values.decode(String.self, forKey: .name)
         bio = try values.decode(String.self, forKey: .bio)
@@ -28,6 +30,7 @@ struct KikiUser: Codable, Equatable {
         avatarURL = try values.decodeIfPresent(String.self, forKey: .avatarURL)
         needsNickname = try values.decodeIfPresent(Bool.self, forKey: .needsNickname) ?? false
     }
+    var publicID: String { displayID ?? id }
 }
 
 /// Business sessions are separate from short-lived LiveKit room grants.
@@ -64,19 +67,21 @@ struct KikiRoomMember: Codable, Equatable, Identifiable {
     let offlineSince: Int?
     let reconnectDeadline: Int?
     let seatRequestStatus: String
+    var displayID: String?
 
     init(userID: String, name: String, avatarIndex: Int, avatarURL: String?, role: KikiRoomRole,
          seatIndex: Int?, audioMuted: Bool, chatMuted: Bool, online: Bool,
          canPublishAudio: Bool, canPublishData: Bool, offlineSince: Int? = nil,
-         reconnectDeadline: Int? = nil, seatRequestStatus: String = "none") {
+         reconnectDeadline: Int? = nil, seatRequestStatus: String = "none", displayID: String? = nil) {
         self.userID = userID; self.name = name; self.avatarIndex = avatarIndex; self.avatarURL = avatarURL
         self.role = role; self.seatIndex = seatIndex; self.audioMuted = audioMuted; self.chatMuted = chatMuted
         self.online = online; self.canPublishAudio = canPublishAudio; self.canPublishData = canPublishData
         self.offlineSince = offlineSince; self.reconnectDeadline = reconnectDeadline; self.seatRequestStatus = seatRequestStatus
+        self.displayID = displayID
     }
     private enum CodingKeys: String, CodingKey {
         case userID, name, avatarIndex, avatarURL, role, seatIndex, audioMuted, chatMuted, online
-        case canPublishAudio, canPublishData, offlineSince, reconnectDeadline, seatRequestStatus
+        case canPublishAudio, canPublishData, offlineSince, reconnectDeadline, seatRequestStatus, displayID
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -87,7 +92,8 @@ struct KikiRoomMember: Codable, Equatable, Identifiable {
                   online: try c.decode(Bool.self, forKey: .online), canPublishAudio: try c.decode(Bool.self, forKey: .canPublishAudio),
                   canPublishData: try c.decode(Bool.self, forKey: .canPublishData), offlineSince: try c.decodeIfPresent(Int.self, forKey: .offlineSince),
                   reconnectDeadline: try c.decodeIfPresent(Int.self, forKey: .reconnectDeadline),
-                  seatRequestStatus: try c.decodeIfPresent(String.self, forKey: .seatRequestStatus) ?? "none")
+                  seatRequestStatus: try c.decodeIfPresent(String.self, forKey: .seatRequestStatus) ?? "none",
+                  displayID: try c.decodeIfPresent(String.self, forKey: .displayID))
     }
     var id: String { userID }
     var isModerator: Bool { role == .owner || role == .admin }
@@ -111,17 +117,20 @@ struct KikiSeatRequest: Codable, Equatable, Identifiable {
     let position: Int
     let status: String
     let online: Bool
-    init(userID: String, name: String, requestedAt: Int, position: Int, status: String = "pending", online: Bool = true) {
+    var displayID: String?
+    init(userID: String, name: String, requestedAt: Int, position: Int, status: String = "pending", online: Bool = true, displayID: String? = nil) {
         self.userID = userID; self.name = name; self.requestedAt = requestedAt; self.position = position
         self.status = status; self.online = online
+        self.displayID = displayID
     }
-    private enum CodingKeys: String, CodingKey { case userID, name, requestedAt, position, status, online }
+    private enum CodingKeys: String, CodingKey { case userID, name, requestedAt, position, status, online, displayID }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(userID: try c.decode(String.self, forKey: .userID), name: try c.decode(String.self, forKey: .name),
                   requestedAt: try c.decode(Int.self, forKey: .requestedAt), position: try c.decode(Int.self, forKey: .position),
                   status: try c.decodeIfPresent(String.self, forKey: .status) ?? "pending",
-                  online: try c.decodeIfPresent(Bool.self, forKey: .online) ?? true)
+                  online: try c.decodeIfPresent(Bool.self, forKey: .online) ?? true,
+                  displayID: try c.decodeIfPresent(String.self, forKey: .displayID))
     }
     var id: String { userID }
 }
@@ -131,13 +140,19 @@ struct KikiSeatInvitation: Codable, Equatable, Identifiable {
     let name: String
     let seatIndex: Int
     let expiresAt: Int
+    var displayID: String? = nil
     var id: String { userID }
+}
+
+enum KikiSeatInviteState: Equatable {
+    case available, pending
 }
 
 struct KikiRoomBan: Codable, Equatable, Identifiable {
     let userID: String
     let name: String
     let bannedAt: Int
+    var displayID: String? = nil
     var id: String { userID }
 }
 
@@ -176,10 +191,24 @@ struct KikiRoomState: Codable, Equatable {
     }
     var listeners: [KikiRoomMember] { members.filter { $0.online && $0.seatIndex == nil } }
     var myRequest: KikiSeatRequest? { queue.first { $0.userID == me.userID } }
-    var myInvitation: KikiSeatInvitation? { invitations.first { $0.userID == me.userID && $0.expiresAt > Int(Date().timeIntervalSince1970) } }
+    var myInvitation: KikiSeatInvitation? { pendingIncomingInvitation() }
     var availableSeats: [KikiRoomSeat] { seats.filter { $0.userID == nil && !$0.locked } }
     var canMoveSeats: Bool { seatMode != "ordered" && me.seatIndex != nil && seats.first(where: { $0.index == me.seatIndex })?.audioLocked == false }
     func member(on seat: KikiRoomSeat) -> KikiRoomMember? { members.first { $0.userID == seat.userID } }
+
+    func seatInviteState(for targetID: String, at now: Int = Int(Date().timeIntervalSince1970)) -> KikiSeatInviteState? {
+        guard me.isModerator, targetID != me.userID,
+              let target = members.first(where: { $0.userID == targetID }),
+              target.online, target.seatIndex == nil else { return nil }
+        // An invitation grants consent to join the ordered queue; a free seat
+        // is not required, and inviting a peer administrator is permitted.
+        return invitations.contains { $0.userID == targetID && $0.expiresAt > now } ? .pending : .available
+    }
+
+    func pendingIncomingInvitation(at now: Int = Int(Date().timeIntervalSince1970)) -> KikiSeatInvitation? {
+        guard me.online, me.seatIndex == nil else { return nil }
+        return invitations.first { $0.userID == me.userID && $0.expiresAt > now }
+    }
 }
 
 enum KikiRoomAction: String, Encodable {
@@ -201,7 +230,9 @@ struct KikiBlockedUser: Codable, Equatable, Identifiable {
     let userID: String
     let name: String
     let createdAt: Double
+    var displayID: String? = nil
     var id: String { userID }
+    var publicID: String { displayID ?? userID }
 }
 
 struct KikiSafetyNotice: Codable, Equatable, Identifiable {
@@ -434,78 +465,6 @@ final class KikiAPIClient: @unchecked Sendable {
         try await request("/v1/safety/reports/mine", token: token)
     }
 
-    func experienceCatalog(token: String) async throws -> KikiExperienceCatalog {
-        try await request("/v1/gifts/catalog", token: token)
-    }
-
-    func experience(token: String) async throws -> KikiExperienceSnapshot {
-        try await request("/v1/me/experience", token: token)
-    }
-
-    func giftWallet(token: String) async throws -> KikiGiftWallet {
-        try await request("/v1/me/wallet", token: token)
-    }
-
-    func sendGift(roomID: String, giftID: String, quantity: Int, recipientIDs: [String],
-                  requestID: UUID, token: String) async throws -> KikiGiftSendResult {
-        try validateRoomID(roomID)
-        try validateExperienceItemID(giftID)
-        guard (1...99).contains(quantity), !recipientIDs.isEmpty, recipientIDs.count <= 50,
-              Set(recipientIDs).count == recipientIDs.count,
-              recipientIDs.allSatisfy({ $0.range(of: "^[A-Za-z0-9_-]{1,128}$", options: .regularExpression) != nil }) else {
-            throw KikiAPIError.security("请选择有效的收礼人和礼物数量。")
-        }
-        struct Body: Encodable { let giftID: String; let quantity: Int; let recipientIDs: [String]; let requestID: String }
-        return try await send("/v1/rooms/\(roomID)/gifts", method: "POST",
-                              body: Body(giftID: giftID, quantity: quantity, recipientIDs: recipientIDs,
-                                         requestID: requestID.uuidString.lowercased()), token: token)
-    }
-
-    func giftEvents(roomID: String, after: Int?, token: String) async throws -> KikiGiftEventPage {
-        try validateRoomID(roomID)
-        if let after, after < 0 { throw KikiAPIError.security("礼物游标无效。") }
-        let query = after.map { "?after=\($0)" } ?? ""
-        return try await request("/v1/rooms/\(roomID)/gifts\(query)", token: token)
-    }
-
-    func purchaseDecoration(decorationID: String, requestID: UUID, token: String) async throws -> KikiDecorationPurchaseResult {
-        try validateExperienceItemID(decorationID)
-        struct Body: Encodable { let decorationID: String; let requestID: String }
-        return try await send("/v1/me/decorations/purchase", method: "POST",
-                              body: Body(decorationID: decorationID, requestID: requestID.uuidString.lowercased()), token: token)
-    }
-
-    func equipDecoration(kind: KikiDecorationKind, decorationID: String?, token: String) async throws -> KikiDecorationInventory {
-        if let decorationID { try validateExperienceItemID(decorationID) }
-        struct Body: Encodable {
-            let kind: KikiDecorationKind
-            let decorationID: String?
-            enum CodingKeys: String, CodingKey { case kind, decorationID }
-            func encode(to encoder: Encoder) throws {
-                var values = encoder.container(keyedBy: CodingKeys.self)
-                try values.encode(kind, forKey: .kind)
-                if let decorationID { try values.encode(decorationID, forKey: .decorationID) }
-                else { try values.encodeNil(forKey: .decorationID) }
-            }
-        }
-        return try await send("/v1/me/decorations/equipped", method: "PUT", body: Body(kind: kind, decorationID: decorationID), token: token)
-    }
-
-    func userDecorations(userIDs: [String], token: String) async throws -> KikiPublicDecorationPage {
-        let ids = Set(userIDs).sorted()
-        guard !ids.isEmpty, ids.count <= 100,
-              ids.allSatisfy({ $0.range(of: "^[A-Za-z0-9_-]{1,128}$", options: .regularExpression) != nil }) else {
-            throw KikiAPIError.security("装饰查询的用户编号无效。")
-        }
-        return try await request("/v1/decorations/users?ids=\(ids.joined(separator: ","))", token: token)
-    }
-
-    private func validateExperienceItemID(_ id: String) throws {
-        guard id.range(of: "^[a-z0-9_]{1,64}$", options: .regularExpression) != nil else {
-            throw KikiAPIError.security("礼物或装饰编号无效。")
-        }
-    }
-
     private func validateRoomID(_ roomID: String) throws {
         guard roomID.range(of: "^[A-Za-z0-9_-]{1,128}$", options: .regularExpression) != nil else {
             throw KikiAPIError.security("房间标识无效。")
@@ -521,6 +480,7 @@ final class KikiAPIClient: @unchecked Sendable {
 
     func reserveRoom(title: String, category: String, isLive: Bool, theme: Int, token: String) async throws -> KikiRoom {
         guard !isLive else { throw KikiAPIError.server(422, "暂未开放视频直播，请创建语聊房。") }
+        guard (0..<5).contains(theme) else { throw KikiAPIError.security("请选择有效的房间背景。") }
         struct Body: Encodable { let title: String; let category: String; let isLive: Bool; let theme: Int }
         return try await send("/v1/rooms", method: "POST", body: Body(title: title, category: category, isLive: isLive, theme: theme), token: token)
     }
@@ -531,12 +491,13 @@ final class KikiAPIClient: @unchecked Sendable {
         return try await send("/v1/rooms/\(roomID)", method: "PATCH", body: Body(status: status), token: token)
     }
 
-    func updateRoomTitle(_ roomID: String, title: String, token: String) async throws -> KikiRoomState {
+    func updateRoomTitle(_ roomID: String, title: String, theme: Int? = nil, token: String) async throws -> KikiRoomState {
         try validateRoomID(roomID)
         let title = try KikiRoomTitlePolicy.validated(title)
-        struct Body: Encodable { let title: String }
-        let state: KikiRoomState = try await send("/v1/rooms/\(roomID)", method: "PATCH", body: Body(title: title), token: token)
-        guard state.room.id == roomID, state.room.title == title, state.revision >= 0 else { throw KikiAPIError.invalidResponse }
+        if let theme, !(0..<5).contains(theme) { throw KikiAPIError.security("请选择有效的房间背景。") }
+        struct Body: Encodable { let title: String; let theme: Int? }
+        let state: KikiRoomState = try await send("/v1/rooms/\(roomID)", method: "PATCH", body: Body(title: title, theme: theme), token: token)
+        guard state.room.id == roomID, state.room.title == title, theme == nil || state.room.theme == theme, state.revision >= 0 else { throw KikiAPIError.invalidResponse }
         return state
     }
 

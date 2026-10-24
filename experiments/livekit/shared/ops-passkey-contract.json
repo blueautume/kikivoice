@@ -4,31 +4,153 @@
   "relyingPartyID": "kiki.group",
   "expectedOrigin": "https://kiki.group",
   "associatedAppID": "A82X46N3WS.com.kikitalk.voiceops",
-  "scope": "Operations application only; ordinary KikiTalk Apple accounts remain separate.",
+  "scope": "Operations application only; ordinary kiki Apple accounts remain separate.",
   "publicPrefix": "/admin/v2",
-  "registrationOptions": {"method":"POST","path":"/admin/v2/auth/registration/options","body":{},"response":{"transactionID":"Opaque one-use transaction ID","publicKey":"W3C PublicKeyCredentialCreationOptions: residentKey=required, userVerification=required, attestation=none, ES256"}},
-  "registrationVerify": {"method":"POST","path":"/admin/v2/auth/registration/verify","body":{"transactionID":"Returned transaction ID","credential":{"id":"Base64URL credential ID","rawId":"Same Base64URL credential ID","type":"public-key","response":{"clientDataJSON":"Base64URL raw bytes","attestationObject":"Base64URL raw bytes"},"clientExtensionResults":{}}},"response":"Session response"},
-  "authenticationOptions": {"method":"POST","path":"/admin/v2/auth/authentication/options","body":{},"response":{"transactionID":"Opaque one-use transaction ID","publicKey":"W3C PublicKeyCredentialRequestOptions: rpId=kiki.group, userVerification=required; discoverable, no identifying credential list"}},
-  "authenticationVerify": {"method":"POST","path":"/admin/v2/auth/authentication/verify","body":{"transactionID":"Returned transaction ID","credential":{"id":"Base64URL credential ID","rawId":"Same Base64URL credential ID","type":"public-key","response":{"clientDataJSON":"Base64URL raw bytes","authenticatorData":"Base64URL raw bytes","signature":"Base64URL raw bytes","userHandle":"Base64URL of server allocated user handle"},"clientExtensionResults":{}}},"response":"Session response"},
-  "sessionResponse": {"token":"Opaque 256-bit operations-only Bearer","expiresAt":"Unix seconds, maximum 8 hours","serviceID":"ops-identity","role":"member","account":{"id":"Immutable public ops_ ID","name":null,"needsName":true,"permissions":{"account":false,"voice":false}}},
-  "me": {"method":"GET","path":"/admin/v2/me","authorization":"Operations Bearer","response":{"schemaVersion":1,"account":"Same account object as session response; permissions read from DB on every request"}},
-  "name": {"method":"PATCH","path":"/admin/v2/me","body":{"name":"Trimmed display name, 1-32 characters, no controls; duplicates allowed"},"response":"Same as GET me"},
-  "logout": {"method":"DELETE","path":"/admin/v2/auth/session","response":{"revoked":true}},
+  "registrationOptions": {
+    "method": "POST",
+    "path": "/admin/v2/auth/registration/options",
+    "body": {},
+    "response": {
+      "transactionID": "Opaque one-use transaction ID",
+      "publicKey": "W3C PublicKeyCredentialCreationOptions: residentKey=required, userVerification=required, attestation=none, ES256"
+    }
+  },
+  "registrationVerify": {
+    "method": "POST",
+    "path": "/admin/v2/auth/registration/verify",
+    "body": {
+      "transactionID": "Returned transaction ID",
+      "credential": {
+        "id": "Base64URL credential ID",
+        "rawId": "Same Base64URL credential ID",
+        "type": "public-key",
+        "response": {
+          "clientDataJSON": "Base64URL raw bytes",
+          "attestationObject": "Base64URL raw bytes"
+        },
+        "clientExtensionResults": {}
+      }
+    },
+    "response": "Session response"
+  },
+  "authenticationOptions": {
+    "method": "POST",
+    "path": "/admin/v2/auth/authentication/options",
+    "body": {},
+    "response": {
+      "transactionID": "Opaque one-use transaction ID",
+      "publicKey": "W3C PublicKeyCredentialRequestOptions: rpId=kiki.group, userVerification=required; discoverable, no identifying credential list"
+    }
+  },
+  "authenticationVerify": {
+    "method": "POST",
+    "path": "/admin/v2/auth/authentication/verify",
+    "body": {
+      "transactionID": "Returned transaction ID",
+      "credential": {
+        "id": "Base64URL credential ID",
+        "rawId": "Same Base64URL credential ID",
+        "type": "public-key",
+        "response": {
+          "clientDataJSON": "Base64URL raw bytes",
+          "authenticatorData": "Base64URL raw bytes",
+          "signature": "Base64URL raw bytes",
+          "userHandle": "Base64URL of server allocated user handle"
+        },
+        "clientExtensionResults": {}
+      }
+    },
+    "response": "Session response"
+  },
+  "sessionResponse": {
+    "token": "Opaque 256-bit operations-only Bearer",
+    "expiresAt": "Unix seconds, maximum 8 hours",
+    "serviceID": "ops-identity",
+    "role": "member",
+    "account": {
+      "id": "Immutable public ops_ ID",
+      "name": null,
+      "needsName": true,
+      "permissions": {
+        "account": false,
+        "voice": false,
+        "community": false
+      }
+    }
+  },
+  "me": {
+    "method": "GET",
+    "path": "/admin/v2/me",
+    "authorization": "Operations Bearer",
+    "response": {
+      "schemaVersion": 1,
+      "account": "Same account object as session response; permissions read from DB on every request"
+    }
+  },
+  "name": {
+    "method": "PATCH",
+    "path": "/admin/v2/me",
+    "body": {
+      "name": "Trimmed display name, 1-32 characters, no controls; duplicates allowed"
+    },
+    "response": "Same as GET me"
+  },
+  "logout": {
+    "method": "DELETE",
+    "path": "/admin/v2/auth/session",
+    "response": {
+      "revoked": true
+    }
+  },
   "dashboards": [
-    {"method":"GET","path":"/admin/v2/services/account/dashboard","permission":"account","response":"Existing account-admin-api-contract dashboard JSON; source kiki.group"},
-    {"method":"GET","path":"/admin/v2/services/voice/dashboard","permission":"voice","response":"Existing admin-api-contract dashboard JSON; source furby.top, service.id remains voice-lab"}
+    {
+      "method": "GET",
+      "path": "/admin/v2/services/account/dashboard",
+      "permission": "account",
+      "response": "Existing account-admin-api-contract dashboard JSON; source kiki.group"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/v2/services/voice/dashboard",
+      "permission": "voice",
+      "response": "Existing admin-api-contract dashboard JSON; source furby.top, service.id remains voice-lab"
+    }
   ],
   "authorization": "All new accounts have zero grants, including the first account. No public grant API or first-user bootstrap. Manual server CLI requires immutable account ID and exact current name. Revocation checked per request. Missing name cannot access a dashboard. Session is stored hashed and never accepted as an Apple business or legacy administrator session.",
-  "limits": {"challengeSeconds":120,"sessionSeconds":28800,"requestBodyBytes":32768},
-  "errors": {"401":"Invalid or expired session/assertion","403":"Authenticated but no requested grant; client clears only denied dashboard and refreshes me","409":"Conflict or one-use transaction consumed; restart Passkey ceremony","422":"Invalid bounded parameters/name","429":"Rate limited","503":"Service unavailable; do not invent data"},
-  "voiceGateway": {
-    "method":"POST","url":"https://furby.top/internal/admin/v2/dashboard","rawBody":"{}","contentType":"application/json",
-    "secretEnvironment":"OPS_BRIDGE_SECRET","keySeparation":"Dedicated fresh high entropy secret; never reuse business account-voice key, LiveKit, Apple, or legacy passphrase",
-    "headers":["X-Kiki-Ops-Timestamp","X-Kiki-Ops-Nonce","X-Kiki-Ops-Signature"],
-    "signature":"Lowercase hex HMAC-SHA256(secret, UTF8(newline join([account-voice-ops-v2, POST, /internal/admin/v2/dashboard, timestamp, nonce, SHA256(rawBody)])))",
-    "timestampToleranceSeconds":30,"nonce":"Random 16-byte lowercase hex, durably consumed once for 61 seconds",
-    "network":"Nginx permits only account server 43.138.219.160; still requires signature. Reject query, Authorization header, redirects, and any body other than exact UTF8 {}. No account name/ID or application Bearer forwarded."
+  "limits": {
+    "challengeSeconds": 120,
+    "sessionSeconds": 28800,
+    "requestBodyBytes": 32768
   },
-  "productionConfiguration": {"bothServers":"ADMIN_AUTH_MODE=passkey disables every legacy admin/v1 login and Bearer; no password fallback","account":"OPS_BRIDGE_SECRET only on servers, RP/origin fixed; passkey identity namespace independent of ordinary accounts","voice":"No operations identity/ACL copy; internal signed aggregate dashboard only"},
+  "errors": {
+    "401": "Invalid or expired session/assertion",
+    "403": "Authenticated but no requested grant; client clears only denied dashboard and refreshes me",
+    "409": "Conflict or one-use transaction consumed; restart Passkey ceremony",
+    "422": "Invalid bounded parameters/name",
+    "429": "Rate limited",
+    "503": "Service unavailable; do not invent data"
+  },
+  "voiceGateway": {
+    "method": "POST",
+    "url": "https://furby.top/internal/admin/v2/dashboard",
+    "rawBody": "{}",
+    "contentType": "application/json",
+    "secretEnvironment": "OPS_BRIDGE_SECRET",
+    "keySeparation": "Dedicated fresh high entropy secret; never reuse business account-voice key, LiveKit, Apple, or legacy passphrase",
+    "headers": [
+      "X-Kiki-Ops-Timestamp",
+      "X-Kiki-Ops-Nonce",
+      "X-Kiki-Ops-Signature"
+    ],
+    "signature": "Lowercase hex HMAC-SHA256(secret, UTF8(newline join([account-voice-ops-v2, POST, /internal/admin/v2/dashboard, timestamp, nonce, SHA256(rawBody)])))",
+    "timestampToleranceSeconds": 30,
+    "nonce": "Random 16-byte lowercase hex, durably consumed once for 61 seconds",
+    "network": "Nginx permits only account server 43.138.219.160; still requires signature. Reject query, Authorization header, redirects, and any body other than exact UTF8 {}. No account name/ID or application Bearer forwarded."
+  },
+  "productionConfiguration": {
+    "bothServers": "ADMIN_AUTH_MODE=passkey disables every legacy admin/v1 login and Bearer; no password fallback",
+    "account": "OPS_BRIDGE_SECRET only on servers, RP/origin fixed; passkey identity namespace independent of ordinary accounts",
+    "voice": "No operations identity/ACL copy; internal signed aggregate dashboard only"
+  },
   "recovery": "Synced Passkeys use platform credential management. If a Passkey is lost, a newly registered identity has no grants and requires separate human verification and explicit reauthorization. No name-only account recovery."
 }
