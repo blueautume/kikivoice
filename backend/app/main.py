@@ -37,7 +37,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .usersig import generate_user_sig
 from .apple_auth import (AppleAuth, AppleGrantRevoked, CHALLENGE_SECONDS, VALIDATION_SECONDS,
                          NOTIFICATION_SECONDS, REVOCATION_SECONDS)
-from . import voice_bridge, voice_incidents, admin, ops_auth, activity, social, push, room_started, account_numbers
+from . import voice_bridge, voice_incidents, admin, ops_auth, activity, social, push, room_started, account_numbers, relationships
 from .community_content import PublicTextPolicy
 
 LOGGER = logging.getLogger("kikitalk")
@@ -548,6 +548,7 @@ def create_app(settings: Settings | None = None):
             db.executescript(SCHEMA)
             activity.initialize(db)
             social.initialize(db)
+            relationships.initialize(db)
             push.initialize(db)
             admin.initialize_admin_database(db)
             ops_auth.initialize_database(db)
@@ -1066,6 +1067,7 @@ def create_app(settings: Settings | None = None):
             db.execute("DELETE FROM sessions WHERE account_id=?", (user["account_id"],))
             db.execute("DELETE FROM account_activity_daily WHERE account_id=?", (user["account_id"],))
             social.erase(db, user["account_id"])
+            db.execute("DELETE FROM relationship_profiles WHERE account_id=?", (user["account_id"],))
             db.execute("INSERT INTO legal_withdrawal_receipts VALUES(?,?,?)",
                        (token_hash, user["account_id"], now + CONSENT_WITHDRAWAL_RECEIPT_SECONDS))
         bridge.retry_revocations(1)
@@ -1344,6 +1346,8 @@ def create_app(settings: Settings | None = None):
     app.include_router(room_started.build_router(app))
     app.include_router(push.build_router(app,consented_user=consented_user,authenticated=authenticated))
     app.include_router(social.build_router(app, consented_user=consented_user))
+    app.include_router(relationships.build_router(app, database=database, consented_user=consented_user,
+                                                require_active_session=require_active_session))
     app.include_router(admin.build_admin_router(app))
     app.include_router(ops_auth.build_router(app))
     return app

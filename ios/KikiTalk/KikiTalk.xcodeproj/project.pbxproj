@@ -75,6 +75,10 @@
 		A02210000000000000000001 /* KikiForegroundNoticePresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02210000000000000000002 /* KikiForegroundNoticePresenter.swift */; };
 		A02210000000000000000011 /* KikiForegroundNotificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02210000000000000000012 /* KikiForegroundNotificationTests.swift */; };
 		A02210000000000000000021 /* KikiInboxRefreshTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02210000000000000000022 /* KikiInboxRefreshTests.swift */; };
+		3F25CD16DEEA9129678E3DC2 /* KikiRelationshipModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A489A3C140E4C4572F48711 /* KikiRelationshipModels.swift */; };
+		E37D25968CFFBF1E5DB43EC8 /* KikiRelationshipProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76F6D9886056A761B6EDD16B /* KikiRelationshipProfileView.swift */; };
+		6A08634B34913DC7784A679E /* KikiRelationshipStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 878774DB4011B08E924900EF /* KikiRelationshipStage.swift */; };
+		C7A8207B3CB94C634BCCE10A /* KikiRelationshipStageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2797C875DB3C71507C05BEA6 /* KikiRelationshipStageTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -158,6 +162,10 @@
 		A02210000000000000000002 /* KikiForegroundNoticePresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiForegroundNoticePresenter.swift; sourceTree = "<group>"; };
 		A02210000000000000000012 /* KikiForegroundNotificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiForegroundNotificationTests.swift; sourceTree = "<group>"; };
 		A02210000000000000000022 /* KikiInboxRefreshTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiInboxRefreshTests.swift; sourceTree = "<group>"; };
+		0A489A3C140E4C4572F48711 /* KikiRelationshipModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiRelationshipModels.swift; sourceTree = "<group>"; };
+		76F6D9886056A761B6EDD16B /* KikiRelationshipProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiRelationshipProfileView.swift; sourceTree = "<group>"; };
+		878774DB4011B08E924900EF /* KikiRelationshipStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiRelationshipStage.swift; sourceTree = "<group>"; };
+		2797C875DB3C71507C05BEA6 /* KikiRelationshipStageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiRelationshipStageTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -199,6 +207,7 @@
 		0A766F3FFC2F7144BBA12F46 /* Presentation */ = {
 			isa = PBXGroup;
 			children = (
+				878774DB4011B08E924900EF /* KikiRelationshipStage.swift */,
 				828EC0CAA0220378953D731A /* KikiRoomHostingController.swift */,
 				85EC875B0927AF0E14C439AE /* KikiVoiceRoomFloatingOverlay.swift */,
 				91A11A64FD267F50C5E25D27 /* KikiRoomContentLayout.swift */,
@@ -324,6 +333,7 @@
 		52BF3D1C7B001D63EA8A60DE /* Profile */ = {
 			isa = PBXGroup;
 			children = (
+				76F6D9886056A761B6EDD16B /* KikiRelationshipProfileView.swift */,
 				0B7D6536860014019A14E989 /* KikiProfileView.swift */,
 				A020F0000000000000000012 /* KikiSettingsLayout.swift */,
 			);
@@ -417,6 +427,7 @@
 		942FC6ECC9F25C470A293DCF /* Networking */ = {
 			isa = PBXGroup;
 			children = (
+				0A489A3C140E4C4572F48711 /* KikiRelationshipModels.swift */,
 				4C191B94ED9DBF69D185AD6A /* KikiAccountAPIClient.swift */,
 				7E4883B41EE1A2A8656709CD /* KikiAPIClient.swift */,
 				719E16AADCAB07FA43C76C95 /* KikiHTTPSDelegate.swift */,
@@ -479,6 +490,7 @@
 		A8B5B92DA12D48A987CF5396 /* VoiceRooms */ = {
 			isa = PBXGroup;
 			children = (
+				2797C875DB3C71507C05BEA6 /* KikiRelationshipStageTests.swift */,
 				A020F0000000000000000052 /* KikiRoomChatPresentationTests.swift */,
 				A020D0000000000000000052 /* KikiRoomKeyboardDismissalTests.swift */,
 				A020D0000000000000000062 /* KikiRoomMessageInputTests.swift */,
@@ -697,6 +709,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6A08634B34913DC7784A679E /* KikiRelationshipStage.swift in Sources */,
+				E37D25968CFFBF1E5DB43EC8 /* KikiRelationshipProfileView.swift in Sources */,
+				3F25CD16DEEA9129678E3DC2 /* KikiRelationshipModels.swift in Sources */,
 				A02210000000000000000001 /* KikiForegroundNoticePresenter.swift in Sources */,
 				C68A78AEA31492A66E61A57E /* KikiCreateRoomView.swift in Sources */,
 				5BBB2099AB0B88FBFDA1F1AA /* KikiTalkApp.swift in Sources */,
@@ -745,6 +760,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C7A8207B3CB94C634BCCE10A /* KikiRelationshipStageTests.swift in Sources */,
 				A02210000000000000000021 /* KikiInboxRefreshTests.swift in Sources */,
 				A02210000000000000000011 /* KikiForegroundNotificationTests.swift in Sources */,
 				794E6B39AC33F70940416664 /* KikiRoomModelsTests.swift in Sources */,
@@ -788,7 +804,7 @@
 				CODE_SIGN_ENTITLEMENTS = Configuration/KikiTalk.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 44;
+				CURRENT_PROJECT_VERSION = 45;
 				DEVELOPMENT_LANGUAGE = "zh-Hans";
 				DEVELOPMENT_TEAM = A82X46N3WS;
 				ENABLE_PREVIEWS = YES;
@@ -808,7 +824,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.300;
+				MARKETING_VERSION = 1.0.301;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kikitalk.demo;
 				PRODUCT_NAME = KikiTalk;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -997,7 +1013,7 @@
 				CODE_SIGN_ENTITLEMENTS = Configuration/KikiTalk.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 44;
+				CURRENT_PROJECT_VERSION = 45;
 				DEVELOPMENT_LANGUAGE = "zh-Hans";
 				DEVELOPMENT_TEAM = A82X46N3WS;
 				ENABLE_PREVIEWS = YES;
@@ -1017,7 +1033,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.300;
+				MARKETING_VERSION = 1.0.301;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kikitalk.demo;
 				PRODUCT_NAME = KikiTalk;
 				PROVISIONING_PROFILE_SPECIFIER = "";

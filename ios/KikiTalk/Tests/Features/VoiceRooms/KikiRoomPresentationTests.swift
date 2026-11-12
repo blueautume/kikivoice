@@ -613,7 +613,7 @@ final class KikiRoomPresentationTests: XCTestCase {
         // UIKit may expose an iPad tab as a UIAccessibilityElement rather
         // than a labelled UIControl. Use its public screen-space hit region.
         let nodes = headerAccessibilityNodes(in: base)
-        let tabFrames = nodes.compactMap { node -> CGRect? in
+        var tabFrames = nodes.compactMap { node -> CGRect? in
             guard let label = node.accessibilityLabel, tabTitles.contains(where: { label.contains($0) }) else { return nil }
             let screenFrame = node.accessibilityFrame
             guard !screenFrame.isNull, !screenFrame.isEmpty, screenFrame.minX.isFinite, screenFrame.minY.isFinite else { return nil }
@@ -628,9 +628,60 @@ final class KikiRoomPresentationTests: XCTestCase {
             let diagnostic = XCTAttachment(string: "content=\(NSCoder.string(for: mainTabContentFrame(tabs, in: base)))\n" + summary)
             diagnostic.name = "native-floating-tabs-public-accessibility"; diagnostic.lifetime = .keepAlways; add(diagnostic)
             try capture(name: "native-floating-tabs-missing-accessible-frame", windows: [base, floating], bounds: base.bounds)
+            // Some test-host runtimes do not export UIKit's virtual AX nodes.
+            // Use the real public tab bar and its visible UIControl hit regions
+            // in that case; no guessed tab coordinates or private class names.
+            let bar = try XCTUnwrap(visibleMainTabBar(in: base),
+                                   "A visible native UITabBar is required when virtual AX nodes are unavailable")
+            XCTAssertEqual(Set(bar.items?.compactMap(\.title) ?? []), Set(tabTitles),
+                           "The fallback must measure the fixture's actual 语聊 and 消息 tab items")
+            let controls = descendants(of: bar).compactMap { $0 as? UIControl }.filter { control in
+                guard control.window === base, control.isEnabled, control.isUserInteractionEnabled else { return false }
+                var ancestor: UIView? = control
+                var reachesBar = false
+                while let view = ancestor {
+                    guard !view.isHidden, view.alpha > 0.01 else { return false }
+                    if view === bar { reachesBar = true; break }
+                    // A nested control is part of an item's presentation; use
+                    // the outer control's complete native touch region instead.
+                    if view !== control, view is UIControl { return false }
+                    ancestor = view.superview
+                }
+                guard reachesBar else { return false }
+                let frame = control.convert(control.bounds, to: base).intersection(base.bounds)
+                return !frame.isNull && frame.minX.isFinite && frame.minY.isFinite
+                    && frame.width >= 20 && frame.height >= 20 && frame.height <= 100
+            }
+            let candidates = controls.map { control -> (view: UIControl, frame: CGRect, titles: Set<String>, text: [String]) in
+                let text = descendants(of: control).flatMap { view in
+                    [view.accessibilityLabel, (view as? UILabel)?.text, (view as? UIButton)?.currentTitle].compactMap { $0 }
+                }
+                let titles = Set(tabTitles.filter { title in text.contains(where: { $0.contains(title) }) })
+                return (control, control.convert(control.bounds, to: base).intersection(base.bounds), titles, text)
+            }
+            let matchedTitles = candidates.reduce(into: Set<String>()) { $0.formUnion($1.titles) }
+            let identified = matchedTitles == Set(tabTitles) ? candidates.filter { !$0.titles.isEmpty } : candidates
+            // UIKit may keep multiple providers with separate controls for the
+            // exact same item region. Their public UIControl count is not part
+            // of UITabBar's contract, so validate the distinct physical targets.
+            for candidate in identified {
+                guard !tabFrames.contains(where: {
+                    abs($0.minX - candidate.frame.minX) < 1 && abs($0.minY - candidate.frame.minY) < 1
+                        && abs($0.width - candidate.frame.width) < 1 && abs($0.height - candidate.frame.height) < 1
+                }) else { continue }
+                tabFrames.append(candidate.frame)
+            }
+            XCTAssertEqual(tabFrames.count, tabTitles.count,
+                           "The known native tab items must expose two distinct physical touch regions")
+            let controlSummary = candidates.map {
+                "class=\(String(describing: type(of: $0.view))) frame=\(NSCoder.string(for: $0.frame)) matched=\($0.titles.sorted()) text=\($0.text)"
+            }.joined(separator: "\n")
+            let fallback = XCTAttachment(string: "matchedTitles=\(matchedTitles.sorted())\ncontrols:\n" + controlSummary
+                + "\ndistinctTargets:\n" + tabFrames.map { NSCoder.string(for: $0) }.joined(separator: "\n"))
+            fallback.name = "native-floating-tabs-public-control-frames"; fallback.lifetime = .keepAlways; add(fallback)
         }
         let tabTarget = try XCTUnwrap(tabFrames.min { $0.width * $0.height < $1.width * $1.height },
-                                     "The active tab interface must expose a visible accessibility hit frame for 语聊 or 消息")
+                                     "The active tab interface must expose a real hit frame for 语聊 or 消息")
         let barFrame = visibleMainTabBar(in: base).map { $0.convert($0.bounds, to: floating) }
             ?? tabFrames.map { floating.convert($0, from: base) }.reduce(CGRect.null) { $0.union($1) }
         let shown = bubble.convert(bubble.bounds, to: floating)
@@ -641,7 +692,7 @@ final class KikiRoomPresentationTests: XCTestCase {
         let tabPoint = CGPoint(x: tabTarget.midX, y: tabTarget.midY)
         XCTAssertNil(floating.hitTest(floating.convert(tabPoint, from: base), with: nil), "Touches on a real tab item must pass through the overlay window")
         let tabHit = try XCTUnwrap(base.hitTest(tabPoint, with: nil))
-        XCTAssertTrue(tabHit === tabs.view || tabHit.isDescendant(of: tabs.view), "The actual accessible tab location must hit the native tab controller's view hierarchy")
+        XCTAssertTrue(tabHit === tabs.view || tabHit.isDescendant(of: tabs.view), "The actual tab location must hit the native tab controller's view hierarchy")
 
         if #available(iOS 18.0, *) { tabs.setTabBarHidden(true, animated: false) }
         else { tabs.tabBar.isHidden = true }

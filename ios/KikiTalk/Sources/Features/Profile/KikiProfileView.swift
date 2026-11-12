@@ -15,6 +15,9 @@ struct KikiProfileView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 28) {
                     identity
+                    if let person = store.socialProfile, person.mbtiType != nil || person.zodiacSign != nil {
+                        KikiPublicRelationshipTags(mbtiType: person.mbtiType, zodiacSign: person.zodiacSign)
+                    }
                     library
                     footer
                 }
@@ -386,6 +389,24 @@ private struct KikiProfileEditor: View {
                                 if value.count > 80 { bio = String(value.prefix(80)) }
                             }
                     }
+
+                    NavigationLink {
+                        KikiRelationshipProfileView(store: store)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "point.3.connected.trianglepath.dotted")
+                                .foregroundStyle(KikiPalette.lavender)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("关系资料").font(.body.weight(.medium)).foregroundStyle(KikiPalette.text)
+                                Text("MBTI、星座与私密出生资料").font(.caption).foregroundStyle(KikiPalette.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(KikiPalette.muted)
+                        }
+                        .padding(17).background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("profile.relationshipDetails")
 
                     Label("资料保存后会同步到你的账号。", systemImage: "person.crop.circle.badge.checkmark")
                         .font(.system(size: 11))

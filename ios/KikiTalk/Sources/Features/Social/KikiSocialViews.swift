@@ -139,6 +139,9 @@ struct KikiPublicProfileView: View {
                         VStack(spacing: 14) {
                             KikiAvatar(index: person.avatarIndex, size: 88, customURL: person.avatarURL)
                             Text(person.name).font(.title2.weight(.semibold)).foregroundStyle(KikiPalette.text)
+                            if person.mbtiType != nil || person.zodiacSign != nil {
+                                KikiPublicRelationshipTags(mbtiType: person.mbtiType, zodiacSign: person.zodiacSign)
+                            }
                             Text(person.bio.isEmpty ? "这个人很安静，还没有留下简介。" : person.bio)
                                 .font(.body).foregroundStyle(KikiPalette.secondary).multilineTextAlignment(.center)
                             Text(person.publicID).font(.caption.monospaced()).foregroundStyle(KikiPalette.muted).textSelection(.enabled)

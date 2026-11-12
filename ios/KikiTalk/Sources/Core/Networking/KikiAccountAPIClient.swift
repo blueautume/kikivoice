@@ -103,6 +103,34 @@ final class KikiAccountAPIClient: @unchecked Sendable {
 
     func me(token: String) async throws -> KikiUser { try await request("/v1/me", token: token) }
 
+    func relationshipProfile(token: String) async throws -> KikiRelationshipProfile {
+        try await request("/v1/me/relationship-profile", token: token)
+    }
+
+    func previewRelationshipProfile(_ draft: KikiRelationshipProfileDraft, token: String) async throws -> KikiRelationshipProfile {
+        try await send("/v1/me/relationship-profile/preview", method: "POST", body: draft, token: token)
+    }
+
+    func saveRelationshipProfile(_ draft: KikiRelationshipProfileDraft, token: String) async throws -> KikiRelationshipProfile {
+        try await send("/v1/me/relationship-profile", method: "PATCH", body: draft, token: token)
+    }
+
+    func relationshipPlaces(parent: String? = nil, token: String) async throws -> [KikiRelationshipPlace] {
+        var components = URLComponents()
+        components.path = "/v1/relationship-places"
+        if let parent { components.queryItems = [.init(name: "parent", value: parent)] }
+        guard let path = components.string else { throw KikiAPIError.invalidResponse }
+        let response: KikiRelationshipPlaces = try await request(path, token: token)
+        return response.places
+    }
+
+    func roomRelationships(roomID: String, token: String) async throws -> KikiRoomRelationships {
+        guard roomID.range(of: "^lk_[A-Za-z0-9_-]{1,125}$", options: .regularExpression) != nil else {
+            throw KikiAPIError.security("房间编号无效。")
+        }
+        return try await request("/v1/voice/rooms/\(roomID)/relations", token: token)
+    }
+
     func updateProfile(name: String, bio: String, token: String) async throws -> KikiUser {
         struct Body: Encodable {
             let name: String; let bio: String
@@ -225,6 +253,10 @@ final class KikiAccountAPIClient: @unchecked Sendable {
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
+        if path.contains("relationship-profile") || path.hasSuffix("/relations") {
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
+        }
         request.httpBody = data
         KikiIncidentContext.prepare(&request)
         request.setValue("application/json", forHTTPHeaderField: "Accept")

@@ -460,6 +460,82 @@ private final class KikiRequestMethods {
 private let testLegalAcceptance = KikiLegalAcceptance(versions: KikiLegalVersions(privacyVersion: KikiLegalBundle.bundled!.privacyVersion, termsVersion: KikiLegalBundle.bundled!.termsVersion, documentHash: String(repeating: "a", count: 64)), accepted: true, adultConfirmed: true)
 
 extension KikiAccountAPIClientTests {
+    func testServerCalendarConversionPreservesClockBirthplaceAndConfirmedDSTOccurrence() throws {
+        let preview = try JSONDecoder().decode(KikiRelationshipProfile.self, from: jsonData(relationshipPrivateFixture))
+        var input = KikiRelationshipProfileDraft()
+        input.birthDate = "2000-09-22"; input.birthTime = "01:30"
+        input.birthPlaceCode = "110101"; input.birthFold = 1; input.baziEnabled = true
+        let lunar = try XCTUnwrap(input.changingCalendar(to: .lunar, using: preview))
+        XCTAssertEqual(lunar.birthCalendar, .lunar)
+        XCTAssertEqual(lunar.birthDate, "2000-08-25")
+        XCTAssertEqual(lunar.birthFold, 1, "Switching date notation must not discard the confirmed occurrence of a repeated civil clock")
+        XCTAssertEqual(lunar.birthTime, input.birthTime)
+        XCTAssertEqual(lunar.birthPlaceCode, input.birthPlaceCode)
+        XCTAssertEqual(lunar.baziEnabled, input.baziEnabled)
+        let restored = try XCTUnwrap(lunar.changingCalendar(to: .gregorian, using: preview))
+        XCTAssertEqual(restored, input, "Both date representations identify the same birth input")
+    }
+
+    func testRelationshipDraftClearsPrivateFieldsWithExplicitNullAndNeverSendsComputedPillars() async throws {
+        let server = KikiAPIMockServer { request in
+            XCTAssertEqual(request.url?.path, "/v1/me/relationship-profile")
+            XCTAssertEqual(request.httpMethod, "PATCH")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer account-only")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Cache-Control"), "no-store")
+            let body = try requestBody(request)
+            for field in ["birthDate", "birthTime", "birthPlaceCode", "birthFold", "mbtiType", "zodiacSign"] {
+                XCTAssertTrue(body[field] is NSNull, "Clearing \(field) must not retain the server's old value")
+            }
+            XCTAssertEqual(body["baziEnabled"] as? Bool, false)
+            XCTAssertNil(body["pillars"])
+            XCTAssertNil(body["chart"])
+            XCTAssertNil(body["birthLongitude"], "Clients choose a district; the server resolves trusted coordinates")
+            return (200, try jsonData(relationshipPrivateFixture))
+        }
+        _ = try await server.client.saveRelationshipProfile(.init(), token: "account-only")
+    }
+
+    func testPrivateRelationshipPreviewUsesServerAndKeepsUnknownTimeUnknown() async throws {
+        let server = KikiAPIMockServer { request in
+            XCTAssertEqual(request.url?.path, "/v1/me/relationship-profile/preview")
+            XCTAssertEqual(request.httpMethod, "POST")
+            let body = try requestBody(request)
+            XCTAssertEqual(body["birthCalendar"] as? String, "lunar")
+            XCTAssertEqual(body["birthDate"] as? String, "2000-08-25")
+            XCTAssertTrue(body["birthTime"] is NSNull)
+            return (200, try jsonData(relationshipPrivateFixture))
+        }
+        var draft = KikiRelationshipProfileDraft()
+        draft.birthCalendar = .lunar; draft.birthDate = "2000-08-25"
+        let preview = try await server.client.previewRelationshipProfile(draft, token: "account-only")
+        XCTAssertNil(preview.chart?.pillars)
+        XCTAssertFalse(preview.baziEnabled)
+        XCTAssertEqual(preview.gregorianBirthDate, "2000-09-22")
+    }
+
+    func testRoomRelationshipResultContainsOnlyPublicTagsAndSummariesAndRejectsInvalidRoomBeforeNetworking() async throws {
+        let roomID = "lk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let server = KikiAPIMockServer { request in
+            XCTAssertEqual(request.url?.path, "/v1/voice/rooms/" + roomID + "/relations")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer account-only")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Cache-Control"), "no-store")
+            let summary: [String: Any] = ["code": "UNAVAILABLE", "label": "暂无法展示关系", "description": "当前没有可展示的关系结果。"]
+            return (200, try jsonData(["roomID": roomID, "roomRevision": 4, "ruleVersion": "relationships-v1", "revision": "opaque",
+                "profiles": [["userID": "a", "mbtiType": "INFJ", "zodiacSign": "处女座"]],
+                "pairs": [["aID": "a", "bID": "b", "bazi": summary, "mbti": summary, "zodiac": summary]]]))
+        }
+        let result = try await server.client.roomRelationships(roomID: roomID, token: "account-only")
+        XCTAssertEqual(result.profiles.first?.mbtiType, "INFJ")
+        XCTAssertFalse(try XCTUnwrap(result.pairs.first).summary(for: .bazi).isAvailable)
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(result)) as? [String: Any]
+        XCTAssertEqual(Set(encoded?.keys.map { $0 } ?? []), Set(["roomID", "roomRevision", "ruleVersion", "revision", "profiles", "pairs"]))
+        let noNetwork = KikiAPIMockServer { _ in XCTFail("Invalid room ID must never send credentials"); return (500, Data()) }
+        for invalid in ["", "../private", "lk_bad?all=true", "https://example.com"] {
+            do { _ = try await noNetwork.client.roomRelationships(roomID: invalid, token: "private"); XCTFail("Invalid room accepted") }
+            catch let error as KikiAPIError { guard case .security = error else { return XCTFail("Expected room ID validation") } }
+        }
+    }
+
     func testForegroundActivityUsesAccountServerAndDoesNotClaimIdentityOrClientDate() async throws {
         let server = KikiAPIMockServer { request in
             XCTAssertEqual(request.url?.path, "/v1/me/activity")
@@ -471,3 +547,12 @@ extension KikiAccountAPIClientTests {
         try await server.client.recordForegroundActivity(token: "account-session")
     }
 }
+
+private let relationshipPrivateFixture: [String: Any] = [
+    "mbtiType": NSNull(), "zodiacSign": "处女座", "birthCalendar": "gregorian", "birthDate": "2000-09-22",
+    "birthLeapMonth": false, "birthTime": NSNull(), "birthPlaceCode": NSNull(), "birthFold": NSNull(),
+    "baziEnabled": false, "mbtiEnabled": true, "zodiacEnabled": true, "revision": 1,
+    "birthPlaceName": NSNull(), "birthTimeZone": NSNull(),
+    "chart": ["status": "incomplete", "pillars": NSNull(), "trueSolarTime": NSNull(), "civilTime": NSNull(), "message": "八字资料待完善"],
+    "gregorianBirthDate": "2000-09-22", "lunarBirthDate": "2000-08-25", "lunarBirthLeapMonth": false
+]

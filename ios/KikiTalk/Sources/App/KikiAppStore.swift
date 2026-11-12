@@ -1336,6 +1336,34 @@ import Combine
         try await socialRequest { try await self.api.socialPeople(query: query, cursor: cursor, token: $0) }
     }
 
+    // Private birth data stays local to the editor's lifetime, never in shared
+    // AppStore state or a public voice profile. Every response is session-bound.
+    func loadRelationshipProfile() async throws -> KikiRelationshipProfile {
+        try await socialRequest { try await self.api.relationshipProfile(token: $0) }
+    }
+
+    func previewRelationshipProfile(_ draft: KikiRelationshipProfileDraft) async throws -> KikiRelationshipProfile {
+        try await socialRequest { try await self.api.previewRelationshipProfile(draft, token: $0) }
+    }
+
+    func saveRelationshipProfile(_ draft: KikiRelationshipProfileDraft) async throws -> KikiRelationshipProfile {
+        let generation = sessionGeneration, expectedToken = token
+        let response = try await socialRequest { try await self.api.saveRelationshipProfile(draft, token: $0) }
+        NotificationCenter.default.post(name: .kikiRelationshipProfileDidChange, object: nil)
+        // Public tags use their own safe projection; no private chart is stored.
+        await refreshSocialSummary()
+        try requireAccess(generation: generation, token: expectedToken)
+        return response
+    }
+
+    func relationshipPlaces(parent: String? = nil) async throws -> [KikiRelationshipPlace] {
+        try await socialRequest { try await self.api.relationshipPlaces(parent: parent, token: $0) }
+    }
+
+    func roomRelationships(roomID: String) async throws -> KikiRoomRelationships {
+        try await socialRequest { try await self.api.roomRelationships(roomID: roomID, token: $0) }
+    }
+
     func socialPerson(_ id: String) async throws -> KikiPerson {
         try await socialRequest { try await self.api.socialPerson(id, token: $0) }
     }

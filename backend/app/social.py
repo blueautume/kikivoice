@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .voice_bridge import signed_headers
 from .social_content import (ContentMethods, initialize_content, purge_content, erase_content, install_content_routes)
 from .community_content import PublicTextPolicy
-from . import room_started, account_numbers
+from . import room_started, account_numbers, relationship_engine
 
 DAYS = 30 * 86400
 POLICY_PATH = "/internal/v1/account/social-policy"
@@ -357,7 +357,8 @@ class SocialService(ContentMethods):
         return {"id":row["login_id"],"displayID":account_numbers.display_id(row),"name":row["name"],"bio":row["bio"],"avatarIndex":row["avatar_index"],
                 "avatarURL":self.settings.public_base_url.rstrip("/")+"/v1/avatars/"+row["avatar_filename"] if row["avatar_filename"] else None,
                 "following":following,"followsYou":follows_you,"mutual":following and follows_you,
-                "followingCount":count("following"),"followerCount":count("followers"),"currentRoomID":room}
+                "followingCount":count("following"),"followerCount":count("followers"),"currentRoomID":room,
+                **relationship_engine.public_tags(db, target)}
 
     def list_people(self, user, query="", kind=None, limit=20, cursor=None):
         if any(unicodedata.category(c) in {"Cc", "Cf", "Cs"} for c in query):

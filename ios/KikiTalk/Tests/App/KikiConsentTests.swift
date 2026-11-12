@@ -3,6 +3,7 @@ import Combine
 import CryptoKit
 import SwiftUI
 import UIKit
+import Vision
 import XCTest
 @testable import KikiTalk
 
@@ -1780,6 +1781,114 @@ private struct KikiProfileTabCancellationView: View {
     @ObservedObject var tabs: KikiProfileTabCancellationFixture
     var body: some View {
         KikiProfileView(isActive: tabs.isProfileActive)
+    }
+}
+
+extension KikiConsentTests {
+    func testPrivateRelationshipProfileLoadsServerPreviewAndFitsSmallLightDarkAndLargeText() async throws {
+        let docs = try XCTUnwrap(KikiLegalBundle.bundled)
+        let requests = TestRequests()
+        let privateProfile: [String: Any] = [
+            "mbtiType": "INFJ", "zodiacSign": "处女座", "birthCalendar": "gregorian", "birthDate": "2000-09-22",
+            "birthLeapMonth": false, "birthTime": "10:00", "birthPlaceCode": "110101", "birthFold": NSNull(),
+            "baziEnabled": false, "mbtiEnabled": true, "zodiacEnabled": true, "revision": 1,
+            "birthPlaceName": "北京市东城区", "birthTimeZone": "Asia/Shanghai",
+            "gregorianBirthDate": "2000-09-22", "lunarBirthDate": "2000-08-25", "lunarBirthLeapMonth": false,
+            "chart": ["status": "ready", "pillars": ["庚辰", "乙酉", "癸未", "丁巳"],
+                      "civilTime": "2000-09-22 10:00 · Asia/Shanghai", "trueSolarTime": "2000-09-22 09:53:01",
+                      "message": "隔离视觉测试的服务端响应"]
+        ]
+        let mock = KikiAPIMockServer { request in
+            if request.url?.path.hasPrefix("/v1/me/relationship-profile") == true {
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer social-fixture-session")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Cache-Control"), "no-store")
+                requests.append((request.httpMethod ?? "GET") + " " + request.url!.path)
+                return (200, try JSONSerialization.data(withJSONObject: privateProfile))
+            }
+            return try p1VisualResponse(request, documents: docs)
+        }
+        let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
+        let folder = URL(fileURLWithPath: "/tmp/kiki-relationship-profile-screenshots", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try await withSocialWindow { window in
+            let originalFrame = window.frame
+            defer { window.frame = originalFrame }
+            let cases: [(String, ColorScheme, DynamicTypeSize)] = [
+                ("small-light", .light, .large), ("small-dark", .dark, .large),
+                ("small-large-text", .light, .accessibility1)
+            ]
+            for (name, scheme, size) in cases {
+                let previousReads = requests.values.count
+                let host = UIHostingController(rootView: NavigationStack {
+                    KikiRelationshipProfileView(store: store)
+                }.preferredColorScheme(scheme).dynamicTypeSize(size))
+                window.frame = CGRect(origin: originalFrame.origin, size: CGSize(width: 320, height: 568))
+                window.rootViewController = host; host.view.frame = window.bounds; window.makeKeyAndVisible()
+                try await self.waitUntil {
+                    requests.values.count > previousReads
+                        && requests.values.last == "POST /v1/me/relationship-profile/preview"
+                }
+                try await Task.sleep(nanoseconds: 250_000_000)
+                window.layoutIfNeeded()
+                let scroll = try XCTUnwrap(self.socialScrollViews(window).first {
+                    !($0 is UITextView) && $0.bounds.width > 250 && $0.bounds.height > 250
+                })
+                var observedText = Set<String>()
+                var y = -scroll.adjustedContentInset.top
+                var positions: [[String: Any]] = []
+                // Form estimates cell heights lazily. Recompute after each
+                // overlapping step instead of assuming one initial end offset.
+                for index in 0..<24 {
+                    scroll.setContentOffset(CGPoint(x: 0, y: y), animated: false)
+                    try await Task.sleep(nanoseconds: 120_000_000)
+                    window.layoutIfNeeded()
+                    for node in self.relationshipAccessibilityNodes(in: window) {
+                        if let label = node.accessibilityLabel, !label.isEmpty { observedText.insert(label) }
+                        if let label = (node as? UILabel)?.text, !label.isEmpty { observedText.insert(label) }
+                        if let control = node as? UISwitch,
+                           control.accessibilityIdentifier == "relationshipProfile.baziEnabled" {
+                            XCTAssertFalse(control.isOn, "Viewing a complete chart must not opt into public relationship results")
+                        }
+                    }
+                    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                        XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                    }
+                    // Some simulator runtimes omit SwiftUI Form's virtual AX
+                    // text. Verify the rendered pixels as well as exposed AX.
+                    let recognized = try self.relationshipProfileRecognizedText(in: image)
+                    observedText.insert(recognized.joined(separator: "").filter { !$0.isWhitespace })
+                    let filename = name + "-" + String(index)
+                    let attachment = XCTAttachment(image: image)
+                    attachment.name = "relationship-profile-" + filename; attachment.lifetime = .keepAlways
+                    self.add(attachment)
+                    try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(filename + ".png"))
+                    positions.append(["screenshot": filename, "offset": scroll.contentOffset.y,
+                                      "contentHeight": scroll.contentSize.height, "viewportHeight": scroll.bounds.height])
+                    if recognized.joined().filter({ !$0.isWhitespace }).contains("参与八字关系计算") { break }
+                    let maximum = max(-scroll.adjustedContentInset.top,
+                                      scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+                    y = min(maximum, scroll.contentOffset.y + max(100, scroll.bounds.height * 0.65))
+                }
+                let text = observedText.joined(separator: "\n").filter { !$0.isWhitespace }
+                XCTAssertTrue(text.contains("仅本人可见"), "The production form must clearly identify its private data: \(name)")
+                XCTAssertTrue(text.contains("出生"), "The real birth input section must have loaded from the private API")
+                XCTAssertTrue(text.contains("参与八字关系计算"), "The opt-in control remains reachable on a small screen")
+                XCTAssertFalse(requests.values.contains { $0.hasPrefix("PATCH ") }, "Loading, previewing and scrolling cannot publish a participation choice")
+                try JSONSerialization.data(withJSONObject: positions, options: [.prettyPrinted, .sortedKeys])
+                    .write(to: folder.appendingPathComponent(name + "-scroll-validation.json"))
+            }
+        }
+        await store.logout()
+    }
+
+    private func relationshipProfileRecognizedText(in image: UIImage) throws -> [String] {
+        let cgImage = try XCTUnwrap(image.cgImage)
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["zh-Hans", "en-US"]
+        request.usesLanguageCorrection = true
+        try VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])
+        return request.results?.compactMap { $0.topCandidates(1).first?.string } ?? []
     }
 }
 

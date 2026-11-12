@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import account_bridge, ops_gateway, safety, incidents, social_policy, seating, room_catalog, room_started
+from . import account_bridge, ops_gateway, safety, incidents, social_policy, seating, room_catalog, room_started, relationship_bridge
 from .rtc import LiveKitGateway
 from .signal_gateway import SignalAuthorization, SignalGateway
 from .chat import RoomChatStore, initialize_chat_database, validate_text
@@ -2033,6 +2033,7 @@ def create_app(settings=None, gateway=None):
     app.include_router(build_admin_router(app, lock))
     app.include_router(ops_gateway.build_router(app, settings, lock))
     app.include_router(account_bridge.build_router(app, settings, lock, user_json, sdk_json, revoke_account_authorizations))
+    app.include_router(relationship_bridge.build_router(app, settings, lock, valid_session, bump))
     app.include_router(social_policy.build_router(app, settings, lock, valid_session))
     app.include_router(room_started.build_router(app, settings, lock))
     app.include_router(incidents.build_router(app, settings, lock, authenticate))

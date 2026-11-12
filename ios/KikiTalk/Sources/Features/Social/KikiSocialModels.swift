@@ -13,6 +13,8 @@ struct KikiPerson: Codable, Equatable, Identifiable {
     var followerCount: Int
     var currentRoomID: String?
     var displayID: String? = nil
+    var mbtiType: String? = nil
+    var zodiacSign: String? = nil
 
     var publicID: String { displayID ?? id }
     var relationshipLabel: String { mutual ? "互相关注" : (following ? "已关注" : "关注") }

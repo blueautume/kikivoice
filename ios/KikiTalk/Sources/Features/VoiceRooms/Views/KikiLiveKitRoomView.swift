@@ -251,26 +251,8 @@ struct KikiLiveKitRoomView: View {
     }
 
     private func seats(width: CGFloat, avatarSize: CGFloat) -> some View {
-        let columns = max(2, min(4, Int((width + 8) / (avatarSize + 14))))
-        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: columns), spacing: 14) {
-            ForEach(1...8, id: \.self) { number in
-                if let slot = rtc.roomState?.seats.first(where: { $0.index == number }) {
-                    if let member = rtc.roomState?.member(on: slot) {
-                        Button { openPerson(member.userID) } label: { seat(slot, avatarSize: avatarSize) }
-                            .buttonStyle(.plain).accessibilityLabel("查看\(member.name)的个人主页")
-                    } else {
-                        Button { handleSeatRequest() } label: { seat(slot, avatarSize: avatarSize) }
-                            .buttonStyle(.plain)
-                            .disabled(slot.locked || !rtc.canUseRoom || rtc.isPerformingRoomAction)
-                            .accessibilityLabel(rtc.canManageRoom ? "查看上麦申请" : "申请上麦")
-                            .accessibilityHint("获准后由系统按顺序安排麦位")
-                            .accessibilityIdentifier("livekit.room.emptySeat.\(number)")
-                    }
-                } else {
-                    seatPlaceholder(number: number, avatarSize: avatarSize)
-                }
-            }
-        }.padding(.top, 4).padding(.bottom, 2)
+        KikiRelationshipStage(rtc: rtc, width: width, onOpenPerson: openPerson,
+                              onRequestSeat: handleSeatRequest, onEndComposing: endComposing)
     }
 
     private func seat(_ slot: KikiRoomSeat, avatarSize: CGFloat) -> some View {
