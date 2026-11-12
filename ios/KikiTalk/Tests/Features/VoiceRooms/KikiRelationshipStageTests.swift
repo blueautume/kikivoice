@@ -135,13 +135,16 @@ final class KikiRelationshipStageTests: XCTestCase {
         XCTAssertEqual(geometry.point(try XCTUnwrap(motion.frame(at: start)["host"])), geometry.center)
     }
 
-    func testOppositeAvatarCurveBowsAwayFromCenterAndUsesPresentedEndpoints() throws {
+    func testOppositeAvatarCurveUsesAShallowBowAndPresentedEndpoints() throws {
         let geometry = KikiRelationshipStageGeometry(width: 340)
         let a = geometry.point(angle: -.pi / 2), b = geometry.point(angle: .pi / 2)
         let trim = geometry.avatarSize / 2 + 7
         let curve = try XCTUnwrap(KikiRelationshipCurve.make(from: a, to: b, center: geometry.center,
             radius: geometry.radius, trim: trim, pairID: "a|b"))
-        XCTAssertGreaterThan(abs(curve.control.x - geometry.center.x), geometry.radius * 0.5)
+        let midpoint = quadraticMidpoint(curve)
+        XCTAssertGreaterThanOrEqual(abs(midpoint.x - geometry.center.x), 5)
+        XCTAssertLessThanOrEqual(abs(midpoint.x - geometry.center.x), 10)
+        XCTAssertEqual(midpoint.y, geometry.center.y, accuracy: 0.000_001)
         XCTAssertEqual(hypot(curve.start.x - a.x, curve.start.y - a.y), trim, accuracy: 0.000_001)
         XCTAssertEqual(hypot(curve.end.x - b.x, curve.end.y - b.y), trim, accuracy: 0.000_001)
         var quadraticSegments = 0
@@ -157,6 +160,47 @@ final class KikiRelationshipStageTests: XCTestCase {
         XCTAssertEqual(moved.control, duplicate.control)
     }
 
+    func testMixedCurvesStayOnOppositeSidesWithAClearMidpointGap() throws {
+        for width: CGFloat in [284, 354, 440] {
+            let geometry = KikiRelationshipStageGeometry(width: width)
+            let a = geometry.point(angle: -.pi / 2), b = geometry.point(angle: .pi / 2)
+            let curves = try KikiRelationshipVisuals.strokes(for: "MIXED").map { stroke in
+                try XCTUnwrap(KikiRelationshipCurve.make(from: a, to: b, center: geometry.center,
+                    radius: geometry.radius, trim: geometry.avatarSize / 2 + 7,
+                    pairID: "same|stable-pair", lane: stroke.lane))
+            }
+            XCTAssertEqual(curves.count, 2)
+            let offsets = curves.map { quadraticMidpoint($0).x - geometry.center.x }
+            XCTAssertLessThan(offsets[0] * offsets[1], 0, "合与冲必须分居弦两侧")
+            XCTAssertEqual(abs(offsets[0] - offsets[1]), 20, accuracy: 0.000_001)
+            XCTAssertEqual(curves[0].start, curves[1].start)
+            XCTAssertEqual(curves[0].end, curves[1].end)
+        }
+    }
+
+    func testBaziHasNoPublicTagPlaceholderOrLargeNicknamePlate() {
+        XCTAssertEqual(KikiRelationshipSeatLabelLayout.tagHeight(mode: .bazi, value: "INFJ"), 0)
+        XCTAssertEqual(KikiRelationshipSeatLabelLayout.plateHeight(mode: .bazi, value: nil), 20)
+        XCTAssertEqual(KikiRelationshipSeatLabelLayout.tagHeight(mode: .mbti, value: "INFJ"), 17)
+        XCTAssertEqual(KikiRelationshipSeatLabelLayout.tagHeight(mode: .zodiac, value: "处女座"), 17)
+        XCTAssertEqual(KikiRelationshipSeatLabelLayout.tagHeight(mode: .mbti, value: nil), 0)
+        XCTAssertEqual(KikiRelationshipSeatLabelLayout.tagHeight(mode: .zodiac, value: ""), 0)
+    }
+
+    func testFriendlyCopyKeepsOriginalCategoriesAndDoesNotRepeatTheTitleInBody() {
+        XCTAssertEqual(KikiRelationshipVisuals.friendlyTitle(for: "MIXED"), "欢喜冤家")
+        XCTAssertEqual(KikiRelationshipVisuals.friendlyTitle(for: "NONE"), "慢热探索")
+        for mode in KikiRelationshipMode.allCases {
+            for category in KikiRelationshipCategory.categories(for: mode) {
+                let title = KikiRelationshipVisuals.friendlyTitle(for: category.code)
+                let body = KikiRelationshipVisuals.friendlyBody(for: category.code)
+                XCTAssertFalse(title.isEmpty)
+                XCTAssertFalse(body.isEmpty)
+                XCTAssertFalse(body.hasPrefix(title + "。"))
+            }
+        }
+    }
+
     @MainActor
     func testProductionCirclePresentationInThreeModesAndEmptySingleEightOccupantStates() async throws {
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first(where: {
@@ -170,7 +214,10 @@ final class KikiRelationshipStageTests: XCTestCase {
             ("phone-eight-mbti-dark", 390, 8, .mbti, .dark),
             ("phone-eight-zodiac-light", 390, 8, .zodiac, .light),
             ("phone-one-bazi-dark", 390, 1, .bazi, .dark),
-            ("phone-two-bazi-light", 390, 2, .bazi, .light),
+            ("phone-one-mbti-dark", 390, 1, .mbti, .dark),
+            ("phone-one-zodiac-dark", 390, 1, .zodiac, .dark),
+            ("phone-two-mixed-bazi-light", 390, 2, .bazi, .light),
+            ("phone-two-mixed-bazi-dark", 390, 2, .bazi, .dark),
             ("phone-empty-bazi-light", 390, 0, .bazi, .light),
             ("ipad-eight-bazi-dark", 744, 8, .bazi, .dark)
         ]
@@ -199,7 +246,7 @@ final class KikiRelationshipStageTests: XCTestCase {
             for index in occupants.indices {
                 for other in (index + 1)..<occupants.count {
                     pairs.append(KikiStageRelationshipPair(a: occupants[index], b: occupants[other],
-                        summary: .init(code: codes[(index + other) % codes.count], label: "关系结果", description: "关系结果示例")))
+                        summary: .init(code: count == 2 && mode == .bazi ? "MIXED" : codes[(index + other) % codes.count], label: "关系结果", description: "关系结果示例")))
                 }
             }
             var motion = KikiRelationshipMotion()
@@ -230,16 +277,77 @@ final class KikiRelationshipStageTests: XCTestCase {
             window.makeKeyAndVisible()
             try await Task.sleep(for: .milliseconds(180))
             window.layoutIfNeeded()
-            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-            }
-            let data = try XCTUnwrap(image.pngData())
-            XCTAssertGreaterThan(data.count, 5_000)
-            let attachment = XCTAttachment(image: image)
-            attachment.name = "relationship-circle-\(name)"; attachment.lifetime = .keepAlways
-            add(attachment)
-            try data.write(to: output.appendingPathComponent(name + ".png"))
+            try saveScreenshot(window: window, name: name, directory: output)
         }
+    }
+
+    @MainActor
+    func testProductionModeTransitionsAndFriendlyExplanationCards() async throws {
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first(where: {
+            $0.activationState == .foregroundActive
+        }) else { throw XCTSkip("A foreground native scene is required for the mode transition fixture") }
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        defer { window.isHidden = true; previous?.makeKeyAndVisible() }
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let seat = KikiRelationshipSeat(slot: .init(index: 1, userID: "host", locked: false, audioLocked: false),
+                                       member: member("host", seat: 1, online: true))
+        let state = KikiRelationshipFixtureMode()
+        let fixture = KikiRelationshipModeTransitionFixture(state: state, seat: seat)
+        let host = UIHostingController(rootView: fixture.preferredColorScheme(.dark))
+        window.rootViewController = host
+        host.view.frame = window.bounds
+        window.makeKeyAndVisible()
+        let output = URL(fileURLWithPath: "/tmp/kiki-relationship-stage-screenshots", isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        try await Task.sleep(for: .milliseconds(180))
+        for (name, mode, wait): (String, KikiRelationshipMode, Int) in [
+            ("mode-bazi-before", .bazi, 20),
+            ("mode-mbti-fade-in", .mbti, 100),
+            ("mode-mbti-settled", .mbti, 200),
+            ("mode-zodiac-crossfade", .zodiac, 100),
+            ("mode-zodiac-settled", .zodiac, 200),
+            ("mode-bazi-collapse", .bazi, 100),
+            ("mode-bazi-after", .bazi, 200)
+        ] {
+            state.mode = mode
+            try await Task.sleep(for: .milliseconds(wait))
+            window.layoutIfNeeded()
+            try saveScreenshot(window: window, name: name, directory: output)
+        }
+        let second = KikiRelationshipSeat(slot: .init(index: 2, userID: "guest", locked: false, audioLocked: false),
+                                         member: member("guest", seat: 2, online: true))
+        for mode in KikiRelationshipMode.allCases {
+            let code = mode == .bazi ? "MIXED" : (mode == .mbti ? "GOLDEN" : "SEXTILE")
+            let label = try XCTUnwrap(KikiRelationshipCategory.categories(for: mode).first { $0.code == code }?.label)
+            let pair = KikiStageRelationshipPair(a: seat, b: second,
+                summary: .init(code: code, label: label, description: KikiRelationshipVisuals.explanation(for: code)))
+            let details = UIHostingController(rootView:
+                KikiRelationshipDetails(mode: mode, pairs: [pair], onDismiss: {}).preferredColorScheme(.dark))
+            window.rootViewController = details
+            details.view.frame = window.bounds
+            try await Task.sleep(for: .milliseconds(180))
+            window.layoutIfNeeded()
+            try saveScreenshot(window: window, name: "details-\(mode.rawValue)", directory: output)
+        }
+    }
+
+    @MainActor
+    private func saveScreenshot(window: UIWindow, name: String, directory: URL) throws {
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let data = try XCTUnwrap(image.pngData())
+        XCTAssertGreaterThan(data.count, 5_000)
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "relationship-circle-\(name)"; attachment.lifetime = .keepAlways
+        add(attachment)
+        try data.write(to: directory.appendingPathComponent(name + ".png"))
+    }
+
+    private func quadraticMidpoint(_ curve: KikiRelationshipCurve) -> CGPoint {
+        CGPoint(x: curve.start.x * 0.25 + curve.control.x * 0.5 + curve.end.x * 0.25,
+                y: curve.start.y * 0.25 + curve.control.y * 0.5 + curve.end.y * 0.25)
     }
 
     private func member(_ id: String, seat: Int?, online: Bool) -> KikiRoomMember {
@@ -247,5 +355,31 @@ final class KikiRelationshipStageTests: XCTestCase {
               role: id == "host" ? .owner : .member, seatIndex: seat,
               audioMuted: false, chatMuted: false, online: online,
               canPublishAudio: seat != nil && online, canPublishData: online)
+    }
+}
+
+@MainActor
+private final class KikiRelationshipFixtureMode: ObservableObject {
+    @Published var mode: KikiRelationshipMode = .bazi
+}
+
+private struct KikiRelationshipModeTransitionFixture: View {
+    @ObservedObject var state: KikiRelationshipFixtureMode
+    let seat: KikiRelationshipSeat
+
+    var body: some View {
+        let geometry = KikiRelationshipStageGeometry(width: 354)
+        VStack(spacing: 12) {
+            Picker("关系模式", selection: $state.mode) {
+                ForEach(KikiRelationshipMode.allCases) { Text($0.title).tag($0) }
+            }.pickerStyle(.segmented).padding(.top, 30).padding(.horizontal, 18)
+            KikiRelationshipCircle(geometry: geometry, seats: [seat], activeIDs: [seat.id],
+                frame: [seat.id: .init(angle: -.pi / 2, radius: 0, opacity: 1)], pairs: [],
+                profiles: [.init(userID: seat.id, mbtiType: "INFJ", zodiacSign: "处女座")],
+                participants: [], localUserID: seat.id, mode: state.mode, edgeOpacity: 1, onOpenPerson: { _ in })
+            KikiRelationshipLegend(mode: state.mode).padding(.horizontal, 18)
+            Spacer()
+        }
+        .background(KikiPalette.background)
     }
 }

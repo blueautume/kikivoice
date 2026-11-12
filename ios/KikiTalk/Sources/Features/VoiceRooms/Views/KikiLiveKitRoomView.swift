@@ -49,8 +49,6 @@ struct KikiLiveKitRoomView: View {
             GeometryReader { _ in
                 let horizontalPadding: CGFloat = 18
                 ZStack {
-                    KikiRoomBackground(theme: rtc.roomInfo?.theme ?? 0)
-                        .ignoresSafeArea()
                     VStack(spacing: 14) {
                         header
                             .background {
@@ -77,6 +75,11 @@ struct KikiLiveKitRoomView: View {
             composerWithSeatInvitation(placement: placement)
         } controls: {
             roomActions.foregroundStyle(KikiPalette.text)
+        }
+        .background {
+            // One full-window background includes the stage, conversation and
+            // composer. Keyboard avoidance changes their layout, not the theme.
+            KikiRoomBackground(theme: rtc.roomInfo?.theme ?? 0).ignoresSafeArea()
         }
         .background(KikiRoomKeyboardDismissal(isEnabled: observesRoomTaps, onDismiss: endComposing))
         .overlay(alignment: .top) {

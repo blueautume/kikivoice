@@ -116,6 +116,47 @@ def test_rules_keep_two_independent_bazi_channels_and_community_labels():
         assert engine.zodiac_relation(pa, pb) == engine.zodiac_relation(pb, pa)
 
 
+def test_relationship_introductions_are_short_distinct_and_result_only():
+    base = {"chart": {"pillars": ["甲子"] * 4}}
+    cases = [
+        (engine.bazi_relation(base, {"chart": {"pillars": ["乙丑"] * 4}}), "HARMONY_ONLY", "相合", "默契合拍"),
+        (engine.bazi_relation(base, {"chart": {"pillars": ["甲午"] * 4}}), "CONFLICT_ONLY", "相冲", "火花碰撞"),
+        (engine.bazi_relation(base, {"chart": {"pillars": ["乙丑", "甲午", "甲子", "甲子"]}}), "MIXED", "合冲并见", "欢喜冤家"),
+        (engine.bazi_relation(base, base), "NONE", "未命中直接合冲", "慢热探索"),
+    ]
+    for right, code, label, headline in [
+        ("ENFP", "GOLDEN", "黄金配对", "互补来电"),
+        ("INFP", "SILVER", "白银配对", "同频共鸣"),
+        ("ENTP", "PEDAGOGUE", "师生配对", "灵感搭子"),
+        ("INFJ", "SAME_TYPE", "同类型", "同款默契"),
+        ("ESTP", "OTHER", "其他组合", "自由搭配"),
+    ]:
+        cases.append((engine.mbti_relation({"mbtiType": "INFJ"}, {"mbtiType": right}), code, label, headline))
+    for right, code, label, headline in [
+        ("白羊座", "SAME_SIGN", "同星座", "同频搭子"),
+        ("金牛座", "ADJACENT", "相邻星座", "好奇搭子"),
+        ("双子座", "SEXTILE", "六分", "轻松接球"),
+        ("巨蟹座", "SQUARE", "刑", "火花搭子"),
+        ("狮子座", "TRINE", "拱", "舒服合拍"),
+        ("处女座", "QUINCUNX", "梅花", "新奇磨合"),
+        ("天秤座", "OPPOSITION", "对宫", "反差来电"),
+    ]:
+        cases.append((engine.zodiac_relation({"zodiacSign": "白羊座"}, {"zodiacSign": right}), code, label, headline))
+    missing = engine.room_pair("a", "b", None, None)
+    assert missing["bazi"] == missing["mbti"] == missing["zodiac"]
+    cases.append((missing["bazi"], "UNAVAILABLE", "暂无法展示关系", "稍后揭晓"))
+    descriptions = set()
+    for summary, code, label, headline in cases:
+        assert (summary["code"], summary["label"]) == (code, label)
+        assert set(summary) == {"code", "label", "description", "harmonyIndex", "conflictIndex"}
+        description = summary["description"]
+        assert description.startswith(headline + "。") and description.count("。") == 3
+        assert 45 <= sum("\u4e00" <= char <= "\u9fff" for char in description) <= 65
+        assert not any(term in description for term in ("规则命中", "指数", "成功率", "OnType", "行星相位", "出生", "四柱"))
+        descriptions.add(description)
+    assert len(descriptions) == len(cases)
+
+
 def test_owner_api_is_private_partial_and_preview_does_not_persist(client):
     session = login(client)
     headers = authorization(session)

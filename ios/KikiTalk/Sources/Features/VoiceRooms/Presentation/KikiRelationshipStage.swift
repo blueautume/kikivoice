@@ -119,9 +119,6 @@ struct KikiStageRelationshipPair: Identifiable {
     var id: String { [a.id, b.id].sorted().joined(separator: "|") }
     var code: String { summary?.code ?? "UNAVAILABLE" }
     var label: String { code == "UNAVAILABLE" ? "暂无法展示关系" : (summary?.label ?? "暂无法展示关系") }
-    var explanation: String {
-        code == "UNAVAILABLE" ? "当前暂无法展示这组关系，可稍后再查看。" : (summary?.description ?? "")
-    }
 }
 
 private struct KikiRelationshipFetchScope: Equatable {
@@ -283,42 +280,8 @@ struct KikiRelationshipStage: View {
     }
 
     private var relationshipsSheet: some View {
-        NavigationStack {
-            List {
-                Section {
-                    ForEach(KikiRelationshipCategory.categories(for: mode).filter { $0.code != "UNAVAILABLE" }) { category in
-                        HStack(alignment: .top, spacing: 12) {
-                            KikiRelationshipLineSample(code: category.code).frame(width: 32, height: 18).padding(.top, 3)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(category.label).font(.subheadline.weight(.medium))
-                                Text(KikiRelationshipVisuals.explanation(for: category.code))
-                                    .font(.caption).foregroundStyle(KikiPalette.secondary)
-                            }
-                        }.padding(.vertical, 3)
-                    }
-                } header: { Text("线条图示") } footer: {
-                    Text(mode == .bazi ? "八字只展示关系结果，出生资料和四柱仅本人可见。" : "关系标签供交流参考，不表示相处结果或成功率。")
-                }
-                if !pairs.isEmpty {
-                    Section("当前配对") {
-                        ForEach(pairs) { pair in
-                            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                Text("\(pair.a.member.name) · \(pair.b.member.name)")
-                                    .font(.subheadline).foregroundStyle(KikiPalette.text)
-                                Spacer(minLength: 4)
-                                Text(pair.label).font(.caption.weight(.medium))
-                                    .foregroundStyle(KikiRelationshipVisuals.color(for: pair.code))
-                                    .multilineTextAlignment(.trailing)
-                            }.padding(.vertical, 3)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("\(mode.title)关系说明").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("完成") { showsRelationships = false } }
-            }
-        }.kikiRoomSheet()
+        KikiRelationshipDetails(mode: mode, pairs: pairs) { showsRelationships = false }
+            .kikiRoomSheet()
     }
 
     private func updateMotion() {
@@ -404,25 +367,24 @@ struct KikiRelationshipCurve {
         // crosses the center. Choosing an inward side from each frame would
         // suddenly flip an arc halfway through a seat reflow.
         let sign: CGFloat = hash & 1 == 0 ? 1 : -1
-        let span = min(1, distance / (radius * 2))
+        let visibleLength = distance - trim * 2
         let variation = CGFloat((hash >> 1) % 5) / 4
-        let bow = radius * (0.22 + span * 0.56 + variation * 0.10)
-        var control = CGPoint(x: midpoint.x + normal.x * (sign * bow + lane),
-                              y: midpoint.y + normal.y * (sign * bow + lane))
-        let cx = control.x - center.x, cy = control.y - center.y
-        let controlRadius = hypot(cx, cy), limit = radius * 0.94
-        if controlRadius > limit {
-            control = CGPoint(x: center.x + cx / controlRadius * limit,
-                              y: center.y + cy / controlRadius * limit)
-        }
-        let startLength = hypot(control.x - a.x, control.y - a.y)
-        let endLength = hypot(control.x - b.x, control.y - b.y)
-        guard startLength > trim, endLength > trim else { return nil }
-        return Self(start: CGPoint(x: a.x + (control.x - a.x) / startLength * trim,
-                                   y: a.y + (control.y - a.y) / startLength * trim),
+        // `lane` is the visible midpoint offset, not a small addition to an
+        // already-large bow. Mixed relationships therefore occupy opposite
+        // sides of the chord, with a 20pt gap on normal-length connections.
+        let gentleBend = min(10, 5 + visibleLength * 0.018 + variation)
+        let midpointOffset = lane == 0
+            ? sign * min(gentleBend, visibleLength * 0.24)
+            : sign * (lane < 0 ? -1 : 1) * min(abs(lane), visibleLength * 0.30)
+        let control = CGPoint(x: midpoint.x + normal.x * midpointOffset * 2,
+                              y: midpoint.y + normal.y * midpointOffset * 2)
+        // Trim on the original chord. This keeps both colors attached at the
+        // same avatar boundary and makes the visible sagitta predictable.
+        return Self(start: CGPoint(x: a.x + dx / distance * trim,
+                                   y: a.y + dy / distance * trim),
                     control: control,
-                    end: CGPoint(x: b.x + (control.x - b.x) / endLength * trim,
-                                 y: b.y + (control.y - b.y) / endLength * trim))
+                    end: CGPoint(x: b.x - dx / distance * trim,
+                                 y: b.y - dy / distance * trim))
     }
 }
 
@@ -463,8 +425,8 @@ enum KikiRelationshipVisuals {
 
     static func strokes(for code: String) -> [KikiRelationshipStroke] {
         switch code {
-        case "MIXED": return [.init(color: color(for: "HARMONY_ONLY"), dash: [], lane: -6),
-                              .init(color: color(for: "CONFLICT_ONLY"), dash: [6, 4], lane: 6)]
+        case "MIXED": return [.init(color: color(for: "HARMONY_ONLY"), dash: [], lane: -10),
+                              .init(color: color(for: "CONFLICT_ONLY"), dash: [6, 4], lane: 10)]
         case "HARMONY_ONLY", "GOLDEN", "SAME_SIGN", "TRINE": return [.init(color: color(for: code), dash: [])]
         case "SILVER", "ADJACENT": return [.init(color: color(for: code), dash: [10, 4])]
         case "CONFLICT_ONLY", "PEDAGOGUE", "SQUARE", "SEXTILE": return [.init(color: color(for: code), dash: [6, 4])]
@@ -481,25 +443,36 @@ enum KikiRelationshipVisuals {
 
     static func explanation(for code: String) -> String {
         switch code {
-        case "HARMONY_ONLY": return "当前规则命中相合关系。"
-        case "CONFLICT_ONLY": return "当前规则命中相冲关系。"
-        case "MIXED": return "同时存在相合与相冲，双曲线分别展示。"
-        case "NONE": return "未命中直接六合或六冲，不代表不适合。"
-        case "GOLDEN": return "社区表中的互补组合，可能带来新的视角。"
-        case "SILVER": return "关注相近的主题，处理角度有所不同。"
-        case "PEDAGOGUE": return "双方可能从对方不同的方式中得到启发。"
-        case "SAME_TYPE": return "四字母偏好相同，经历和具体性格仍有差异。"
-        case "OTHER": return "未列入本版本命名配对的组合，同样展示关系连线。"
-        case "SAME_SIGN": return "双方属于同一个星座标签。"
-        case "ADJACENT": return "十二星座序列相邻，名义间隔30°。"
-        case "SEXTILE": return "十二星座序列相隔两格，名义间隔60°。"
-        case "SQUARE": return "十二星座序列相隔三格，名义间隔90°。"
-        case "TRINE": return "十二星座序列相隔四格，名义间隔120°。"
-        case "QUINCUNX": return "十二星座序列相隔五格，名义间隔150°。"
-        case "OPPOSITION": return "十二星座序列处于相对位置，名义间隔180°。"
-        default: return "资料尚未完善时，暂不展示连线。"
+        case "HARMONY_ONLY": return "默契合拍。聊天有种接得上话的感觉，共同兴趣很适合开场。偶尔分享一点不同想法，让熟悉的节奏也有新鲜感。"
+        case "CONFLICT_ONLY": return "火花碰撞。各有主见，聊天容易冒出火花，也可能忍不住较劲。不同意见先说清楚，把争输赢换成一起找有趣的答案。"
+        case "MIXED": return "欢喜冤家。聊得来，也容易斗嘴，互动里常有一点小较劲。享受彼此懂的部分，较劲时缓一拍，把真心话直接说出来。"
+        case "NONE": return "慢热探索。默契适合慢慢培养，先别急着判断合不合拍。从共同话题或小游戏开始，多聊几次，再发现你们独有的节奏。"
+        case "GOLDEN": return "互补来电。不同的思路能给聊天添些新鲜感，适合互相接住新点子。多问问对方为什么这样想，让差异成为有趣的话题。"
+        case "SILVER": return "同频共鸣。关注的话题有些相近，接话亲切，又能听到不同角度。先聊共同兴趣，也给对方的小习惯和独特想法留点空间。"
+        case "PEDAGOGUE": return "灵感搭子。适合交换思路，轮流当彼此的小老师。少一点说教，多一点好奇，问问对方的理由，让聊天多出有趣的新发现。"
+        case "SAME_TYPE": return "同款默契。偏好相近，聊天像遇到熟悉的脑回路，接话很有亲切感。也多聊聊各自不同的经历，让相似的组合有新故事。"
+        case "OTHER": return "自由搭配。你们没有固定的相处剧本，合不合拍可以边聊边发现。从共同兴趣开始，试试不同话题，找到自己的聊天节奏。"
+        case "SAME_SIGN": return "同频搭子。熟悉感是这组的聊天关键词，共同喜好很适合开场。别急着以为已经懂了对方，也听听那些不一样的小故事。"
+        case "ADJACENT": return "好奇搭子。既有一点亲近感，也有值得好奇的不同之处。交换喜欢的小事和日常习惯，节奏不同时慢一点，给新鲜感留些空间。"
+        case "SEXTILE": return "轻松接球。适合一来一回地接话，轻松互动就是这组的亮点。主动递个新话题或小游戏，也给对方接球的时间，聊天更有趣。"
+        case "SQUARE": return "火花搭子。聊天有来有往，也容易因为不同想法斗嘴较劲。把想法说清楚，少让对方猜，一起完成个小挑战，让火花变成乐趣。"
+        case "TRINE": return "舒服合拍。相处的关键词是自在，聊天不妨跟着舒服的节奏走。偶尔主动关心，或一起尝试点新鲜事，让轻松的互动多点温度。"
+        case "QUINCUNX": return "新奇磨合。想法和习惯可能不在同一频道，好奇心能打开新话题。把期待说具体，给彼此一点调整的时间，慢慢找到共同节奏。"
+        case "OPPOSITION": return "反差来电。不同的表达和习惯让互动有张力，也有互补的想象空间。先听懂另一边的想法，再一起找平衡，别急着把对话变成辩论。"
+        default: return "稍后揭晓。当前还不能展示这组关系的介绍，先把注意力留给聊天。稍后刷新再看看，你们的相处也可以从一个有趣的话题开始。"
         }
     }
+
+    static func friendlyTitle(for code: String) -> String {
+        String(explanation(for: code).prefix { $0 != "。" })
+    }
+
+    static func friendlyBody(for code: String) -> String {
+        let text = explanation(for: code)
+        guard let end = text.firstIndex(of: "。") else { return text }
+        return String(text[text.index(after: end)...])
+    }
+
 }
 
 struct KikiRelationshipLineSample: View {
@@ -507,11 +480,12 @@ struct KikiRelationshipLineSample: View {
     var body: some View {
         Canvas { context, size in
             for stroke in KikiRelationshipVisuals.strokes(for: code) {
-                let offset = stroke.lane * 0.28
+                let baseline = size.height / 2
+                let bend: CGFloat = stroke.lane == 0 ? -2 : (stroke.lane < 0 ? -2.6 : 2.6)
                 var path = Path()
-                path.move(to: CGPoint(x: 1, y: size.height * 0.78 + offset))
-                path.addQuadCurve(to: CGPoint(x: size.width - 1, y: size.height * 0.78 + offset),
-                                  control: CGPoint(x: size.width / 2, y: 1 + offset))
+                path.move(to: CGPoint(x: 1, y: baseline))
+                path.addQuadCurve(to: CGPoint(x: size.width - 1, y: baseline),
+                                  control: CGPoint(x: size.width / 2, y: baseline + bend * 2))
                 context.stroke(path, with: .color(stroke.color),
                                style: StrokeStyle(lineWidth: 2.5, lineCap: .round, dash: stroke.dash))
             }
@@ -539,6 +513,77 @@ struct KikiRelationshipLegend: View {
     }
 }
 
+/// Read-only, entertainment-oriented explanations. The same short copy is
+/// returned by the server; the original relationship term remains a caption.
+struct KikiRelationshipDetails: View {
+    let mode: KikiRelationshipMode
+    let pairs: [KikiStageRelationshipPair]
+    let onDismiss: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if !pairs.isEmpty {
+                        Text("当前配对").font(.headline).padding(.top, 4)
+                        ForEach(pairs) { pair in
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("\(pair.a.member.name) · \(pair.b.member.name)")
+                                    .font(.subheadline.weight(.semibold)).foregroundStyle(KikiPalette.text)
+                                explanation(code: pair.code, label: pair.code == "NONE" ? "无直接合冲" : pair.label)
+                            }
+                            .padding(16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 18))
+                        }
+                    }
+                    Text("全部关系图示").font(.headline).padding(.top, pairs.isEmpty ? 4 : 8)
+                    ForEach(KikiRelationshipCategory.categories(for: mode).filter { $0.code != "UNAVAILABLE" }) { category in
+                        explanation(code: category.code, label: KikiRelationshipVisuals.legendTitle(for: category))
+                            .padding(16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 18))
+                    }
+                    Text("娱乐配对，开心参考")
+                        .font(.caption).foregroundStyle(KikiPalette.secondary)
+                        .frame(maxWidth: .infinity).padding(.vertical, 6)
+                }
+                .padding(16)
+            }
+            .background(KikiPalette.background)
+            .navigationTitle("\(mode.title)关系说明").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("完成", action: onDismiss) }
+            }
+        }
+    }
+
+    private func explanation(code: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                KikiRelationshipLineSample(code: code).frame(width: 34, height: 18)
+                Text(label).font(.caption.weight(.medium)).foregroundStyle(KikiPalette.secondary)
+            }
+            Text(KikiRelationshipVisuals.friendlyTitle(for: code))
+                .font(.title3.weight(.semibold)).foregroundStyle(KikiPalette.text)
+            Text(KikiRelationshipVisuals.friendlyBody(for: code))
+                .font(.subheadline).foregroundStyle(KikiPalette.secondary)
+                .lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// The avatar keeps a fixed anchor while the optional public label unfolds
+/// below its nickname. Bazi has no blank label or background placeholder.
+enum KikiRelationshipSeatLabelLayout {
+    static func tagHeight(mode: KikiRelationshipMode, value: String?) -> CGFloat {
+        mode != .bazi && value?.isEmpty == false ? 17 : 0
+    }
+    static func plateHeight(mode: KikiRelationshipMode, value: String?) -> CGFloat {
+        20 + tagHeight(mode: mode, value: value)
+    }
+}
+
 /// Stateless production renderer, also used by presentation fixtures. Its only
 /// relationship inputs are the public result projections returned by the server.
 struct KikiRelationshipCircle: View {
@@ -553,6 +598,7 @@ struct KikiRelationshipCircle: View {
     let mode: KikiRelationshipMode
     let edgeOpacity: Double
     let onOpenPerson: (String) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -570,10 +616,9 @@ struct KikiRelationshipCircle: View {
                 if let value = frame[occupant.id] {
                     avatar(occupant)
                         .opacity(value.opacity)
-                        .position(geometry.cellCenter(angle: value.angle, radius: value.radius))
+                        .position(geometry.point(value))
                         .allowsHitTesting(activeIDs.contains(occupant.id) && value.opacity > 0.9)
                         .accessibilityHidden(!activeIDs.contains(occupant.id))
-                        .transaction { $0.animation = nil }
                 }
             }
         }
@@ -581,8 +626,11 @@ struct KikiRelationshipCircle: View {
     }
 
     private func avatar(_ occupant: KikiRelationshipSeat) -> some View {
-        Button { onOpenPerson(occupant.id) } label: {
-            VStack(spacing: 3) {
+        let tag = publicTag(for: occupant.id)
+        let tagHeight = KikiRelationshipSeatLabelLayout.tagHeight(mode: mode, value: tag)
+        let labelAnimation: Animation? = reduceMotion ? nil : .easeInOut(duration: 0.24)
+        return Button { onOpenPerson(occupant.id) } label: {
+            VStack(spacing: 0) {
                 KikiRoomSeatTile(slot: occupant.slot, member: occupant.member,
                     participant: participants.first { $0.id == occupant.id },
                     localUserID: localUserID, avatarSize: geometry.avatarSize)
@@ -593,23 +641,37 @@ struct KikiRelationshipCircle: View {
                             .frame(width: 17, height: 17)
                             .background(KikiPalette.surface.opacity(0.96), in: Circle())
                     }
-                Text(publicTag(for: occupant.id) ?? " ")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(KikiPalette.lavender).lineLimit(1)
-                    .frame(height: 14)
-                    .accessibilityHidden(publicTag(for: occupant.id) == nil)
+                ZStack(alignment: .top) {
+                    if tagHeight > 0, let tag {
+                        Text(tag)
+                            .id("\(mode.rawValue):\(tag)")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(KikiPalette.lavender).lineLimit(1)
+                            .padding(.top, 3)
+                            .transition(.opacity)
+                    }
+                }
+                .frame(maxWidth: .infinity).frame(height: tagHeight, alignment: .top)
+                .clipped()
             }
-            .frame(width: geometry.cellWidth, height: geometry.cellHeight, alignment: .top)
+            .frame(width: geometry.cellWidth)
             .background(alignment: .top) {
                 Circle().fill(KikiPalette.background)
                     .frame(width: geometry.avatarSize + 6, height: geometry.avatarSize + 6)
             }
             .background(alignment: .bottom) {
                 Capsule().fill(KikiPalette.background.opacity(0.97))
-                    .frame(height: 37).padding(.horizontal, -3).offset(y: 2)
+                    .frame(height: KikiRelationshipSeatLabelLayout.plateHeight(mode: mode, value: tag))
+                    .padding(.horizontal, -3).offset(y: 3)
             }
+            .animation(labelAnimation, value: mode)
+            .animation(labelAnimation, value: tag)
             .contentShape(Rectangle())
         }
+        // Position only this stable avatar-sized anchor. The label may change
+        // height, but cannot move the avatar or any relationship endpoint.
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: geometry.cellWidth, height: geometry.avatarSize + 6, alignment: .top)
         .buttonStyle(.plain)
         .accessibilityLabel("\(occupant.slot.index)号麦，查看\(occupant.member.name)的个人主页")
         .accessibilityIdentifier("livekit.room.relationship.seat.\(occupant.id)")

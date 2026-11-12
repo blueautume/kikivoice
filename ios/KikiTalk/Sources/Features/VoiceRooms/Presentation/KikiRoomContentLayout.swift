@@ -15,6 +15,7 @@ struct KikiRoomContentLayout<Stage: View, Chat: View>: View {
             let height = max(0, geometry.size.height)
             let metrics = KikiRoomContentMetrics(height: height, stageContentHeight: stageContentHeight,
                                                 hasChatContent: hasChatContent)
+            let scrollFade = stageContentHeight > metrics.stageHeight + 1 ? min(20, metrics.stageHeight / 4) : 0
             VStack(spacing: 14) {
                 ScrollView {
                     stage(width, width >= 720)
@@ -25,9 +26,18 @@ struct KikiRoomContentLayout<Stage: View, Chat: View>: View {
                                                        value: stageGeometry.size.height)
                             }
                         }
+                        // The last row can scroll completely above the fade.
+                        .padding(.bottom, scrollFade)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .frame(height: metrics.stageHeight, alignment: .top)
+                .mask {
+                    VStack(spacing: 0) {
+                        Rectangle().fill(.black)
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                            .frame(height: scrollFade)
+                    }
+                }
                 .onPreferenceChange(KikiRoomStageHeightKey.self) {
                     stageContentHeight = $0
                     onStageHeightChange($0)
@@ -182,13 +192,12 @@ struct KikiRoomActionRail<Controls: View>: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let height = max(0, geometry.size.height - contentTopInset - bottomInset)
-            let metrics = KikiRoomContentMetrics(height: height, stageContentHeight: stageContentHeight,
-                                                hasChatContent: hasChatContent)
+            let availableHeight = max(0, geometry.size.height - contentTopInset - bottomInset)
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
                 ScrollView {
                     VStack(spacing: 6) { controls() }
+                        .fixedSize(horizontal: false, vertical: true)
                         .background {
                             GeometryReader { controlsGeometry in
                                 Color.clear.preference(key: KikiRoomControlsHeightKey.self,
@@ -197,7 +206,9 @@ struct KikiRoomActionRail<Controls: View>: View {
                         }
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(width: 44, height: min(controlsHeight, metrics.conversationHeight))
+                // The rail owns its intrinsic height. A tall relationship ring
+                // or an empty conversation must never crop its second button.
+                .frame(width: 44, height: min(controlsHeight, availableHeight))
                 .background(KikiRoomBottomFrameProbe(element: .controls))
                 .onPreferenceChange(KikiRoomControlsHeightKey.self) { controlsHeight = $0 }
                 .accessibilityIdentifier("livekit.room.actions")
@@ -216,7 +227,10 @@ private struct KikiRoomContentMetrics {
     let conversationHeight: CGFloat
 
     init(height: CGFloat, stageContentHeight: CGFloat, hasChatContent: Bool) {
-        let minimum = min(max(0, height - 14), max(44, min(hasChatContent ? 64 : 44, height * 0.25)))
+        // Two 44-point tools and their 6-point gap need 94 points. The VStack
+        // already separates stage and conversation by 14 points; reserving that
+        // gap again for messages would crop an entire seat in a short viewport.
+        let minimum = min(max(0, height - 14), 94)
         stageHeight = min(stageContentHeight, max(0, height - minimum - 14))
         conversationHeight = max(0, height - stageHeight - 14)
     }

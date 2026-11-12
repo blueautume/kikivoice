@@ -217,9 +217,32 @@ def relation(code, label, description, harmony=None, conflict=None):
             "harmonyIndex": harmony, "conflictIndex": conflict}
 
 
+# Short, playful introductions; classification and indices remain independent
+# of presentation copy. No private chart evidence belongs in these strings.
+RELATION_DESCRIPTIONS = {
+    "HARMONY_ONLY": "默契合拍。聊天有种接得上话的感觉，共同兴趣很适合开场。偶尔分享一点不同想法，让熟悉的节奏也有新鲜感。",
+    "CONFLICT_ONLY": "火花碰撞。各有主见，聊天容易冒出火花，也可能忍不住较劲。不同意见先说清楚，把争输赢换成一起找有趣的答案。",
+    "MIXED": "欢喜冤家。聊得来，也容易斗嘴，互动里常有一点小较劲。享受彼此懂的部分，较劲时缓一拍，把真心话直接说出来。",
+    "NONE": "慢热探索。默契适合慢慢培养，先别急着判断合不合拍。从共同话题或小游戏开始，多聊几次，再发现你们独有的节奏。",
+    "GOLDEN": "互补来电。不同的思路能给聊天添些新鲜感，适合互相接住新点子。多问问对方为什么这样想，让差异成为有趣的话题。",
+    "SILVER": "同频共鸣。关注的话题有些相近，接话亲切，又能听到不同角度。先聊共同兴趣，也给对方的小习惯和独特想法留点空间。",
+    "PEDAGOGUE": "灵感搭子。适合交换思路，轮流当彼此的小老师。少一点说教，多一点好奇，问问对方的理由，让聊天多出有趣的新发现。",
+    "SAME_TYPE": "同款默契。偏好相近，聊天像遇到熟悉的脑回路，接话很有亲切感。也多聊聊各自不同的经历，让相似的组合有新故事。",
+    "OTHER": "自由搭配。你们没有固定的相处剧本，合不合拍可以边聊边发现。从共同兴趣开始，试试不同话题，找到自己的聊天节奏。",
+    "SAME_SIGN": "同频搭子。熟悉感是这组的聊天关键词，共同喜好很适合开场。别急着以为已经懂了对方，也听听那些不一样的小故事。",
+    "ADJACENT": "好奇搭子。既有一点亲近感，也有值得好奇的不同之处。交换喜欢的小事和日常习惯，节奏不同时慢一点，给新鲜感留些空间。",
+    "SEXTILE": "轻松接球。适合一来一回地接话，轻松互动就是这组的亮点。主动递个新话题或小游戏，也给对方接球的时间，聊天更有趣。",
+    "SQUARE": "火花搭子。聊天有来有往，也容易因为不同想法斗嘴较劲。把想法说清楚，少让对方猜，一起完成个小挑战，让火花变成乐趣。",
+    "TRINE": "舒服合拍。相处的关键词是自在，聊天不妨跟着舒服的节奏走。偶尔主动关心，或一起尝试点新鲜事，让轻松的互动多点温度。",
+    "QUINCUNX": "新奇磨合。想法和习惯可能不在同一频道，好奇心能打开新话题。把期待说具体，给彼此一点调整的时间，慢慢找到共同节奏。",
+    "OPPOSITION": "反差来电。不同的表达和习惯让互动有张力，也有互补的想象空间。先听懂另一边的想法，再一起找平衡，别急着把对话变成辩论。",
+    "UNAVAILABLE": "稍后揭晓。当前还不能展示这组关系的介绍，先把注意力留给聊天。稍后刷新再看看，你们的相处也可以从一个有趣的话题开始。",
+}
+
+
 def unavailable():
     # Never identify which private field is missing or which account lacks consent.
-    return relation("UNAVAILABLE", "暂无法展示关系", "当前暂无法展示这组关系。")
+    return relation("UNAVAILABLE", "暂无法展示关系", RELATION_DESCRIPTIONS["UNAVAILABLE"])
 
 
 HARMONIES = ("子丑", "寅亥", "卯戌", "辰酉", "巳申", "午未")
@@ -246,9 +269,7 @@ def bazi_relation(a, b):
     harmony, conflict = indexes
     code, label = (("MIXED", "合冲并见") if harmony and conflict else ("HARMONY_ONLY", "相合") if harmony
                    else ("CONFLICT_ONLY", "相冲") if conflict else ("NONE", "未命中直接合冲"))
-    description = {"MIXED": "当前规则同时命中相合与相冲，分别保留两类结果。", "HARMONY_ONLY": "当前规则命中相合关系。",
-                   "CONFLICT_ONLY": "当前规则命中相冲关系。", "NONE": "当前规则未命中直接六合或六冲，不代表不适合。"}[code]
-    return relation(code, label, description + " 指数为本应用固定规则汇总，不表示关系成功率。", harmony, conflict)
+    return relation(code, label, RELATION_DESCRIPTIONS[code], harmony, conflict)
 
 
 MBTI_PAIRS = {
@@ -262,10 +283,9 @@ def mbti_relation(a, b):
         return unavailable()
     left, right = a["mbtiType"], b["mbtiType"]
     code = "SAME_TYPE" if left == right else next((name for name, pairs in MBTI_PAIRS.items() if any({left, right} == set(pair) for pair in pairs)), "OTHER")
-    label, description = {"GOLDEN": ("黄金配对", "不同思路可能带来互补与新视角。"), "SILVER": ("白银配对", "相近主题、不同角度，可能形成共鸣与补充。"),
-                          "PEDAGOGUE": ("师生配对", "可以从对方不同的处理方式中得到启发。"), "SAME_TYPE": ("同类型", "四字母偏好相同，具体性格和经历仍有差异。"),
-                          "OTHER": ("其他组合", "未列入本版本命名配对，不表示不适合。")}[code]
-    return relation(code, label, description + " 采用OnType社区表，名称不代表好坏排名。")
+    label = {"GOLDEN": "黄金配对", "SILVER": "白银配对", "PEDAGOGUE": "师生配对",
+             "SAME_TYPE": "同类型", "OTHER": "其他组合"}[code]
+    return relation(code, label, RELATION_DESCRIPTIONS[code])
 
 
 def zodiac_relation(a, b):
@@ -274,7 +294,7 @@ def zodiac_relation(a, b):
     delta = abs(ZODIACS.index(a["zodiacSign"]) - ZODIACS.index(b["zodiacSign"]))
     distance = min(delta, 12-delta)
     code, label = (("SAME_SIGN", "同星座"), ("ADJACENT", "相邻星座"), ("SEXTILE", "六分"), ("SQUARE", "刑"), ("TRINE", "拱"), ("QUINCUNX", "梅花"), ("OPPOSITION", "对宫"))[distance]
-    return relation(code, label, "按十二星座标签的间隔分类，属于简化结构，不是精确行星相位或完整星盘合盘。")
+    return relation(code, label, RELATION_DESCRIPTIONS[code])
 
 
 def room_pair(a_id, b_id, a, b):

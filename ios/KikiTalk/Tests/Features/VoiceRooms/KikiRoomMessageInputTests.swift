@@ -288,15 +288,15 @@ final class KikiRoomMessageInputTests: XCTestCase {
         // Only the opt-in native viewport makes assertions about the physical
         // software keyboard. Synthetic short windows exercise the same layout.
         let cases: [(name: String, size: CGSize, draft: String, messages: Int, allSeats: Bool, scrolls: Bool, scheme: ColorScheme)] = inspectSoftwareKeyboard ? [
-            ("phone-native", scene.coordinateSpace.bounds.size, "原生输入 😀 👩🏽‍💻", 2, true, false, .light),
+            ("phone-native", scene.coordinateSpace.bounds.size, "原生输入 😀 👩🏽‍💻", 2, false, false, .light),
             ("phone-native-four-lines", scene.coordinateSpace.bounds.size, longDraft, 1, false, false, .dark)
         ] : [
             ("phone-375-light", CGSize(width: 375, height: 812), "原生输入 😀 👩🏽‍💻", 3, true, false, .light),
             ("phone-375-dark", CGSize(width: 375, height: 812), "原生输入 😀 👩🏽‍💻", 3, true, false, .dark),
-            ("phone-keyboard-window", CGSize(width: 375, height: 520), "原生输入 😀", 1, true, false, .light),
+            ("phone-keyboard-window", CGSize(width: 375, height: 520), "原生输入 😀", 1, false, false, .light),
             ("phone-four-lines", CGSize(width: 375, height: 520), longDraft, 1, false, false, .dark),
             ("phone-tiny-window", CGSize(width: 375, height: 400), "小窗口草稿", 2, false, true, .light),
-            ("phone-empty-chat", CGSize(width: 375, height: 520), "还没有消息", 0, true, false, .dark),
+            ("phone-empty-chat", CGSize(width: 375, height: 520), "还没有消息", 0, false, false, .dark),
             ("ipad-wide", CGSize(width: 1133, height: 744), "原生输入 😀", 3, true, false, .light)
         ]
         for item in cases {
@@ -432,6 +432,100 @@ final class KikiRoomMessageInputTests: XCTestCase {
             XCTAssertEqual(input.textView.text, model.text)
             XCTAssertEqual(model.submissions, 0)
             host.view.endEditing(true)
+        }
+    }
+
+    func testRelationshipCircleKeepsEmptyRoomActionsWholeAndComposerClearWhenTyping() async throws {
+        let scene = try foregroundScene()
+        let nativeKeyboard = ProcessInfo.processInfo.environment["KIKI_ROOM_COMPOSER_SOFTWARE_KEYBOARD"] == "1"
+        if nativeKeyboard, UIDevice.current.userInterfaceIdiom != .phone {
+            throw XCTSkip("The opt-in keyboard fixture requires the native phone viewport")
+        }
+        let previous = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        defer { window.endEditing(true); window.isHidden = true; previous?.makeKeyAndVisible() }
+        let cases: [(String, CGSize, Int)] = nativeKeyboard ? [
+            ("native-one-listener", scene.coordinateSpace.bounds.size, 1),
+            ("native-two-seated", scene.coordinateSpace.bounds.size, 2),
+            ("native-eight-listener", scene.coordinateSpace.bounds.size, 8)
+        ] : [
+            ("small-one-listener", CGSize(width: 320, height: 568), 1),
+            ("390-two-seated", CGSize(width: 390, height: 844), 2),
+            ("430-one-listener", CGSize(width: 430, height: 932), 1),
+            ("430-eight-listener", CGSize(width: 430, height: 932), 8),
+            ("ipad-two-seated", CGSize(width: 744, height: 1133), 2),
+            ("ipad-wide-eight-listener", CGSize(width: 1133, height: 744), 8)
+        ]
+        for (name, size, count) in cases {
+            // Zero messages and the production relationship circle reproduce
+            // the tall stage which previously cropped the hand button to 44pt.
+            let model = ScreenshotModel(text: "曲线与输入都清楚", messageCount: 0, scheme: .dark,
+                                        relationshipOccupants: count)
+            let host = UIHostingController(rootView: ComposerScreenshotFixture(model: model))
+            host.safeAreaRegions = nativeKeyboard ? .all : .container
+            window.rootViewController = host
+            window.frame = CGRect(origin: .zero, size: size)
+            host.view.frame = window.bounds
+            window.makeKeyAndVisible()
+            try await waitFor { model.probes["relationshipCircle"]?.window != nil && model.probes["action.1"]?.window != nil }
+            try await Task.sleep(nanoseconds: 160_000_000)
+            window.layoutIfNeeded()
+            let input = try XCTUnwrap(descendants(of: host.view).compactMap { $0 as? KikiRoomMessageInput.InputView }.first)
+            let identity = ObjectIdentifier(input)
+            let idleInput = input.convert(input.bounds, to: window)
+            let idle = try assertActionColumn(model: model, input: input, window: window, phase: name + ".idle")
+            XCTAssertGreaterThanOrEqual(idle.viewport.height, 93, "Both room tools must be visible together without scrolling")
+            for frame in idle.buttons { XCTAssertTrue(idle.viewport.insetBy(dx: -1, dy: -1).contains(frame)) }
+            try captureInputScreenshot(name: "relationship-room-" + name + "-idle", window: window)
+
+            model.focused = true
+            try await waitFor { input.textView.isFirstResponder }
+            if nativeKeyboard {
+                let deadline = Date().addingTimeInterval(45)
+                while host.view.keyboardLayoutGuide.layoutFrame.height <= 100, Date() < deadline {
+                    window.layoutIfNeeded()
+                    try await Task.sleep(nanoseconds: 200_000_000)
+                }
+                let keyboard = host.view.keyboardLayoutGuide.layoutFrame
+                XCTAssertGreaterThan(keyboard.height, 100, "The opt-in must exercise the actual software keyboard")
+                let frame = input.convert(input.bounds, to: host.view)
+                XCTAssertGreaterThanOrEqual(keyboard.minY - frame.maxY, -1)
+                XCTAssertLessThanOrEqual(keyboard.minY - frame.maxY, 32)
+                try assertActionColumn(model: model, input: input, window: window, anchoredTo: idle, phase: name + ".keyboard")
+                XCTAssertTrue(host.view.convert(keyboard, to: window).intersects(idle.viewport),
+                              "Keyboard covers the resting tools instead of raising them into the ring")
+            } else {
+                // The regular suite also checks a keyboard-sized content area
+                // without depending on the simulator's hardware-keyboard setting.
+                window.frame.size.height = min(size.height, max(400, size.height - 310))
+                host.view.frame = window.bounds
+                try await Task.sleep(nanoseconds: 160_000_000)
+                window.layoutIfNeeded()
+                let compact = try assertActionColumn(model: model, input: input, window: window, phase: name + ".compact")
+                XCTAssertGreaterThanOrEqual(compact.viewport.height, 93)
+                for frame in compact.buttons { XCTAssertTrue(compact.viewport.insetBy(dx: -1, dy: -1).contains(frame)) }
+            }
+            try await assertAudienceReachability(model: model, window: window)
+            XCTAssertEqual(ObjectIdentifier(input), identity)
+            XCTAssertEqual(input.textView.text, model.text)
+            XCTAssertTrue(input.textView.isFirstResponder)
+            try captureInputScreenshot(name: "relationship-room-" + name + "-typing", window: window)
+            model.focused = false
+            try await waitFor { !input.textView.isFirstResponder }
+            if nativeKeyboard {
+                let deadline = Date().addingTimeInterval(10)
+                while host.view.keyboardLayoutGuide.layoutFrame.height > 100, Date() < deadline {
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                }
+            } else {
+                window.frame.size = size
+                host.view.frame = window.bounds
+            }
+            try await Task.sleep(nanoseconds: 200_000_000)
+            window.layoutIfNeeded()
+            XCTAssertEqual(input.convert(input.bounds, to: window).maxY, idleInput.maxY, accuracy: 1)
+            try assertActionColumn(model: model, input: input, window: window, anchoredTo: idle, phase: name + ".restored")
+            XCTAssertEqual(model.submissions, 0)
         }
     }
 
@@ -830,10 +924,14 @@ final class KikiRoomMessageInputTests: XCTestCase {
         var invitationPlacement = KikiRoomInvitationPlacement.pending
         let messageCount: Int
         let scheme: ColorScheme
+        let relationshipOccupants: Int?
         var probes: [String: UIView] = [:]
         var dismissals = 0
         var submissions = 0
-        init(text: String, messageCount: Int, scheme: ColorScheme) { self.text = text; self.messageCount = messageCount; self.scheme = scheme }
+        init(text: String, messageCount: Int, scheme: ColorScheme, relationshipOccupants: Int? = nil) {
+            self.text = text; self.messageCount = messageCount; self.scheme = scheme
+            self.relationshipOccupants = relationshipOccupants
+        }
     }
 
     /// UIKit probes expose geometry even when SwiftUI omits virtual AX nodes.
@@ -872,7 +970,11 @@ final class KikiRoomMessageInputTests: XCTestCase {
                     KikiRoomContentLayout(hasChatContent: model.messageCount > 0,
                                          onStageHeightChange: { stageContentHeight = $0 }) { width, columns in
                         VStack(spacing: 14) {
-                            seats(width: width, avatarSize: columns ? 68 : 55)
+                            if let count = model.relationshipOccupants {
+                                relationshipCircle(width: width, count: count)
+                            } else {
+                                seats(width: width, avatarSize: columns ? 68 : 55)
+                            }
                             KikiRoomAudienceStrip(listeners: listeners, onOpenPerson: { _ in }) { member in
                                 KikiAvatar(index: member.avatarIndex, size: 36)
                             }.background(LayoutProbe(key: "audience", model: model))
@@ -895,7 +997,6 @@ final class KikiRoomMessageInputTests: XCTestCase {
                 }
                 .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 2)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(KikiPalette.background.ignoresSafeArea())
             } footer: { placement in
                 KikiRoomComposerWithInvitation(hasInvitation: model.hasInvitation, placement: placement) {
                     KikiIncomingSeatInvitationCard(isBusy: false, isEnabled: true, isRoomFull: model.isRoomFull,
@@ -931,6 +1032,7 @@ final class KikiRoomMessageInputTests: XCTestCase {
                 }
             }
             .foregroundStyle(KikiPalette.text)
+            .background(KikiRoomBackground(theme: 0).ignoresSafeArea())
             .background(KikiRoomKeyboardDismissal(isEnabled: true) {
                 model.dismissals += 1
                 model.focused = false
@@ -945,6 +1047,38 @@ final class KikiRoomMessageInputTests: XCTestCase {
                     avatarIndex: number + 2, avatarURL: nil, role: .member, seatIndex: nil,
                     audioMuted: false, chatMuted: false, online: true,
                     canPublishAudio: false, canPublishData: true)
+            }
+        }
+
+        private func relationshipCircle(width: CGFloat, count: Int) -> some View {
+            let occupants = (0..<count).map { index in
+                let id = "circle-fixture-\(index)"
+                return KikiRelationshipSeat(slot: .init(index: index + 1, userID: id, locked: false, audioLocked: false),
+                    member: .init(userID: id, name: index == 0 ? "小岛" : "同频朋友\(index)", avatarIndex: index,
+                        avatarURL: nil, role: index == 0 ? .owner : .member, seatIndex: index + 1,
+                        audioMuted: false, chatMuted: false, online: true, canPublishAudio: true, canPublishData: true))
+            }
+            var motion = KikiRelationshipMotion()
+            motion.retarget(orderedIDs: occupants.map(\.id), at: .now, animated: false)
+            let geometry = KikiRelationshipStageGeometry(width: min(440, width))
+            var pairs: [KikiStageRelationshipPair] = []
+            for (index, first) in occupants.enumerated() {
+                for second in occupants.dropFirst(index + 1) {
+                    pairs.append(KikiStageRelationshipPair(a: first, b: second,
+                        summary: .init(code: "MIXED", label: "合冲并见", description: "有默契，也有火花")))
+                }
+            }
+            return VStack(spacing: 8) {
+                Picker("关系模式", selection: .constant(KikiRelationshipMode.bazi)) {
+                    ForEach(KikiRelationshipMode.allCases) { Text($0.title).tag($0) }
+                }.pickerStyle(.segmented)
+                KikiRelationshipCircle(geometry: geometry, seats: occupants, activeIDs: Set(occupants.map(\.id)),
+                    frame: motion.frame(at: .now), pairs: pairs, profiles: [], participants: [],
+                    localUserID: count == 2 ? occupants.last?.id : "fixture-listener", mode: .bazi,
+                    edgeOpacity: 1, onOpenPerson: { _ in })
+                    .background(LayoutProbe(key: "relationshipCircle", model: model))
+                KikiRelationshipLegend(mode: .bazi)
+                HStack { Spacer(); Label("关系说明", systemImage: "info.circle").font(.caption).frame(minHeight: 44) }
             }
         }
 
