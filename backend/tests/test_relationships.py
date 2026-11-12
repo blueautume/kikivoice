@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from app import relationship_engine as engine
 from app.main import database
 from app.social import Policy
-from test_api import client, authorization, login
+from test_api import client, authorization, login, current_legal_consent
 from test_voice_bridge import bridge_client
 
 
@@ -55,17 +55,20 @@ def test_hko_2026_term_boundaries_use_physical_instant(before, after, first, las
     assert engine.four_pillars(instant(after), 75)[:2] == last
 
 
-def test_historical_dst_is_removed_once_and_gap_fold_are_not_guessed():
+def test_historical_dst_is_removed_once_gap_rejected_and_fold_automatically_uses_first():
     birth = engine.civil_instant(datetime(1988, 6, 15, 12), "Asia/Shanghai")
     assert birth == instant("1988-06-15T03:00:00Z")
     assert engine.four_pillars(birth, 116.4)[2:] == ["辛丑", "癸巳"]
     with pytest.raises(engine.ProfileError, match="不存在"):
         engine.civil_instant(datetime(1988, 4, 17, 2, 30), "Asia/Shanghai")
-    with pytest.raises(engine.ProfileError, match="两次"):
-        engine.civil_instant(datetime(1988, 9, 11, 1, 30), "Asia/Shanghai")
     first = engine.civil_instant(datetime(1988, 9, 11, 1, 30), "Asia/Shanghai", 0)
-    second = engine.civil_instant(datetime(1988, 9, 11, 1, 30), "Asia/Shanghai", 1)
-    assert (second-first).total_seconds() == 3600
+    assert first == instant("1988-09-10T16:30:00Z")
+    assert engine.civil_instant(datetime(1988, 9, 11, 1, 30), "Asia/Shanghai") == first
+    assert engine.civil_instant(datetime(1988, 9, 11, 1, 30), "Asia/Shanghai", 1) == first
+    profile = engine.own_profile({**PROFILE, "birthDate": "1988-09-11", "birthTime": "01:30", "birthFold": 1})
+    assert profile["birthFold"] is None
+    assert profile["chart"]["pillars"] == engine.four_pillars(first, engine.district_catalog()["110101"]["longitude"])
+    assert "自动判断" in profile["chart"]["message"] and "第一次" in profile["chart"]["message"]
 
 
 @pytest.mark.parametrize("value,longitude,expected", [
@@ -80,6 +83,7 @@ def test_lunar_leap_month_conversion_preserves_the_birthday_and_rejects_nonexist
     lunar = engine.own_profile({**engine.DEFAULT_PROFILE, "birthCalendar": "lunar", "birthDate": "2023-02-01", "birthLeapMonth": True})
     assert lunar["gregorianBirthDate"] == "2023-03-22"
     assert lunar["lunarBirthDate"] == "2023-02-01" and lunar["lunarBirthLeapMonth"] is True
+    assert lunar["zodiacSign"] == "白羊座"
     assert lunar["chart"]["status"] == "incomplete" and "pillars" not in lunar["chart"]
     with pytest.raises(engine.ProfileError):
         engine.own_profile({**engine.DEFAULT_PROFILE, "birthCalendar": "lunar", "birthDate": "2024-02-01", "birthLeapMonth": True})
@@ -100,7 +104,7 @@ def test_rules_keep_two_independent_bazi_channels_and_community_labels():
     assert value["code"] == "HARMONY_ONLY" and (value["harmonyIndex"], value["conflictIndex"]) == (38, 0)
     mixed = engine.bazi_relation(a, {**b, "chart": {"pillars": ["壬午", "戊申", "辛酉", "癸亥"]}})
     assert mixed["code"] == "MIXED" and mixed["harmonyIndex"] > 0 and mixed["conflictIndex"] > 0
-    assert engine.bazi_relation({**a, "baziEnabled": False}, b)["code"] == "UNAVAILABLE"
+    assert engine.bazi_relation({**a, "baziEnabled": False}, b) == value
     for left, right in itertools.product(engine.MBTIS, repeat=2):
         pa = {**engine.DEFAULT_PROFILE, "mbtiType": left}
         pb = {**engine.DEFAULT_PROFILE, "mbtiType": right}
@@ -119,7 +123,7 @@ def test_owner_api_is_private_partial_and_preview_does_not_persist(client):
     assert client.get(path).status_code == 401
     initial = client.get(path, headers=headers)
     assert "no-store" in initial.headers["cache-control"]
-    assert initial.json()["baziEnabled"] is False
+    assert initial.json()["baziEnabled"] is True
     preview = client.post(path+"/preview", headers=headers, json=PROFILE)
     assert preview.status_code == 200
     assert preview.json()["chart"]["pillars"] == ["庚辰", "乙酉", "癸未", "丁巳"]
@@ -127,7 +131,9 @@ def test_owner_api_is_private_partial_and_preview_does_not_persist(client):
     saved = client.patch(path, headers=headers, json=PROFILE)
     assert saved.status_code == 200 and saved.json()["revision"] == 1
     assert client.patch(path, headers=headers, json={"mbtiType": "ENFP"}).json()["chart"] == saved.json()["chart"]
-    assert client.patch(path, headers=headers, json={"birthTime": None}).json()["chart"]["status"] == "incomplete"
+    birth_update = client.patch(path, headers=headers, json={"birthTime": None}).json()
+    assert birth_update["chart"]["status"] == "incomplete"
+    assert birth_update["mbtiType"] == "ENFP"
     assert client.patch(path, headers=headers, json={"birthLatitude": 39.9}).status_code == 422
     other = login(client, "bob")
     assert client.get(path, headers=authorization(other)).json()["birthDate"] is None
@@ -148,7 +154,7 @@ def setup_room(c, users, *, blocked=()):
     c.app.state.social.policy = lambda user, target_ids=(): Policy(schemaVersion=1, accountID=user["login_id"], blockedUserIDs=list(blocked), currentRooms=[], roomsStale=True)
 
 
-def test_room_api_is_result_only_and_opt_out_changes_revision_without_exposing_reason(bridge_client):
+def test_room_api_is_result_only_and_agreement_controls_participation(bridge_client):
     c = bridge_client
     a, b = login(c), login(c, "bob")
     setup_room(c, [a, b])
@@ -171,15 +177,71 @@ def test_room_api_is_result_only_and_opt_out_changes_revision_without_exposing_r
     assert "no-store" in response.headers["cache-control"]
     assert c.patch(path, headers=authorization(b), json={"baziEnabled": False}).status_code == 200
     fresh = c.get(f"/v1/voice/rooms/{ROOM}/relations", headers=authorization(a)).json()
-    assert fresh["revision"] != room["revision"]
-    assert fresh["pairs"][0]["bazi"]["code"] == "UNAVAILABLE"
+    assert fresh["revision"] == room["revision"]
+    assert fresh["pairs"][0]["bazi"]["code"] == room["pairs"][0]["bazi"]["code"]
     assert fresh["pairs"][0]["mbti"]["code"] == "GOLDEN"
     public = c.get("/v1/social/people/"+b["user"]["id"], headers=authorization(a)).json()["person"]
     assert public["mbtiType"] == "ENFP" and public["zodiacSign"] == "狮子座"
     assert keys(public).isdisjoint({"birthDate", "chart", "pillars"})
     assert c.patch(path, headers=authorization(b), json={"mbtiEnabled": False, "zodiacEnabled": False}).status_code == 200
-    hidden = c.get("/v1/social/people/"+b["user"]["id"], headers=authorization(a)).json()["person"]
-    assert hidden["mbtiType"] is None and hidden["zodiacSign"] is None
+    shared = c.get("/v1/social/people/"+b["user"]["id"], headers=authorization(a)).json()["person"]
+    assert shared["mbtiType"] == "ENFP" and shared["zodiacSign"] == "狮子座"
+
+
+def test_legacy_opt_out_is_normalized_only_after_current_agreement_is_accepted(bridge_client):
+    c = bridge_client
+    a, b = login(c), login(c, "bob")
+    setup_room(c, [a, b])
+    path = "/v1/me/relationship-profile"
+    for user in (a, b):
+        assert c.patch(path, headers=authorization(user), json=PROFILE).status_code == 200
+    with database(c.settings) as db:
+        row = db.execute("SELECT account_id FROM accounts WHERE login_id=?", (b["user"]["id"],)).fetchone()
+        target = row[0]
+        legacy = {**PROFILE, "baziEnabled": False, "mbtiEnabled": False, "zodiacEnabled": False}
+        db.execute("UPDATE relationship_profiles SET payload=? WHERE account_id=?", (json.dumps(legacy), target))
+        # Model the old agreement by invalidating only this account's latest
+        # acceptance. No migration rewrites that historical private record.
+        db.execute("UPDATE legal_consent_events SET document_hash=? WHERE account_id=?", ("0" * 64, target))
+    assert c.get(path, headers=authorization(b)).status_code == 428
+    assert c.get("/v1/social/people/"+b["user"]["id"], headers=authorization(a)).status_code == 404
+    room = c.get(f"/v1/voice/rooms/{ROOM}/relations", headers=authorization(a)).json()
+    assert room["pairs"][0]["bazi"]["code"] == "UNAVAILABLE"
+    assert b["user"]["id"] not in [profile["userID"] for profile in room["profiles"]]
+    with database(c.settings) as db:
+        assert json.loads(db.execute("SELECT payload FROM relationship_profiles WHERE account_id=?", (target,)).fetchone()[0])["baziEnabled"] is False
+    accepted = c.post("/v1/me/legal-consent", headers=authorization(b), json={"legalConsent": current_legal_consent()})
+    assert accepted.status_code == 200, accepted.text
+    own = c.get(path, headers=authorization(b)).json()
+    assert all(own[field] is True for field in ("baziEnabled", "mbtiEnabled", "zodiacEnabled"))
+    fresh = c.get(f"/v1/voice/rooms/{ROOM}/relations", headers=authorization(a)).json()
+    assert fresh["pairs"][0]["bazi"]["code"] != "UNAVAILABLE"
+    shared = c.get("/v1/social/people/"+b["user"]["id"], headers=authorization(a)).json()["person"]
+    assert shared["mbtiType"] == "INFJ" and shared["zodiacSign"] == "处女座"
+
+
+def test_sign_is_always_birthday_derived_and_old_manual_sign_never_becomes_public(bridge_client):
+    c = bridge_client
+    a, b = login(c), login(c, "bob")
+    setup_room(c, [a, b])
+    path = "/v1/me/relationship-profile"
+    first = c.patch(path, headers=authorization(b), json={"mbtiType": "ENFP", "zodiacSign": "狮子座"})
+    assert first.status_code == 200 and first.json()["zodiacSign"] is None
+    with database(c.settings) as db:
+        target = db.execute("SELECT account_id FROM accounts WHERE login_id=?", (b["user"]["id"],)).fetchone()[0]
+        old = json.loads(db.execute("SELECT payload FROM relationship_profiles WHERE account_id=?", (target,)).fetchone()[0])
+        old["zodiacSign"] = "狮子座"
+        db.execute("UPDATE relationship_profiles SET payload=? WHERE account_id=?", (json.dumps(old), target))
+    peer = c.get("/v1/social/people/"+b["user"]["id"], headers=authorization(a)).json()["person"]
+    assert peer["zodiacSign"] is None and peer["mbtiType"] == "ENFP"
+    room = c.get(f"/v1/voice/rooms/{ROOM}/relations", headers=authorization(a)).json()
+    assert next(profile for profile in room["profiles"] if profile["userID"] == b["user"]["id"])["zodiacSign"] is None
+    assert room["pairs"][0]["zodiac"]["code"] == "UNAVAILABLE"
+    response = c.patch(path, headers=authorization(b), json={"birthDate": "2000-09-22", "zodiacSign": "白羊座"})
+    assert response.status_code == 200 and response.json()["zodiacSign"] == "处女座"
+    cleared = c.patch(path, headers=authorization(b), json={"birthDate": None})
+    assert cleared.status_code == 200 and cleared.json()["zodiacSign"] is None
+    assert cleared.json()["chart"]["status"] == "incomplete"
 
 
 def test_member_check_failure_and_blocks_cannot_be_bypassed(bridge_client):

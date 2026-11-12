@@ -1346,9 +1346,9 @@ import Combine
         try await socialRequest { try await self.api.previewRelationshipProfile(draft, token: $0) }
     }
 
-    func saveRelationshipProfile(_ draft: KikiRelationshipProfileDraft) async throws -> KikiRelationshipProfile {
+    func saveRelationshipProfile(_ draft: KikiRelationshipProfileDraft, editor: KikiRelationshipEditor? = nil) async throws -> KikiRelationshipProfile {
         let generation = sessionGeneration, expectedToken = token
-        let response = try await socialRequest { try await self.api.saveRelationshipProfile(draft, token: $0) }
+        let response = try await socialRequest { try await self.api.saveRelationshipProfile(draft, editor: editor, token: $0) }
         NotificationCenter.default.post(name: .kikiRelationshipProfileDidChange, object: nil)
         // Public tags use their own safe projection; no private chart is stored.
         await refreshSocialSummary()

@@ -52,6 +52,12 @@ enum KikiBirthCalendar: String, Codable, CaseIterable, Identifiable, Sendable {
     var title: String { self == .gregorian ? "公历" : "农历" }
 }
 
+enum KikiRelationshipEditor: String, CaseIterable, Identifiable, Sendable {
+    case bazi, mbti
+    var id: String { rawValue }
+    var title: String { self == .bazi ? "八字" : "MBTI" }
+}
+
 /// Only sent to the account owner's private endpoints. Explicit nulls allow
 /// clearing a field instead of accidentally keeping a previously saved value.
 struct KikiRelationshipProfileDraft: Codable, Equatable, Sendable {
@@ -73,22 +79,25 @@ struct KikiRelationshipProfileDraft: Codable, Equatable, Sendable {
     }
 
     func encode(to encoder: Encoder) throws {
+        try encodeEditableFields(to: encoder, editor: nil)
+    }
+
+    fileprivate func encodeEditableFields(to encoder: Encoder, editor: KikiRelationshipEditor?) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(mbtiType, forKey: .mbtiType)
-        try c.encode(zodiacSign, forKey: .zodiacSign)
-        try c.encode(birthCalendar, forKey: .birthCalendar)
-        try c.encode(birthDate, forKey: .birthDate)
-        try c.encode(birthLeapMonth, forKey: .birthLeapMonth)
-        try c.encode(birthTime, forKey: .birthTime)
-        try c.encode(birthPlaceCode, forKey: .birthPlaceCode)
-        try c.encode(birthFold, forKey: .birthFold)
-        try c.encode(baziEnabled, forKey: .baziEnabled)
-        try c.encode(mbtiEnabled, forKey: .mbtiEnabled)
-        try c.encode(zodiacEnabled, forKey: .zodiacEnabled)
+        if editor != .bazi { try c.encode(mbtiType, forKey: .mbtiType) }
+        if editor != .mbti {
+            try c.encode(birthCalendar, forKey: .birthCalendar)
+            try c.encode(birthDate, forKey: .birthDate)
+            try c.encode(birthLeapMonth, forKey: .birthLeapMonth)
+            try c.encode(birthTime, forKey: .birthTime)
+            try c.encode(birthPlaceCode, forKey: .birthPlaceCode)
+        }
+        // The server derives zodiac and civil-time handling. Sharing is part
+        // of accepted terms, so legacy choices must never overwrite it.
     }
 
     /// Calendar changes are alternate representations of the same civil date.
-    /// Keep the recorded clock, birthplace and confirmed DST occurrence intact.
+    /// Keep the recorded clock, birthplace and unrelated profile fields intact.
     func changingCalendar(to calendar: KikiBirthCalendar, using preview: KikiRelationshipProfile) -> Self? {
         guard let date = calendar == .gregorian ? preview.gregorianBirthDate : preview.lunarBirthDate else { return nil }
         var converted = self
@@ -96,6 +105,16 @@ struct KikiRelationshipProfileDraft: Codable, Equatable, Sendable {
         converted.birthDate = date
         converted.birthLeapMonth = calendar == .lunar && preview.lunarBirthLeapMonth == true
         return converted
+    }
+}
+
+/// A focused editor sends only its own fields, even when its loaded snapshot
+/// contains the other editor's data. Omitted fields remain unchanged server-side.
+struct KikiRelationshipProfilePatch: Encodable, Sendable {
+    let draft: KikiRelationshipProfileDraft
+    let editor: KikiRelationshipEditor?
+    func encode(to encoder: Encoder) throws {
+        try draft.encodeEditableFields(to: encoder, editor: editor)
     }
 }
 

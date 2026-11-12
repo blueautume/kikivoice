@@ -15,14 +15,14 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from lunar_python import Solar, Lunar, LunarYear
 
-RULE_VERSION = "kiki-relations-1.0.0"
-CHART_VERSION = "true-solar-1.0.0-lunar-python-1.4.9"
+RULE_VERSION = "kiki-relations-1.1.0"
+CHART_VERSION = "true-solar-1.1.0-lunar-python-1.4.9"
 ZODIACS = ("白羊座", "金牛座", "双子座", "巨蟹座", "狮子座", "处女座", "天秤座", "天蝎座", "射手座", "摩羯座", "水瓶座", "双鱼座")
 MBTIS = {a+b+c+d for a in "IE" for b in "NS" for c in "FT" for d in "JP"}
 ZONES = {"CN": "Asia/Shanghai", "HK": "Asia/Hong_Kong", "MO": "Asia/Macau", "TW": "Asia/Taipei"}
 DEFAULT_PROFILE = dict(mbtiType=None, zodiacSign=None, birthCalendar="gregorian", birthDate=None,
                        birthLeapMonth=False, birthTime=None, birthPlaceCode=None, birthFold=None,
-                       baziEnabled=False, mbtiEnabled=True, zodiacEnabled=True)
+                       baziEnabled=True, mbtiEnabled=True, zodiacEnabled=True)
 CALENDAR_LOCK = threading.RLock()
 
 
@@ -91,7 +91,11 @@ def date_details(profile):
 
 
 def civil_instant(civil, zone_id, fold=None):
-    """Strictly resolve a wall clock; never normalize a DST gap or guess a fold."""
+    """Resolve historical civil time automatically; repeated clocks use the first.
+
+    ``fold`` remains accepted only for old internal callers. It cannot override
+    this rule. Nonexistent wall-clock records are rejected, never normalized.
+    """
     try:
         zone = ZoneInfo(zone_id)
     except ZoneInfoNotFoundError:
@@ -105,11 +109,7 @@ def civil_instant(civil, zone_id, fold=None):
     unique = set(candidates.values())
     if not unique:
         raise ProfileError("这个出生钟表时间在当地时区中不存在，请核对夏令时记录")
-    if len(unique) > 1 and fold is None:
-        raise ProfileError("这个出生钟表时间因夏令时回拨出现两次，请选择第一次或第二次")
-    if fold is not None and fold not in candidates:
-        raise ProfileError("所选出生钟表时间无效，请重新选择")
-    return candidates.get(fold, next(iter(candidates.values())))
+    return candidates.get(0, next(iter(candidates.values())))
 
 
 def equation_of_time(instant):
@@ -156,8 +156,12 @@ def own_profile(profile, revision=0):
 
 
 def _own_profile(profile, revision=0):
-    # This function must only be used for the authenticated owner's response.
+    # Callers must first establish current agreement consent. New agreement
+    # participation replaces legacy per-profile opt-out fields; no bulk rewrite
+    # or unauthenticated migration of old private records is performed.
     result = {**DEFAULT_PROFILE, **profile, "revision": revision}
+    result.update(baziEnabled=True, mbtiEnabled=True, zodiacEnabled=True,
+                  birthFold=None, zodiacSign=None)
     if result["birthCalendar"] == "gregorian":
         result["birthLeapMonth"] = False
     details = date_details(result)
@@ -168,29 +172,44 @@ def _own_profile(profile, revision=0):
     result["birthPlaceName"] = point["fullName"] if point else None
     result["birthTimeZone"] = point["timeZone"] if point else None
     if details:
-        civil_date = date.fromisoformat(details["gregorianBirthDate"])
-        result["zodiacSign"] = Solar.fromYmd(civil_date.year, civil_date.month, civil_date.day).getXingZuo() + "座"
+        result["zodiacSign"] = zodiac_from_date(details["gregorianBirthDate"])
     missing = "请填写出生日期" if not details else "请填写出生时刻" if not result["birthTime"] else "请选择出生地" if not point else "出生地坐标待确认" if not valid_point(point) else None
     if missing:
         result["chart"] = {"status": "incomplete", "message": missing, "ruleVersion": CHART_VERSION}
         return result
     civil = datetime.fromisoformat(details["gregorianBirthDate"] + "T" + result["birthTime"])
-    instant = civil_instant(civil, point["timeZone"], result["birthFold"])
+    instant = civil_instant(civil, point["timeZone"])
     apparent = apparent_clock(instant, point["longitude"])
     result["chart"] = {"status": "ready", "pillars": four_pillars(instant, point["longitude"]),
                        "trueSolarTime": apparent.strftime("%Y-%m-%d %H:%M:%S"),
                        "civilTime": civil.strftime("%Y-%m-%d %H:%M") + " · " + point["timeZone"],
                        "ruleVersion": CHART_VERSION,
-                       "message": "真太阳时定日时柱，实际交节定年月柱，零点换日；地区坐标为代表点"}
+                       "message": "真太阳时定日时柱，实际交节定年月柱，零点换日；历史时制自动判断，重复钟点采用第一次；地区坐标为代表点"}
     return result
 
 
+def zodiac_from_date(gregorian_date):
+    civil = date.fromisoformat(gregorian_date)
+    return Solar.fromYmd(civil.year, civil.month, civil.day).getXingZuo() + "座"
+
+
 def public_tags(db, account_id):
+    """Project an account already authorized by the caller's current-consent SQL.
+
+    Derive the sign again rather than trusting legacy manually chosen labels.
+    No chart or birth field can enter the public return value.
+    """
     row = db.execute("SELECT payload FROM relationship_profiles WHERE account_id=?", (account_id,)).fetchone()
-    profile = json.loads(row[0]) if row else DEFAULT_PROFILE
+    profile = {**DEFAULT_PROFILE, **json.loads(row[0])} if row else DEFAULT_PROFILE
+    with CALENDAR_LOCK:
+        try:
+            details = date_details(profile)
+            zodiac = zodiac_from_date(details["gregorianBirthDate"]) if details else None
+        except ProfileError:
+            zodiac = None
     # Explicit public allowlist. Never return birth fields or chart material here.
-    return {"mbtiType": profile.get("mbtiType") if profile.get("mbtiEnabled", True) else None,
-            "zodiacSign": profile.get("zodiacSign") if profile.get("zodiacEnabled", True) else None}
+    return {"mbtiType": profile.get("mbtiType") if profile.get("mbtiType") in MBTIS else None,
+            "zodiacSign": zodiac}
 
 
 def relation(code, label, description, harmony=None, conflict=None):
@@ -199,7 +218,7 @@ def relation(code, label, description, harmony=None, conflict=None):
 
 
 def unavailable():
-    # The peer cannot distinguish missing private data from declining participation.
+    # Never identify which private field is missing or which account lacks consent.
     return relation("UNAVAILABLE", "暂无法展示关系", "当前暂无法展示这组关系。")
 
 
@@ -208,7 +227,7 @@ CONFLICTS = ("子午", "丑未", "寅申", "卯酉", "辰戌", "巳亥")
 
 
 def bazi_relation(a, b):
-    if not a or not b or not a.get("baziEnabled") or not b.get("baziEnabled"):
+    if not a or not b:
         return unavailable()
     pa, pb = a.get("chart", {}).get("pillars"), b.get("chart", {}).get("pillars")
     if not pa or not pb:
@@ -239,7 +258,7 @@ MBTI_PAIRS = {
 
 
 def mbti_relation(a, b):
-    if not a or not b or not a.get("mbtiEnabled") or not b.get("mbtiEnabled") or not a.get("mbtiType") or not b.get("mbtiType"):
+    if not a or not b or not a.get("mbtiType") or not b.get("mbtiType"):
         return unavailable()
     left, right = a["mbtiType"], b["mbtiType"]
     code = "SAME_TYPE" if left == right else next((name for name, pairs in MBTI_PAIRS.items() if any({left, right} == set(pair) for pair in pairs)), "OTHER")
@@ -250,7 +269,7 @@ def mbti_relation(a, b):
 
 
 def zodiac_relation(a, b):
-    if not a or not b or not a.get("zodiacEnabled") or not b.get("zodiacEnabled") or a.get("zodiacSign") not in ZODIACS or b.get("zodiacSign") not in ZODIACS:
+    if not a or not b or a.get("zodiacSign") not in ZODIACS or b.get("zodiacSign") not in ZODIACS:
         return unavailable()
     delta = abs(ZODIACS.index(a["zodiacSign"]) - ZODIACS.index(b["zodiacSign"]))
     distance = min(delta, 12-delta)

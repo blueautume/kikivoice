@@ -4,13 +4,20 @@ import XCTest
 @testable import KikiTalk
 
 final class KikiRelationshipStageTests: XCTestCase {
-    func testModeFiltersAlwaysExposeTheCompleteVocabularyIncludingUnavailable() {
+    func testLegendsAlwaysExposeEveryModeCategoryAndEveryKnownCategoryHasACurve() {
         XCTAssertEqual(KikiRelationshipCategory.categories(for: .bazi).map(\.code),
                        ["HARMONY_ONLY", "CONFLICT_ONLY", "MIXED", "NONE", "UNAVAILABLE"])
         XCTAssertEqual(KikiRelationshipCategory.categories(for: .mbti).map(\.code),
                        ["GOLDEN", "SILVER", "PEDAGOGUE", "SAME_TYPE", "OTHER", "UNAVAILABLE"])
         XCTAssertEqual(KikiRelationshipCategory.categories(for: .zodiac).map(\.code),
                        ["SAME_SIGN", "ADJACENT", "SEXTILE", "SQUARE", "TRINE", "QUINCUNX", "OPPOSITION", "UNAVAILABLE"])
+        for mode in KikiRelationshipMode.allCases {
+            for category in KikiRelationshipCategory.categories(for: mode) where category.code != "UNAVAILABLE" {
+                XCTAssertFalse(KikiRelationshipVisuals.strokes(for: category.code).isEmpty, category.code)
+            }
+        }
+        XCTAssertTrue(KikiRelationshipVisuals.strokes(for: "UNAVAILABLE").isEmpty)
+        XCTAssertGreaterThanOrEqual(KikiRelationshipVisuals.lineWidth, 2.5)
     }
 
     func testInterruptedReflowStartsAtPresentedPositionInsteadOfOldDestination() throws {
@@ -25,6 +32,7 @@ final class KikiRelationshipStageTests: XCTestCase {
         for id in ["host", "a", "b", "c"] {
             let old = try XCTUnwrap(before[id]), new = try XCTUnwrap(after[id])
             XCTAssertEqual(old.angle, new.angle, accuracy: 0.000_001)
+            XCTAssertEqual(old.radius, new.radius, accuracy: 0.000_001)
             XCTAssertEqual(old.opacity, new.opacity, accuracy: 0.000_001)
         }
         XCTAssertEqual(try XCTUnwrap(after["host"]).angle, -.pi / 2, accuracy: 0.000_001)
@@ -58,10 +66,13 @@ final class KikiRelationshipStageTests: XCTestCase {
         for width: CGFloat in [284, 339, 366, 440] {
             let geometry = KikiRelationshipStageGeometry(width: width)
             for count in 1...8 {
-                let angles = (0..<count).map { -Double.pi / 2 + Double($0) * 2 * .pi / Double(count) }
-                let avatarPoints = angles.map { geometry.point(angle: $0) }
-                for angle in angles {
-                    let center = geometry.cellCenter(angle: angle)
+                var motion = KikiRelationshipMotion()
+                let ids = (0..<count).map { "seat-\($0)" }
+                motion.retarget(orderedIDs: ids, at: .now, animated: false)
+                let values = ids.compactMap { motion.frame(at: .now)[$0] }
+                let avatarPoints = values.map { geometry.point($0) }
+                for value in values {
+                    let center = geometry.cellCenter(angle: value.angle, radius: value.radius)
                     let cell = CGRect(x: center.x - geometry.cellWidth / 2,
                                       y: center.y - geometry.cellHeight / 2,
                                       width: geometry.cellWidth, height: geometry.cellHeight)
@@ -70,7 +81,7 @@ final class KikiRelationshipStageTests: XCTestCase {
                     XCTAssertGreaterThanOrEqual(cell.minY, 0)
                     XCTAssertLessThanOrEqual(cell.maxY, geometry.height)
                     let actualAvatarCenter = CGPoint(x: cell.midX, y: cell.minY + geometry.avatarSize / 2 + 3)
-                    let edgeEndpoint = geometry.point(angle: angle)
+                    let edgeEndpoint = geometry.point(value)
                     XCTAssertEqual(actualAvatarCenter.x, edgeEndpoint.x, accuracy: 0.000_001)
                     XCTAssertEqual(actualAvatarCenter.y, edgeEndpoint.y, accuracy: 0.000_001)
                 }
@@ -101,6 +112,51 @@ final class KikiRelationshipStageTests: XCTestCase {
         XCTAssertTrue(KikiRelationshipSeat.occupants(in: nil).isEmpty)
     }
 
+
+    func testSingleOccupantStartsAtCenterAndGlidesToTheRingWhenSecondJoins() throws {
+        let start = Date(timeIntervalSince1970: 4_000)
+        let geometry = KikiRelationshipStageGeometry(width: 340)
+        var motion = KikiRelationshipMotion()
+        motion.retarget(orderedIDs: ["host"], at: start, animated: false)
+        let single = try XCTUnwrap(motion.frame(at: start)["host"])
+        XCTAssertEqual(single.radius, 0)
+        XCTAssertEqual(geometry.point(single), geometry.center)
+        motion.retarget(orderedIDs: ["host", "guest"], at: start, animated: true)
+        XCTAssertEqual(geometry.point(try XCTUnwrap(motion.frame(at: start)["host"])), geometry.center)
+        let halfway = try XCTUnwrap(motion.frame(at: start.addingTimeInterval(0.25))["host"])
+        XCTAssertEqual(halfway.radius, 0.5, accuracy: 0.000_001)
+        let point = geometry.point(halfway)
+        XCTAssertEqual(hypot(point.x - geometry.center.x, point.y - geometry.center.y), geometry.radius / 2, accuracy: 0.000_001)
+        motion.settle()
+        XCTAssertEqual(try XCTUnwrap(motion.frame(at: start)["host"]).radius, 1)
+        motion.retarget(orderedIDs: ["host"], at: start, animated: true)
+        XCTAssertEqual(try XCTUnwrap(motion.frame(at: start.addingTimeInterval(0.25))["host"]).radius, 0.5, accuracy: 0.000_001)
+        motion.settle()
+        XCTAssertEqual(geometry.point(try XCTUnwrap(motion.frame(at: start)["host"])), geometry.center)
+    }
+
+    func testOppositeAvatarCurveBowsAwayFromCenterAndUsesPresentedEndpoints() throws {
+        let geometry = KikiRelationshipStageGeometry(width: 340)
+        let a = geometry.point(angle: -.pi / 2), b = geometry.point(angle: .pi / 2)
+        let trim = geometry.avatarSize / 2 + 7
+        let curve = try XCTUnwrap(KikiRelationshipCurve.make(from: a, to: b, center: geometry.center,
+            radius: geometry.radius, trim: trim, pairID: "a|b"))
+        XCTAssertGreaterThan(abs(curve.control.x - geometry.center.x), geometry.radius * 0.5)
+        XCTAssertEqual(hypot(curve.start.x - a.x, curve.start.y - a.y), trim, accuracy: 0.000_001)
+        XCTAssertEqual(hypot(curve.end.x - b.x, curve.end.y - b.y), trim, accuracy: 0.000_001)
+        var quadraticSegments = 0
+        curve.path.forEach { if case .quadCurve = $0 { quadraticSegments += 1 } }
+        XCTAssertEqual(quadraticSegments, 1)
+        let movedA = geometry.point(angle: -.pi / 3, radius: 0.6)
+        let moved = try XCTUnwrap(KikiRelationshipCurve.make(from: movedA, to: b, center: geometry.center,
+            radius: geometry.radius, trim: trim, pairID: "a|b"))
+        XCTAssertEqual(hypot(moved.start.x - movedA.x, moved.start.y - movedA.y), trim, accuracy: 0.000_001)
+        XCTAssertNotEqual(moved.start, curve.start)
+        let duplicate = try XCTUnwrap(KikiRelationshipCurve.make(from: movedA, to: b, center: geometry.center,
+            radius: geometry.radius, trim: trim, pairID: "a|b"))
+        XCTAssertEqual(moved.control, duplicate.control)
+    }
+
     @MainActor
     func testProductionCirclePresentationInThreeModesAndEmptySingleEightOccupantStates() async throws {
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first(where: {
@@ -114,6 +170,7 @@ final class KikiRelationshipStageTests: XCTestCase {
             ("phone-eight-mbti-dark", 390, 8, .mbti, .dark),
             ("phone-eight-zodiac-light", 390, 8, .zodiac, .light),
             ("phone-one-bazi-dark", 390, 1, .bazi, .dark),
+            ("phone-two-bazi-light", 390, 2, .bazi, .light),
             ("phone-empty-bazi-light", 390, 0, .bazi, .light),
             ("ipad-eight-bazi-dark", 744, 8, .bazi, .dark)
         ]
@@ -150,7 +207,7 @@ final class KikiRelationshipStageTests: XCTestCase {
             let geometry = KikiRelationshipStageGeometry(width: min(440, viewport - 36))
             let circle = KikiRelationshipCircle(geometry: geometry, seats: occupants, activeIDs: Set(occupants.map(\.id)),
                 frame: motion.frame(at: .now), pairs: pairs, profiles: profiles,
-                participants: [], localUserID: occupants.first?.id, mode: mode, selectedPairID: nil,
+                participants: [], localUserID: occupants.first?.id, mode: mode,
                 edgeOpacity: 1, onOpenPerson: { _ in })
             let content = VStack(spacing: 12) {
                 Text("圆形麦位").font(.headline).padding(.top, 18)
@@ -158,7 +215,8 @@ final class KikiRelationshipStageTests: XCTestCase {
                     ForEach(KikiRelationshipMode.allCases) { Text($0.title).tag($0) }
                 }.pickerStyle(.segmented).frame(maxWidth: 420).padding(.horizontal, 18)
                 circle
-                Text("\(mode.title) · 只展示关系结果").font(.caption).foregroundStyle(KikiPalette.secondary)
+                KikiRelationshipLegend(mode: mode).padding(.horizontal, 18)
+                Text("\(mode.title) · 关系说明").font(.caption).foregroundStyle(KikiPalette.secondary)
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

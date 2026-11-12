@@ -29,6 +29,8 @@ struct KikiConsentGateView: View {
                     }
                     VStack(alignment: .leading, spacing: 18) {
                         Text("我们使用必要的账号资料提供中文语聊、私聊服务。同意后会先检查网络并申请消息通知权限；麦克风和相册仅在使用相关功能时申请。")
+                        Text("已填写的八字资料用于关系计算，MBTI 和生日生成的星座会公开展示。出生资料和四柱仅本人可见，其他人只能看到八字关系结果。")
+                            .accessibilityIdentifier("consentRelationshipDisclosure")
                         Text("我们会联网获取最新协议；未联网时，你可以阅读已保存的完整文本。同意前，账号、语聊和系统通知服务不会启用。")
                     }
                     .font(.subheadline).lineSpacing(6)
@@ -48,7 +50,7 @@ struct KikiConsentGateView: View {
                     .padding(.top, 24)
                     Spacer(minLength: 36)
                     VStack(alignment: .leading, spacing: 18) {
-                        Text("点击“同意并继续”，表示你已阅读并同意《用户协议》和《隐私政策》，并确认已满 18 周岁。")
+                        Text("点击“同意并继续”，表示你已阅读并同意《用户协议》《隐私政策》及上述关系资料使用方式，并确认已满 18 周岁。")
                             .font(.caption).lineSpacing(5)
                             .foregroundStyle(KikiPalette.secondary)
                             .accessibilityIdentifier("consentAdultDisclosure")

@@ -1,14 +1,15 @@
 import SwiftUI
 
-/// Birth inputs and chart previews exist only in this account-owned editor.
-/// Calendrical conversion, solar-time correction and pillars run on the server.
+/// Two focused editors, available only from Me. Birth inputs and chart previews
+/// stay in this owner-only page; all calendrical and chart work is server-side.
 struct KikiRelationshipProfileView: View {
     @ObservedObject var store: KikiAppStore
+    let editor: KikiRelationshipEditor
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var draft = KikiRelationshipProfileDraft()
     @State private var preview: KikiRelationshipProfile?
     @State private var placeName: String?
-    @State private var placeZone: String?
     @State private var loaded = false
     @State private var loading = false
     @State private var saving = false
@@ -18,12 +19,16 @@ struct KikiRelationshipProfileView: View {
     @State private var previewError: String?
     @State private var picker: PickerSheet?
 
+    init(store: KikiAppStore, editor: KikiRelationshipEditor = .bazi) {
+        self.store = store
+        self.editor = editor
+    }
+
     private enum PickerSheet: String, Identifiable {
         case date, time, place
         var id: String { rawValue }
     }
     private static let mbtiTypes = ["INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP", "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP"]
-    private static let zodiacSigns = ["白羊座", "金牛座", "双子座", "巨蟹座", "狮子座", "处女座", "天秤座", "天蝎座", "射手座", "摩羯座", "水瓶座", "双鱼座"]
 
     var body: some View {
         Form {
@@ -31,10 +36,12 @@ struct KikiRelationshipProfileView: View {
                 Section { HStack { Spacer(); ProgressView("正在读取资料…"); Spacer() }.padding(.vertical, 24) }
             }
             if loaded {
-                publicSection
-                privateSection
-                chartSection
-                participationSection
+                if editor == .mbti {
+                    mbtiSection
+                } else {
+                    birthSection
+                    chartSection
+                }
             }
             if let error {
                 Section {
@@ -47,10 +54,10 @@ struct KikiRelationshipProfileView: View {
         .background(KikiPalette.background)
         .foregroundStyle(KikiPalette.text)
         .tint(KikiPalette.purple)
-        .navigationTitle("关系资料")
+        .navigationTitle(editor.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() }.disabled(saving) }
+            ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(saving) }
             ToolbarItem(placement: .confirmationAction) {
                 Button { Task { await save() } } label: {
                     if saving { ProgressView() } else { Text("保存").fontWeight(.semibold) }
@@ -65,26 +72,23 @@ struct KikiRelationshipProfileView: View {
         .task(id: draft) { await updatePreview() }
         .onChange(of: store.socialPrivacyRevision) { _, _ in clearAndDismiss() }
         .onChange(of: store.isAuthenticated) { _, authenticated in if !authenticated { clearAndDismiss() } }
-        .onDisappear {
-            if picker == nil { clearPrivateState() }
-        }
+        .onDisappear { if picker == nil { clearPrivateState() } }
         .sheet(item: $picker) { sheet in
             NavigationStack {
                 switch sheet {
                 case .date:
                     KikiRelationshipDatePicker(calendar: draft.birthCalendar, value: draft.birthDate,
                                                leapMonth: draft.birthLeapMonth) { date, leap in
-                        draft.birthDate = date; draft.birthLeapMonth = leap
-                        draft.birthFold = nil; draft.zodiacSign = nil; picker = nil
+                        draft.birthDate = date; draft.birthLeapMonth = leap; picker = nil
                     }
                 case .time:
                     KikiRelationshipTimePicker(value: draft.birthTime) { value in
-                        draft.birthTime = value; draft.birthFold = nil; picker = nil
+                        draft.birthTime = value; picker = nil
                     }
                 case .place:
                     KikiRelationshipPlacePicker(store: store) { place in
-                        draft.birthPlaceCode = place.id; draft.birthFold = nil
-                        placeName = place.fullName; placeZone = place.timeZone; picker = nil
+                        draft.birthPlaceCode = place.id
+                        placeName = place.fullName; picker = nil
                     }
                 }
             }
@@ -92,109 +96,103 @@ struct KikiRelationshipProfileView: View {
         }
     }
 
-    private var publicSection: some View {
+    private var mbtiSection: some View {
         Section {
-            Picker("MBTI", selection: $draft.mbtiType) {
-                Text("未填写").tag(String?.none)
-                ForEach(Self.mbtiTypes, id: \.self) { Text($0).tag(Optional($0)) }
-            }.accessibilityIdentifier("relationshipProfile.mbti")
-            if draft.birthDate == nil {
-                Picker("星座", selection: $draft.zodiacSign) {
-                    Text("未填写").tag(String?.none)
-                    ForEach(Self.zodiacSigns, id: \.self) { Text($0).tag(Optional($0)) }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: dynamicTypeSize.isAccessibilitySize ? 2 : 4), spacing: 10) {
+                ForEach(Self.mbtiTypes, id: \.self) { type in
+                    Button { draft.mbtiType = type } label: {
+                        Text(type)
+                            .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+                            .foregroundStyle(draft.mbtiType == type ? KikiPalette.purple : KikiPalette.text)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .background(draft.mbtiType == type ? KikiPalette.purple.opacity(0.14) : KikiPalette.elevated,
+                                        in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12)
+                                .stroke(draft.mbtiType == type ? KikiPalette.purple : .clear, lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("relationshipProfile.mbti." + type)
+                    .accessibilityAddTraits(draft.mbtiType == type ? .isSelected : [])
                 }
-            } else {
-                LabeledContent("星座", value: preview?.zodiacSign ?? "根据生日生成")
             }
-            Toggle("公开并参与 MBTI 关系", isOn: $draft.mbtiEnabled)
-            Toggle("公开并参与星座关系", isOn: $draft.zodiacEnabled)
+            .padding(.vertical, 8)
+            Button("暂不清楚") { draft.mbtiType = nil }
+                .foregroundStyle(KikiPalette.secondary)
+                .accessibilityIdentifier("relationshipProfile.mbti.clear")
         } header: {
-            Label("公开标签", systemImage: "person.crop.circle")
+            Text("选择你的类型")
         } footer: {
-            Text("开启对应选项后，已填写的 MBTI 和星座会显示在个人主页与房间。填写生日后，星座按原始公历生日自动生成；未填生日时可以单独选择。关系标签用于交流参考。")
+            Text("MBTI 会展示在个人主页和房间，用于关系计算。")
         }
     }
 
-    private var privateSection: some View {
+    private var birthSection: some View {
         Section {
             editableRow("出生地", value: placeName, placeholder: "选择省、市、区县", identifier: "relationshipProfile.birthPlace") {
                 picker = .place
             } clear: {
-                draft.birthPlaceCode = nil; draft.birthFold = nil; placeName = nil; placeZone = nil
+                draft.birthPlaceCode = nil; placeName = nil
             }
-            Picker("日期历法", selection: Binding(get: { draft.birthCalendar }, set: { value in
+            Picker("历法", selection: Binding(get: { draft.birthCalendar }, set: { value in
                 Task { await changeCalendar(to: value) }
             })) {
                 ForEach(KikiBirthCalendar.allCases) { Text($0.title).tag($0) }
             }.disabled(converting)
-            editableRow("出生日期", value: dateLabel, placeholder: "选择出生日期", identifier: "relationshipProfile.birthDate") {
+            editableRow("出生日期", value: dateLabel, placeholder: "选择日期", identifier: "relationshipProfile.birthDate") {
                 picker = .date
             } clear: {
-                draft.birthDate = nil; draft.birthLeapMonth = false; draft.birthFold = nil
+                draft.birthDate = nil; draft.birthLeapMonth = false
             }
-            editableRow("出生时刻", value: draft.birthTime, placeholder: "不清楚／尚未填写", identifier: "relationshipProfile.birthTime") {
+            editableRow("出生时刻", value: draft.birthTime, placeholder: "不清楚可留空", identifier: "relationshipProfile.birthTime") {
                 picker = .time
             } clear: {
-                draft.birthTime = nil; draft.birthFold = nil
+                draft.birthTime = nil
             }
-            if let zone = preview?.birthTimeZone ?? placeZone {
-                LabeledContent("出生地时区", value: zone).font(.footnote).foregroundStyle(KikiPalette.secondary)
-            }
-            DisclosureGroup("历史时制选项") {
-                Picker("重复钟表时刻", selection: $draft.birthFold) {
-                    Text("自动判断").tag(Int?.none)
-                    Text("第一次出现").tag(Optional(0))
-                    Text("第二次出现").tag(Optional(1))
-                }
-                Text("仅在夏令时结束导致同一钟点出现两次时使用。服务器会提示需要确认的情况。")
-                    .font(.caption).foregroundStyle(KikiPalette.secondary)
-            }
+            LabeledContent("星座", value: draft.birthDate == nil ? "完善生日后生成" : (preview?.zodiacSign ?? "正在计算…"))
+                .accessibilityIdentifier("relationshipProfile.zodiac")
         } header: {
-            Label("私密出生资料 · 仅本人可见", systemImage: "lock")
+            Text("出生信息 · 仅本人可见")
         } footer: {
-            Text("请填写出生地当地的钟表时间，系统会在服务端换算真太阳时。出生地址、日期、时间、坐标与四柱不会发送给其他用户。时辰不清楚可以留空，资料允许部分保存。")
+            Text("填写出生地的钟表时间。星座由生日自动生成并公开展示。")
         }
     }
 
     private var chartSection: some View {
         Section {
             if calculating || converting {
-                HStack(spacing: 10) { ProgressView(); Text(converting ? "正在换算日期…" : "正在生成预览…") }
+                HStack(spacing: 10) { ProgressView(); Text(converting ? "正在换算日期…" : "正在生成八字…") }
                     .foregroundStyle(KikiPalette.secondary)
             } else if let chart = preview?.chart {
                 if let pillars = chart.pillars, !pillars.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(pillars.joined(separator: "　")).font(.body.monospaced().weight(.medium))
-                        if let time = chart.trueSolarTime { LabeledContent("真太阳时", value: time).font(.footnote) }
-                        if let civil = chart.civilTime { LabeledContent("原始钟表时间", value: civil).font(.footnote) }
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 2 : 4), spacing: 16) {
+                        ForEach(Array(pillars.enumerated()), id: \.offset) { index, pillar in
+                            VStack(spacing: 8) {
+                                Text(["年柱", "月柱", "日柱", "时柱"][min(index, 3)])
+                                    .font(.caption).foregroundStyle(KikiPalette.secondary)
+                                Text(pillar).font(.title3.monospaced().weight(.medium))
+                            }.frame(maxWidth: .infinity)
+                        }
                     }
+                    .padding(.vertical, 8)
                     .accessibilityIdentifier("relationshipProfile.privateChart")
+                    if let time = chart.trueSolarTime {
+                        LabeledContent("真太阳时", value: time).font(.footnote)
+                    }
                 } else {
-                    Text(chart.message ?? "完善出生日期、时刻和出生地后自动生成。")
+                    Text(chart.message ?? "完善出生信息后自动生成。")
                         .font(.subheadline).foregroundStyle(KikiPalette.secondary)
                 }
             } else {
-                Text(previewError ?? "完善出生资料后，由服务端生成真太阳时八字。")
+                Text(previewError ?? "完善出生信息后自动生成。")
                     .font(.subheadline).foregroundStyle(KikiPalette.secondary)
             }
             if let previewError, preview?.chart != nil {
                 Text(previewError).font(.caption).foregroundStyle(KikiPalette.warning)
             }
         } header: {
-            Text("八字预览 · 仅本人可见")
+            Text("八字 · 仅本人可见")
         } footer: {
-            Text("真太阳时定日、时柱；年、月柱按实际交节时刻判定。地区坐标为代表点，接近时辰或换日边界时请核对地点与原始时间。")
-        }
-    }
-
-    private var participationSection: some View {
-        Section {
-            Toggle("参与八字关系计算", isOn: $draft.baziEnabled)
-                .accessibilityIdentifier("relationshipProfile.baziEnabled")
-        } header: {
-            Text("房间关系")
-        } footer: {
-            Text("开启后，上麦时将计算你与其他参与者的八字关系。房间成员只能看到关系结果，不会看到你的出生资料和四柱。资料不完整时暂不生成结果；关闭后移除涉及你的八字关系。")
+            Text("出生资料和八字仅自己可见，房间只展示计算结果。")
         }
     }
 
@@ -230,13 +228,13 @@ struct KikiRelationshipProfileView: View {
             let profile = try await store.loadRelationshipProfile()
             guard !Task.isCancelled else { return }
             draft = profile.draft; preview = profile
-            placeName = profile.birthPlaceName; placeZone = profile.birthTimeZone; loaded = true
+            placeName = profile.birthPlaceName; loaded = true
         } catch is CancellationError { }
         catch { self.error = error.localizedDescription }
     }
 
     private func updatePreview() async {
-        guard loaded, !saving, !converting else { return }
+        guard editor == .bazi, loaded, !saving, !converting else { return }
         let input = draft
         calculating = true; preview = nil; previewError = nil
         do {
@@ -274,8 +272,8 @@ struct KikiRelationshipProfileView: View {
         saving = true; error = nil
         defer { saving = false }
         do {
-            _ = try await store.saveRelationshipProfile(draft)
-            store.notify("关系资料已保存")
+            _ = try await store.saveRelationshipProfile(draft, editor: editor)
+            store.notify(editor.title + "已保存")
             dismiss()
         } catch is CancellationError { }
         catch { self.error = error.localizedDescription }
@@ -287,7 +285,7 @@ struct KikiRelationshipProfileView: View {
     }
 
     private func clearPrivateState() {
-        loaded = false; draft = .init(); preview = nil; placeName = nil; placeZone = nil
+        loaded = false; draft = .init(); preview = nil; placeName = nil
         calculating = false; converting = false; previewError = nil; error = nil
     }
 }
@@ -306,7 +304,7 @@ private struct KikiRelationshipPlacePicker: View {
             if let parent, parent.hasCoordinates {
                 Section {
                     Button { onSelect(parent) } label: { Label("使用\(parent.fullName)", systemImage: "checkmark.circle") }
-                } footer: { Text("地区坐标为代表点；选择区县可以进一步缩小地点范围。") }
+                } footer: { Text("选择区县可提高计算精度。") }
             }
             Section {
                 ForEach(places) { place in
@@ -320,14 +318,18 @@ private struct KikiRelationshipPlacePicker: View {
                 }
                 if loading { ProgressView("正在读取地区…") }
                 if let error { Text(error).foregroundStyle(KikiPalette.warning); Button("重试") { Task { await load() } } }
+            } header: {
+                if parent == nil { Text("中国") }
             }
             if parent == nil {
-                Section("地区数据与坐标来源") {
-                    Text("行政区划：modood（WTFPL）；代表坐标及港澳台目录：GeoNames（CC BY 4.0）；补充坐标：Wikidata（CC0）。目录为固定版本，地区坐标并非详细出生地址。")
-                        .font(.caption).foregroundStyle(KikiPalette.secondary)
-                    Link("GeoNames 地理数据库", destination: URL(string: "https://www.geonames.org/")!)
-                    Link("行政区划数据", destination: URL(string: "https://github.com/modood/Administrative-divisions-of-China")!)
-                    Link("Wikidata 数据许可", destination: URL(string: "https://www.wikidata.org/wiki/Wikidata:Licensing")!)
+                Section {
+                    DisclosureGroup("地区数据来源") {
+                        Text("行政区划：modood（WTFPL）；代表坐标及港澳台目录：GeoNames（CC BY 4.0）；补充坐标：Wikidata（CC0）。坐标为地区代表点。")
+                            .font(.caption).foregroundStyle(KikiPalette.secondary)
+                        Link("GeoNames 地理数据库", destination: URL(string: "https://www.geonames.org/")!)
+                        Link("行政区划数据", destination: URL(string: "https://github.com/modood/Administrative-divisions-of-China")!)
+                        Link("Wikidata 数据许可", destination: URL(string: "https://www.wikidata.org/wiki/Wikidata:Licensing")!)
+                    }
                 }
             }
         }

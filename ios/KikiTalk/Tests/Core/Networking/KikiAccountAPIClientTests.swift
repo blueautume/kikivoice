@@ -460,18 +460,17 @@ private final class KikiRequestMethods {
 private let testLegalAcceptance = KikiLegalAcceptance(versions: KikiLegalVersions(privacyVersion: KikiLegalBundle.bundled!.privacyVersion, termsVersion: KikiLegalBundle.bundled!.termsVersion, documentHash: String(repeating: "a", count: 64)), accepted: true, adultConfirmed: true)
 
 extension KikiAccountAPIClientTests {
-    func testServerCalendarConversionPreservesClockBirthplaceAndConfirmedDSTOccurrence() throws {
+    func testServerCalendarConversionPreservesClockBirthplaceAndMBTI() throws {
         let preview = try JSONDecoder().decode(KikiRelationshipProfile.self, from: jsonData(relationshipPrivateFixture))
         var input = KikiRelationshipProfileDraft()
         input.birthDate = "2000-09-22"; input.birthTime = "01:30"
-        input.birthPlaceCode = "110101"; input.birthFold = 1; input.baziEnabled = true
+        input.birthPlaceCode = "110101"; input.mbtiType = "INFJ"
         let lunar = try XCTUnwrap(input.changingCalendar(to: .lunar, using: preview))
         XCTAssertEqual(lunar.birthCalendar, .lunar)
         XCTAssertEqual(lunar.birthDate, "2000-08-25")
-        XCTAssertEqual(lunar.birthFold, 1, "Switching date notation must not discard the confirmed occurrence of a repeated civil clock")
+        XCTAssertEqual(lunar.mbtiType, "INFJ", "Switching date notation preserves the other editor's current data")
         XCTAssertEqual(lunar.birthTime, input.birthTime)
         XCTAssertEqual(lunar.birthPlaceCode, input.birthPlaceCode)
-        XCTAssertEqual(lunar.baziEnabled, input.baziEnabled)
         let restored = try XCTUnwrap(lunar.changingCalendar(to: .gregorian, using: preview))
         XCTAssertEqual(restored, input, "Both date representations identify the same birth input")
     }
@@ -483,16 +482,45 @@ extension KikiAccountAPIClientTests {
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer account-only")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Cache-Control"), "no-store")
             let body = try requestBody(request)
-            for field in ["birthDate", "birthTime", "birthPlaceCode", "birthFold", "mbtiType", "zodiacSign"] {
+            for field in ["birthDate", "birthTime", "birthPlaceCode", "mbtiType"] {
                 XCTAssertTrue(body[field] is NSNull, "Clearing \(field) must not retain the server's old value")
             }
-            XCTAssertEqual(body["baziEnabled"] as? Bool, false)
+            for field in ["zodiacSign", "birthFold", "baziEnabled", "mbtiEnabled", "zodiacEnabled"] {
+                XCTAssertNil(body[field], "The server owns derived information and agreement-based sharing")
+            }
             XCTAssertNil(body["pillars"])
             XCTAssertNil(body["chart"])
             XCTAssertNil(body["birthLongitude"], "Clients choose a district; the server resolves trusted coordinates")
             return (200, try jsonData(relationshipPrivateFixture))
         }
         _ = try await server.client.saveRelationshipProfile(.init(), token: "account-only")
+    }
+
+    func testMBTIEditorPatchCannotOverwriteBirthInformationOrDerivedSettings() async throws {
+        let server = KikiAPIMockServer { request in
+            XCTAssertEqual(request.httpMethod, "PATCH")
+            let body = try requestBody(request)
+            XCTAssertEqual(Set(body.keys), Set(["mbtiType"]))
+            XCTAssertEqual(body["mbtiType"] as? String, "ENFP")
+            return (200, try jsonData(relationshipPrivateFixture))
+        }
+        var input = try JSONDecoder().decode(KikiRelationshipProfile.self, from: jsonData(relationshipPrivateFixture)).draft
+        input.mbtiType = "ENFP"; input.birthFold = 1; input.baziEnabled = false
+        _ = try await server.client.saveRelationshipProfile(input, editor: .mbti, token: "account-only")
+    }
+
+    func testBaziEditorPatchCannotOverwriteMBTIOrDerivedSettings() async throws {
+        let server = KikiAPIMockServer { request in
+            XCTAssertEqual(request.httpMethod, "PATCH")
+            let body = try requestBody(request)
+            XCTAssertEqual(Set(body.keys), Set(["birthCalendar", "birthDate", "birthLeapMonth", "birthTime", "birthPlaceCode"]))
+            XCTAssertEqual(body["birthDate"] as? String, "2000-09-22")
+            XCTAssertTrue(body["birthTime"] is NSNull, "An unknown clock time can still be cleared explicitly")
+            return (200, try jsonData(relationshipPrivateFixture))
+        }
+        var input = try JSONDecoder().decode(KikiRelationshipProfile.self, from: jsonData(relationshipPrivateFixture)).draft
+        input.mbtiType = "ENFP"; input.zodiacSign = "白羊座"; input.zodiacEnabled = false
+        _ = try await server.client.saveRelationshipProfile(input, editor: .bazi, token: "account-only")
     }
 
     func testPrivateRelationshipPreviewUsesServerAndKeepsUnknownTimeUnknown() async throws {
@@ -509,7 +537,7 @@ extension KikiAccountAPIClientTests {
         draft.birthCalendar = .lunar; draft.birthDate = "2000-08-25"
         let preview = try await server.client.previewRelationshipProfile(draft, token: "account-only")
         XCTAssertNil(preview.chart?.pillars)
-        XCTAssertFalse(preview.baziEnabled)
+        XCTAssertTrue(preview.baziEnabled)
         XCTAssertEqual(preview.gregorianBirthDate, "2000-09-22")
     }
 
@@ -551,7 +579,7 @@ extension KikiAccountAPIClientTests {
 private let relationshipPrivateFixture: [String: Any] = [
     "mbtiType": NSNull(), "zodiacSign": "处女座", "birthCalendar": "gregorian", "birthDate": "2000-09-22",
     "birthLeapMonth": false, "birthTime": NSNull(), "birthPlaceCode": NSNull(), "birthFold": NSNull(),
-    "baziEnabled": false, "mbtiEnabled": true, "zodiacEnabled": true, "revision": 1,
+    "baziEnabled": true, "mbtiEnabled": true, "zodiacEnabled": true, "revision": 1,
     "birthPlaceName": NSNull(), "birthTimeZone": NSNull(),
     "chart": ["status": "incomplete", "pillars": NSNull(), "trueSolarTime": NSNull(), "civilTime": NSNull(), "message": "八字资料待完善"],
     "gregorianBirthDate": "2000-09-22", "lunarBirthDate": "2000-08-25", "lunarBirthLeapMonth": false

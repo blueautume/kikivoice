@@ -18,6 +18,7 @@ struct KikiProfileView: View {
                     if let person = store.socialProfile, person.mbtiType != nil || person.zodiacSign != nil {
                         KikiPublicRelationshipTags(mbtiType: person.mbtiType, zodiacSign: person.zodiacSign)
                     }
+                    relationshipEditors
                     library
                     footer
                 }
@@ -65,7 +66,8 @@ struct KikiProfileView: View {
                             .overlay(Circle().stroke(KikiPalette.background, lineWidth: 3))
                     }
             }
-            .accessibilityLabel("编辑头像与个人资料")
+            .accessibilityLabel("编辑头像与昵称")
+            .accessibilityIdentifier("profile.editAvatarAndName")
         } details: {
             KikiProfileIdentityDetails(name: store.profileName, displayID: store.displayID,
                                        followingCount: store.socialProfile?.followingCount,
@@ -73,9 +75,27 @@ struct KikiProfileView: View {
         }
     }
 
+    private var relationshipEditors: some View {
+        VStack(spacing: 0) {
+            profileRow(symbol: "sparkles", title: "八字", color: KikiPalette.lavender) {
+                activeSheet = .bazi
+            }
+            .accessibilityLabel("八字")
+            .accessibilityIdentifier("profile.bazi")
+            rowDivider
+            profileRow(symbol: "person.2.fill", title: "MBTI", color: KikiPalette.mint) {
+                activeSheet = .mbti
+            }
+            .accessibilityLabel("MBTI")
+            .accessibilityIdentifier("profile.mbti")
+        }
+        .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 23))
+    }
+
     private var library: some View {
         VStack(alignment: .leading, spacing: 13) {
             sectionTitle("我的社区")
+                .accessibilityIdentifier("profile.community")
             VStack(spacing: 0) {
                 profileRow(symbol: "bookmark.fill", title: "我的收藏", count: store.favoriteRooms.count, color: KikiPalette.lavender) {
                     activeSheet = .favorites
@@ -143,6 +163,10 @@ struct KikiProfileView: View {
         switch sheet {
         case .edit:
             KikiProfileEditor()
+        case .bazi:
+            NavigationStack { KikiRelationshipProfileView(store: store, editor: .bazi) }
+        case .mbti:
+            NavigationStack { KikiRelationshipProfileView(store: store, editor: .mbti) }
         case .favorites:
             KikiProfileRoomCollection(title: "我的收藏", subtitle: "喜欢的声音，随时再见。", collection: .favorites, emptySymbol: "bookmark", emptyTitle: "把喜欢的房间留在这里", emptyMessage: "长按大厅里的房间卡片即可收藏，下次就能快速找到。", onSelect: chooseRoom)
         case .history:
@@ -307,7 +331,7 @@ struct KikiProfileIdentityRows: Layout {
 }
 
 private enum KikiProfileSheet: String, Identifiable {
-    case edit, favorites, history, settings
+    case edit, bazi, mbti, favorites, history, settings
     var id: String { rawValue }
 }
 
@@ -316,7 +340,6 @@ private struct KikiProfileEditor: View {
     @EnvironmentObject private var store: KikiAppStore
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
-    @State private var bio = ""
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var pendingJPEG: Data?
     @State private var photoPreview: UIImage?
@@ -325,7 +348,7 @@ private struct KikiProfileEditor: View {
     @State private var errorMessage: String?
     @FocusState private var focusedField: Field?
 
-    private enum Field { case name, bio }
+    private enum Field { case name }
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -368,50 +391,17 @@ private struct KikiProfileEditor: View {
                             .padding(17)
                             .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 16))
                             .focused($focusedField, equals: .name)
-                            .submitLabel(.next)
-                            .onSubmit { focusedField = .bio }
+                            .submitLabel(.done)
+                            .onSubmit { focusedField = nil }
                             .onChange(of: name) { value in
                                 if value.count > 16 { name = String(value.prefix(16)) }
                             }
                     }
 
-                    VStack(alignment: .leading, spacing: 10) {
-                        fieldHeading("关于我", count: bio.count, limit: 80)
-                        TextField("说说你的兴趣，或想聊的话题…", text: $bio, axis: .vertical)
-                            .font(.system(size: 14))
-                            .lineSpacing(5)
-                            .lineLimit(3...5)
-                            .foregroundStyle(KikiPalette.text)
-                            .padding(17)
-                            .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 16))
-                            .focused($focusedField, equals: .bio)
-                            .onChange(of: bio) { value in
-                                if value.count > 80 { bio = String(value.prefix(80)) }
-                            }
-                    }
-
-                    NavigationLink {
-                        KikiRelationshipProfileView(store: store)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "point.3.connected.trianglepath.dotted")
-                                .foregroundStyle(KikiPalette.lavender)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("关系资料").font(.body.weight(.medium)).foregroundStyle(KikiPalette.text)
-                                Text("MBTI、星座与私密出生资料").font(.caption).foregroundStyle(KikiPalette.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(KikiPalette.muted)
-                        }
-                        .padding(17).background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 16))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("profile.relationshipDetails")
-
                     Label("资料保存后会同步到你的账号。", systemImage: "person.crop.circle.badge.checkmark")
                         .font(.system(size: 11))
                         .foregroundStyle(KikiPalette.muted)
-                    Text("保存后的昵称、头像和简介会在大厅、房间、麦位、成员列表及聊天名片等场景向其他用户展示。头像只上传你选择并确认保存的照片。")
+                    Text("保存后的昵称和头像会向其他用户展示。头像只上传你选择并确认保存的照片。")
                         .font(.system(size: 11)).lineSpacing(5).foregroundStyle(KikiPalette.secondary)
                     if let errorMessage {
                         Label(errorMessage, systemImage: "exclamationmark.circle")
@@ -426,7 +416,7 @@ private struct KikiProfileEditor: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .background(KikiPalette.background.ignoresSafeArea())
-            .navigationTitle("编辑资料")
+            .navigationTitle("头像与昵称")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -447,7 +437,6 @@ private struct KikiProfileEditor: View {
             .task(id: selectedPhoto) { await loadSelectedPhoto() }
             .onAppear {
                 name = store.profileName
-                bio = store.bio
             }
         }
         .tint(KikiPalette.lavender)
@@ -462,7 +451,7 @@ private struct KikiProfileEditor: View {
         Task {
             defer { isSaving = false }
             do {
-                try await store.updateProfile(name: trimmedName, bio: bio.trimmingCharacters(in: .whitespacesAndNewlines), jpegData: pendingJPEG)
+                try await store.updateProfile(name: trimmedName, bio: store.bio, jpegData: pendingJPEG)
                 dismiss()
             } catch {
                 errorMessage = error.localizedDescription

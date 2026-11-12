@@ -1791,7 +1791,7 @@ extension KikiConsentTests {
         let privateProfile: [String: Any] = [
             "mbtiType": "INFJ", "zodiacSign": "处女座", "birthCalendar": "gregorian", "birthDate": "2000-09-22",
             "birthLeapMonth": false, "birthTime": "10:00", "birthPlaceCode": "110101", "birthFold": NSNull(),
-            "baziEnabled": false, "mbtiEnabled": true, "zodiacEnabled": true, "revision": 1,
+            "baziEnabled": true, "mbtiEnabled": true, "zodiacEnabled": true, "revision": 1,
             "birthPlaceName": "北京市东城区", "birthTimeZone": "Asia/Shanghai",
             "gregorianBirthDate": "2000-09-22", "lunarBirthDate": "2000-08-25", "lunarBirthLeapMonth": false,
             "chart": ["status": "ready", "pillars": ["庚辰", "乙酉", "癸未", "丁巳"],
@@ -1808,7 +1808,7 @@ extension KikiConsentTests {
             return try p1VisualResponse(request, documents: docs)
         }
         let store = try await socialFixtureStore(docs: docs, api: mock.client, voice: mock.voiceClient)
-        let folder = URL(fileURLWithPath: "/tmp/kiki-relationship-profile-screenshots", isDirectory: true)
+        let folder = URL(fileURLWithPath: "/tmp/kiki-relationship-profile-screenshots-v2", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try await withSocialWindow { window in
             let originalFrame = window.frame
@@ -1817,65 +1817,137 @@ extension KikiConsentTests {
                 ("small-light", .light, .large), ("small-dark", .dark, .large),
                 ("small-large-text", .light, .accessibility1)
             ]
-            for (name, scheme, size) in cases {
-                let previousReads = requests.values.count
-                let host = UIHostingController(rootView: NavigationStack {
-                    KikiRelationshipProfileView(store: store)
-                }.preferredColorScheme(scheme).dynamicTypeSize(size))
-                window.frame = CGRect(origin: originalFrame.origin, size: CGSize(width: 320, height: 568))
-                window.rootViewController = host; host.view.frame = window.bounds; window.makeKeyAndVisible()
-                try await self.waitUntil {
-                    requests.values.count > previousReads
-                        && requests.values.last == "POST /v1/me/relationship-profile/preview"
-                }
-                try await Task.sleep(nanoseconds: 250_000_000)
-                window.layoutIfNeeded()
-                let scroll = try XCTUnwrap(self.socialScrollViews(window).first {
-                    !($0 is UITextView) && $0.bounds.width > 250 && $0.bounds.height > 250
-                })
-                var observedText = Set<String>()
-                var y = -scroll.adjustedContentInset.top
-                var positions: [[String: Any]] = []
-                // Form estimates cell heights lazily. Recompute after each
-                // overlapping step instead of assuming one initial end offset.
-                for index in 0..<24 {
-                    scroll.setContentOffset(CGPoint(x: 0, y: y), animated: false)
-                    try await Task.sleep(nanoseconds: 120_000_000)
+            for editor in KikiRelationshipEditor.allCases {
+                for (appearance, scheme, size) in cases {
+                    let name = editor.rawValue + "-" + appearance
+                    let previousReads = requests.values.count
+                    let host = UIHostingController(rootView: NavigationStack {
+                        KikiRelationshipProfileView(store: store, editor: editor)
+                    }.preferredColorScheme(scheme).dynamicTypeSize(size))
+                    window.frame = CGRect(origin: originalFrame.origin, size: CGSize(width: 320, height: 568))
+                    window.rootViewController = host; host.view.frame = window.bounds; window.makeKeyAndVisible()
+                    try await self.waitUntil {
+                        let newRequests = Array(requests.values.dropFirst(previousReads))
+                        return newRequests.contains("GET /v1/me/relationship-profile")
+                            && (editor == .mbti || newRequests.contains("POST /v1/me/relationship-profile/preview"))
+                    }
+                    try await Task.sleep(nanoseconds: 250_000_000)
                     window.layoutIfNeeded()
-                    for node in self.relationshipAccessibilityNodes(in: window) {
-                        if let label = node.accessibilityLabel, !label.isEmpty { observedText.insert(label) }
-                        if let label = (node as? UILabel)?.text, !label.isEmpty { observedText.insert(label) }
-                        if let control = node as? UISwitch,
-                           control.accessibilityIdentifier == "relationshipProfile.baziEnabled" {
-                            XCTAssertFalse(control.isOn, "Viewing a complete chart must not opt into public relationship results")
+                    let scroll = try XCTUnwrap(self.socialScrollViews(window).first {
+                        !($0 is UITextView) && $0.bounds.width > 250 && $0.bounds.height > 250
+                    })
+                    var observedText = Set<String>()
+                    var y = -scroll.adjustedContentInset.top
+                    var positions: [[String: Any]] = []
+                    // Form estimates cell heights lazily. Each overlapping step
+                    // checks the real production pixels at the updated offset.
+                    for index in 0..<16 {
+                        scroll.setContentOffset(CGPoint(x: 0, y: y), animated: false)
+                        try await Task.sleep(nanoseconds: 120_000_000)
+                        window.layoutIfNeeded()
+                        for node in self.relationshipAccessibilityNodes(in: window) {
+                            if let label = node.accessibilityLabel, !label.isEmpty { observedText.insert(label) }
+                            if let label = (node as? UILabel)?.text, !label.isEmpty { observedText.insert(label) }
+                            XCTAssertFalse(node is UISwitch, "Sharing is accepted in the agreement, without a second profile switch")
                         }
+                        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                        }
+                        observedText.formUnion(try self.relationshipProfileRecognizedText(in: image))
+                        let filename = name + "-" + String(index)
+                        let attachment = XCTAttachment(image: image)
+                        attachment.name = "relationship-profile-" + filename; attachment.lifetime = .keepAlways
+                        self.add(attachment)
+                        try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(filename + ".png"))
+                        positions.append(["screenshot": filename, "offset": scroll.contentOffset.y,
+                                          "contentHeight": scroll.contentSize.height, "viewportHeight": scroll.bounds.height])
+                        let maximum = max(-scroll.adjustedContentInset.top,
+                                          scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+                        if scroll.contentOffset.y >= maximum - 1 { break }
+                        y = min(maximum, scroll.contentOffset.y + max(100, scroll.bounds.height * 0.65))
                     }
-                    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                        XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+                    let text = observedText.joined(separator: "").filter { !$0.isWhitespace }
+                    if editor == .bazi {
+                        XCTAssertTrue(text.contains("仅本人可见"), "The birth editor identifies its private data: \(name)")
+                        XCTAssertTrue(text.contains("出生"))
+                        XCTAssertTrue(text.contains("真太阳时"), "The ready chart uses the actual server preview")
+                        XCTAssertTrue(text.contains("星座"), "The derived zodiac remains visible as a read-only value")
+                        XCTAssertFalse(text.contains("选择你的类型"), "MBTI editing has its own destination")
+                    } else {
+                        XCTAssertTrue(text.contains("INFJ"))
+                        XCTAssertTrue(text.contains("INTJ"))
+                        XCTAssertTrue(text.contains("ESFP"), "All sixteen choices remain reachable on a small screen")
+                        XCTAssertFalse(text.contains("出生"), "MBTI does not expose the owner's private birth editor")
+                        XCTAssertFalse(Array(requests.values.dropFirst(previousReads)).contains("POST /v1/me/relationship-profile/preview"),
+                                       "The MBTI page does not request an unnecessary birth preview")
                     }
-                    // Some simulator runtimes omit SwiftUI Form's virtual AX
-                    // text. Verify the rendered pixels as well as exposed AX.
-                    let recognized = try self.relationshipProfileRecognizedText(in: image)
-                    observedText.insert(recognized.joined(separator: "").filter { !$0.isWhitespace })
-                    let filename = name + "-" + String(index)
-                    let attachment = XCTAttachment(image: image)
-                    attachment.name = "relationship-profile-" + filename; attachment.lifetime = .keepAlways
-                    self.add(attachment)
-                    try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(filename + ".png"))
-                    positions.append(["screenshot": filename, "offset": scroll.contentOffset.y,
-                                      "contentHeight": scroll.contentSize.height, "viewportHeight": scroll.bounds.height])
-                    if recognized.joined().filter({ !$0.isWhitespace }).contains("参与八字关系计算") { break }
-                    let maximum = max(-scroll.adjustedContentInset.top,
-                                      scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
-                    y = min(maximum, scroll.contentOffset.y + max(100, scroll.bounds.height * 0.65))
+                    for removed in ["参与八字关系计算", "公开并参与", "历史时制", "出生地时区", "Asia/Shanghai", "选择星座"] {
+                        XCTAssertFalse(text.contains(removed), "Removed option must not appear: \(removed)")
+                    }
+                    XCTAssertFalse(requests.values.contains { $0.hasPrefix("PATCH ") }, "Viewing and previewing never save data")
+                    try JSONSerialization.data(withJSONObject: positions, options: [.prettyPrinted, .sortedKeys])
+                        .write(to: folder.appendingPathComponent(name + "-scroll-validation.json"))
                 }
-                let text = observedText.joined(separator: "\n").filter { !$0.isWhitespace }
-                XCTAssertTrue(text.contains("仅本人可见"), "The production form must clearly identify its private data: \(name)")
-                XCTAssertTrue(text.contains("出生"), "The real birth input section must have loaded from the private API")
-                XCTAssertTrue(text.contains("参与八字关系计算"), "The opt-in control remains reachable on a small screen")
-                XCTAssertFalse(requests.values.contains { $0.hasPrefix("PATCH ") }, "Loading, previewing and scrolling cannot publish a participation choice")
-                try JSONSerialization.data(withJSONObject: positions, options: [.prettyPrinted, .sortedKeys])
-                    .write(to: folder.appendingPathComponent(name + "-scroll-validation.json"))
+            }
+            let profileHost = UIHostingController(rootView: KikiProfileView().environmentObject(store).preferredColorScheme(.light))
+            window.frame = CGRect(origin: originalFrame.origin, size: CGSize(width: 375, height: 812))
+            window.rootViewController = profileHost; profileHost.view.frame = window.bounds; window.makeKeyAndVisible()
+            profileHost.view.setNeedsLayout()
+            profileHost.view.layoutIfNeeded()
+            try await Task.sleep(nanoseconds: 650_000_000)
+            window.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+            }
+            try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent("me-editor-entries.png"))
+            let attachment = XCTAttachment(image: image); attachment.name = "me-editor-entries"; attachment.lifetime = .keepAlways; self.add(attachment)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["zh-Hans", "en-US"]
+            request.customWords = ["八字", "MBTI", "我的社区"]
+            request.usesLanguageCorrection = true
+            try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage), options: [:]).perform([request])
+            let observations = request.results ?? []
+            let recognized = observations.map { $0.topCandidates(5).map(\.string) }
+            // Vision sometimes reads 八 as the visually identical katakana ハ.
+            // Normalize that fixed label while preserving its actual pixel box.
+            func normalizedOCR(_ value: String) -> String {
+                value.replacingOccurrences(of: "ハ字", with: "八字").filter { !$0.isWhitespace }
+            }
+            let nodes = self.relationshipAccessibilityNodes(in: window)
+            var entryFrames: [String: CGRect] = [:]
+            for (identifier, label) in [("profile.bazi", "八字"), ("profile.mbti", "MBTI"), ("profile.community", "我的社区")] {
+                let node = nodes.first { ($0 as? UIAccessibilityIdentification)?.accessibilityIdentifier == identifier }
+                if let node { XCTAssertEqual(node.accessibilityLabel, label) }
+                let frame: CGRect
+                if let node, !node.accessibilityFrame.isEmpty {
+                    frame = node.accessibilityFrame
+                } else {
+                    // Some runtimes do not export SwiftUI virtual AX nodes.
+                    // Check the real screenshot's exact text and position too.
+                    let observation = try XCTUnwrap(observations.first {
+                        $0.topCandidates(5).contains { normalizedOCR($0.string).contains(label) }
+                    }, "The Me screenshot must show \(label); OCR candidates: \(recognized)")
+                    let box = observation.boundingBox
+                    let localFrame = CGRect(x: box.minX * window.bounds.width,
+                                            y: (1 - box.maxY) * window.bounds.height,
+                                            width: box.width * window.bounds.width,
+                                            height: box.height * window.bounds.height)
+                    frame = window.convert(localFrame, to: nil)
+                }
+                XCTAssertFalse(frame.isEmpty, "The visible entry has a real on-screen frame: \(identifier)")
+                XCTAssertTrue(window.convert(window.bounds, to: nil).insetBy(dx: -1, dy: -1).contains(frame),
+                              "The entry is fully visible: \(identifier), \(frame)")
+                entryFrames[identifier] = frame
+            }
+            XCTAssertLessThan(try XCTUnwrap(entryFrames["profile.bazi"]).maxY,
+                              try XCTUnwrap(entryFrames["profile.mbti"]).midY)
+            XCTAssertLessThan(try XCTUnwrap(entryFrames["profile.mbti"]).maxY,
+                              try XCTUnwrap(entryFrames["profile.community"]).minY,
+                              "Both editors appear above community in the production page")
+            let text = normalizedOCR(recognized.flatMap { $0 }.joined())
+            for label in ["八字", "MBTI", "我的社区"] {
+                XCTAssertTrue(text.contains(label), "Me screenshot must show \(label); OCR: \(recognized)")
             }
         }
         await store.logout()

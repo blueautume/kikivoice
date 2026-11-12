@@ -111,8 +111,8 @@ final class KikiAccountAPIClient: @unchecked Sendable {
         try await send("/v1/me/relationship-profile/preview", method: "POST", body: draft, token: token)
     }
 
-    func saveRelationshipProfile(_ draft: KikiRelationshipProfileDraft, token: String) async throws -> KikiRelationshipProfile {
-        try await send("/v1/me/relationship-profile", method: "PATCH", body: draft, token: token)
+    func saveRelationshipProfile(_ draft: KikiRelationshipProfileDraft, editor: KikiRelationshipEditor? = nil, token: String) async throws -> KikiRelationshipProfile {
+        try await send("/v1/me/relationship-profile", method: "PATCH", body: KikiRelationshipProfilePatch(draft: draft, editor: editor), token: token)
     }
 
     func relationshipPlaces(parent: String? = nil, token: String) async throws -> [KikiRelationshipPlace] {

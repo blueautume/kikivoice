@@ -31,7 +31,9 @@ class ProfileUpdate(BaseModel):
     birthTime: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
     birthPlaceCode: str | None = Field(default=None, min_length=1, max_length=40)
     birthFold: int | None = Field(default=None, ge=0, le=1)
-    baziEnabled: bool = False
+    # Legacy clients may send these fields. Current agreement consent governs
+    # participation; user-editable labels, opt-outs and fold choices are ignored.
+    baziEnabled: bool = True
     mbtiEnabled: bool = True
     zodiacEnabled: bool = True
 
@@ -61,11 +63,8 @@ def no_store(response):
 
 
 def merge_profile(old, payload):
-    merged = {**old, **payload.model_dump(exclude_unset=True)}
-    clocks = {"birthDate", "birthTime", "birthPlaceCode", "birthCalendar", "birthLeapMonth"}
-    if any(key in payload.model_fields_set and merged[key] != old[key] for key in clocks) and "birthFold" not in payload.model_fields_set:
-        merged["birthFold"] = None
-    return merged
+    legacy = {"zodiacSign", "birthFold", "baziEnabled", "mbtiEnabled", "zodiacEnabled"}
+    return {**old, **payload.model_dump(exclude_unset=True, exclude=legacy)}
 
 
 def build_router(app, *, database, consented_user, require_active_session):
@@ -138,7 +137,7 @@ def build_router(app, *, database, consented_user, require_active_session):
             try:
                 bridge.post("/internal/v1/account/relationship-refresh", {"accountID": user["login_id"]})
             except HTTPException:
-                # Saved privacy intent remains effective. Room reads are uncached,
+                # The saved profile remains authoritative. Room reads are uncached,
                 # with periodic client refresh as recovery for a lost notification.
                 pass
         return result
@@ -183,7 +182,7 @@ def build_router(app, *, database, consented_user, require_active_session):
                 profiles.append({"userID": identifier, **engine.public_tags(db, account["account_id"])})
             require_active_session(db, user)
         pairs = [engine.room_pair(left, right, prepared[left], prepared[right]) for left, right in itertools.combinations(ids, 2)]
-        # A save, opt-out, withdrawal or deletion while the snapshot was being
+        # A save, withdrawal or deletion while the snapshot was being
         # calculated must not publish a stale private-data-derived result.
         with database(settings) as db:
             require_active_session(db, user)
