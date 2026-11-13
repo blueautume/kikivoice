@@ -59,6 +59,7 @@ struct KikiRoomChatTracking: Equatable {
 struct KikiRoomAudienceStrip<Avatar: View>: View {
     let listeners: [KikiRoomMember]
     let onOpenPerson: (String) -> Void
+    var compact = false
     @ScaledMetric(relativeTo: .caption2) private var labelHeight: CGFloat = 14
     @ViewBuilder var avatar: (KikiRoomMember) -> Avatar
 
@@ -70,23 +71,25 @@ struct KikiRoomAudienceStrip<Avatar: View>: View {
                 HStack(spacing: 12) {
                     ForEach(onlineListeners) { member in
                         Button { onOpenPerson(member.userID) } label: {
-                            VStack(spacing: 5) {
+                            VStack(spacing: compact ? 3 : 5) {
                                 avatar(member).frame(width: 36, height: 36)
+                                    .scaleEffect(compact ? 5.0 / 6.0 : 1)
+                                    .frame(width: compact ? 30 : 36, height: compact ? 30 : 36)
                                 Text(member.name).font(.caption2).foregroundStyle(KikiPalette.secondary)
                                     .lineLimit(1).frame(width: 56, height: labelHeight)
                             }
-                            .padding(.vertical, 4).frame(minWidth: 56, minHeight: 58).contentShape(Rectangle())
+                            .padding(.vertical, compact ? 2 : 4).frame(minWidth: 56, minHeight: compact ? 50 : 58).contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("查看\(member.name)的个人主页")
                         .accessibilityIdentifier("livekit.room.listener.\(member.userID)")
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, compact ? 1 : 2)
             }
             .accessibilityIdentifier("livekit.room.listeners")
             .frame(maxWidth: .infinity)
-            .frame(height: 53 + labelHeight)
+            .frame(height: (compact ? 40 : 53) + labelHeight)
         }
     }
 }

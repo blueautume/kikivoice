@@ -74,12 +74,29 @@ struct KikiRelationshipMotion {
 
 struct KikiRelationshipStageGeometry {
     let width: CGFloat
-    var avatarSize: CGFloat { width < 320 ? 46 : (width >= 400 ? 58 : 52) }
-    var cellWidth: CGFloat { min(92, max(70, width / 4)) }
-    var cellHeight: CGFloat { avatarSize + 43 }
-    var height: CGFloat { width + 36 }
-    var radius: CGFloat { max(0, (width - cellWidth) / 2 - 4) }
-    var center: CGPoint { CGPoint(x: width / 2, y: width / 2) }
+    var heightBudget: CGFloat? = nil
+    var height: CGFloat { min(width + 36, max(0, heightBudget ?? (width + 36))) }
+    private var baseAvatarSize: CGFloat { width < 320 ? 46 : (width >= 400 ? 58 : 52) }
+    var avatarSize: CGFloat {
+        // The compact size leaves room for the full nickname/public label and
+        // for the eight adjacent connections, not only the eight avatar disks.
+        min(baseAvatarSize, max(18, floor((height - 75) / 3.62)))
+    }
+    var isCompact: Bool { height < 270 }
+    private var baseCellWidth: CGFloat { min(92, max(70, width / 4)) }
+    var cellWidth: CGFloat {
+        // Width is limited by the ring even on supported 375pt phones. A
+        // full-width nickname card must never cover the next avatar.
+        let diagonalClearance = 2 * (radius / sqrt(2) - avatarSize / 2 - 5)
+        let opposingLabelClearance = radius - avatarSize / 2 - 6
+        return max(30, min(baseCellWidth, radius * 0.75, diagonalClearance, opposingLabelClearance))
+    }
+    var cellHeight: CGFloat { avatarSize + (isCompact ? 33 : 43) }
+    var radius: CGFloat {
+        max(0, min((width - baseCellWidth) / 2 - 4, (height - cellHeight) / 2 - 4))
+    }
+    var center: CGPoint { CGPoint(x: width / 2, y: (height - (isCompact ? 27 : 37)) / 2) }
+    var edgeTrim: CGFloat { avatarSize / 2 + (isCompact ? 3 : 7) }
     func point(angle: Double, radius fraction: Double = 1) -> CGPoint {
         CGPoint(x: center.x + radius * fraction * cos(angle), y: center.y + radius * fraction * sin(angle))
     }
@@ -88,6 +105,120 @@ struct KikiRelationshipStageGeometry {
         let avatar = point(angle: angle, radius: fraction)
         return CGPoint(x: avatar.x, y: avatar.y + cellHeight / 2 - (avatarSize / 2 + 3))
     }
+    func avatarRect(at point: CGPoint) -> CGRect {
+        CGRect(x: point.x - avatarSize / 2 - 3, y: point.y - avatarSize / 2 - 3,
+               width: avatarSize + 6, height: avatarSize + 6)
+    }
+    func labelRect(at point: CGPoint, mode: KikiRelationshipMode, tag: String?) -> CGRect {
+        let nicknameHeight: CGFloat = isCompact ? 11 : 14
+        let nicknameGap: CGFloat = isCompact ? 3 : 6
+        return CGRect(x: point.x - cellWidth / 2, y: point.y + avatarSize / 2 + 3 + nicknameGap,
+                      width: cellWidth, height: nicknameHeight + KikiRelationshipSeatLabelLayout.tagHeight(mode: mode, value: tag, compact: isCompact))
+    }
+}
+
+/// Finds space for actual nickname/tag rectangles without moving an avatar.
+/// Candidate positions come from obstacle edges, so the same logic works for
+/// one through eight people and for intermediate, interrupted motion frames.
+struct KikiRelationshipLabelPlacement {
+    struct Result {
+        var offsets: [String: CGSize] = [:]
+        var rectangles: [String: CGRect] = [:]
+        var unresolvedIDs: Set<String> = []
+    }
+
+    static func resolve(geometry: KikiRelationshipStageGeometry,
+                        frame: [String: KikiRelationshipMotion.Point], mode: KikiRelationshipMode,
+                        tags: [String: String], previous: [String: CGSize] = [:]) -> Result {
+        let ids = frame.keys.filter { (frame[$0]?.opacity ?? 0) > 0.01 }.sorted()
+        let bounds = CGRect(x: 0, y: 0, width: geometry.width, height: geometry.height)
+        let avatarRects = ids.compactMap { frame[$0].map { geometry.avatarRect(at: geometry.point($0)) } }
+        let bases = Dictionary(uniqueKeysWithValues: ids.compactMap { id -> (String, CGRect)? in
+            guard let value = frame[id] else { return nil }
+            return (id, geometry.labelRect(at: geometry.point(value), mode: mode, tag: tags[id]))
+        })
+        func fits(_ rect: CGRect, obstacles: [CGRect]) -> Bool {
+            bounds.contains(rect) && !obstacles.contains { rect.intersects($0.insetBy(dx: -1, dy: -1)) }
+        }
+        // Keep the roomy presentation exactly as it was, including 430pt
+        // phones: independent captions need no displacement when all fit.
+        let defaults = ids.compactMap { bases[$0] }
+        let defaultsFit = defaults.enumerated().allSatisfy { index, rect in
+            fits(rect, obstacles: avatarRects + Array(defaults.prefix(index)))
+        }
+        if defaultsFit {
+            return Result(offsets: Dictionary(uniqueKeysWithValues: ids.map { ($0, .zero) }), rectangles: bases)
+        }
+
+        var result = Result()
+        var placed: [CGRect] = []
+        for id in ids {
+            guard let base = bases[id] else { continue }
+            let obstacles = avatarRects + placed
+            var xs: Set<CGFloat> = [base.minX, bounds.minX, bounds.maxX - base.width]
+            var ys: Set<CGFloat> = [base.minY, bounds.minY, bounds.maxY - base.height]
+            if let old = previous[id] { xs.insert(base.minX + old.width); ys.insert(base.minY + old.height) }
+            for obstacle in obstacles {
+                xs.insert(obstacle.minX - base.width - 2)
+                xs.insert(obstacle.maxX + 2)
+                ys.insert(obstacle.minY - base.height - 2)
+                ys.insert(obstacle.maxY + 2)
+            }
+            func score(_ rect: CGRect) -> CGFloat {
+                let dx = rect.minX - base.minX, dy = rect.minY - base.minY
+                return dx * dx + dy * dy * 2
+            }
+            var best: CGRect?
+            var bestScore = CGFloat.greatestFiniteMagnitude
+            for y in ys.sorted() {
+                for x in xs.sorted() {
+                    let candidate = CGRect(x: x, y: y, width: base.width, height: base.height)
+                    guard fits(candidate, obstacles: obstacles) else { continue }
+                    let value = score(candidate)
+                    if value < bestScore - 0.001 { best = candidate; bestScore = value }
+                }
+            }
+            // A valid previous target wins close ties. Together with the stable
+            // ID order this avoids oscillating between equivalent candidates.
+            if let old = previous[id] {
+                let candidate = base.offsetBy(dx: old.width, dy: old.height)
+                if fits(candidate, obstacles: obstacles), score(candidate) <= bestScore + 16 { best = candidate }
+            }
+            guard let best else {
+                result.unresolvedIDs.insert(id)
+                let x = min(max(bounds.minX, base.minX), max(bounds.minX, bounds.maxX - base.width))
+                let y = min(max(bounds.minY, base.minY), max(bounds.minY, bounds.maxY - base.height))
+                let fallback = CGRect(x: x, y: y, width: base.width, height: base.height)
+                result.offsets[id] = CGSize(width: x - base.minX, height: y - base.minY)
+                result.rectangles[id] = fallback
+                placed.append(fallback)
+                continue
+            }
+            result.offsets[id] = CGSize(width: best.minX - base.minX, height: best.minY - base.minY)
+            result.rectangles[id] = best
+            placed.append(best)
+        }
+        return result
+    }
+}
+
+/// One resting height budget drives the graph and its footer in every mode.
+/// The keyboard never participates in these metrics.
+struct KikiRelationshipStageLayout {
+    let width: CGFloat
+    var maxHeight: CGFloat? = nil
+    static let selectorWidth: CGFloat = 132
+    static let footerSpacing: CGFloat = 6
+    var legendWidth: CGFloat { max(0, width - Self.selectorWidth - 10) }
+    var legendColumns: Int { max(1, min(4, Int((legendWidth + 4) / 64))) }
+    var footerHeight: CGFloat {
+        let rows = CGFloat(Int(ceil(7.0 / Double(legendColumns))))
+        return max(44, rows * 14 + max(0, rows - 1) * 4)
+    }
+    var geometry: KikiRelationshipStageGeometry {
+        .init(width: width, heightBudget: maxHeight.map { max(0, $0 - footerHeight - Self.footerSpacing) })
+    }
+    var height: CGFloat { geometry.height + footerHeight + Self.footerSpacing }
 }
 
 struct KikiRelationshipCategory: Identifiable {
@@ -99,16 +230,19 @@ struct KikiRelationshipCategory: Identifiable {
         let names: [(String, String)]
         switch mode {
         case .bazi:
-            names = [("HARMONY_ONLY", "相合"), ("CONFLICT_ONLY", "相冲"), ("MIXED", "合冲并见"),
-                     ("NONE", "未命中直接合冲")]
+            names = [("HARMONY_ONLY", "相合"), ("CONFLICT_ONLY", "相冲"), ("MIXED", "合冲并见")]
         case .mbti:
             names = [("GOLDEN", "黄金配对"), ("SILVER", "白银配对"), ("PEDAGOGUE", "师生配对"),
-                     ("SAME_TYPE", "同类型"), ("OTHER", "其他组合")]
+                     ("SAME_TYPE", "同类型")]
         case .zodiac:
             names = [("SAME_SIGN", "同星座"), ("ADJACENT", "相邻星座"), ("SEXTILE", "六分"),
                      ("SQUARE", "刑"), ("TRINE", "拱"), ("QUINCUNX", "梅花"), ("OPPOSITION", "对宫")]
         }
         return (names + [("UNAVAILABLE", "暂无法展示关系")]).map { Self(code: $0.0, label: $0.1) }
+    }
+
+    static func isDisplayed(_ code: String, in mode: KikiRelationshipMode) -> Bool {
+        code != "UNAVAILABLE" && categories(for: mode).contains { $0.code == code }
     }
 }
 
@@ -137,6 +271,7 @@ private struct KikiRelationshipFetchScope: Equatable {
 struct KikiRelationshipStage: View {
     @ObservedObject var rtc: KikiRTCService
     let width: CGFloat
+    var maxHeight: CGFloat? = nil
     let onOpenPerson: (String) -> Void
     let onRequestSeat: () -> Void
     let onEndComposing: () -> Void
@@ -182,20 +317,20 @@ struct KikiRelationshipStage: View {
         Dictionary(seats.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
-    var body: some View {
-        VStack(spacing: 8) {
-            Picker("关系模式", selection: $storedMode) {
-                ForEach(KikiRelationshipMode.allCases) { Text($0.title).tag($0.rawValue) }
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 420)
-            .accessibilityIdentifier("livekit.room.relationship.mode")
+    private var stageLayout: KikiRelationshipStageLayout {
+        .init(width: min(440, max(200, width)), maxHeight: maxHeight)
+    }
+    private var modeSelection: Binding<KikiRelationshipMode> {
+        Binding(get: { mode }, set: { storedMode = $0.rawValue })
+    }
 
+    var body: some View {
+        let layout = stageLayout
+        VStack(spacing: KikiRelationshipStageLayout.footerSpacing) {
             circle
-            KikiRelationshipLegend(mode: mode)
-                .frame(maxWidth: 440)
-            relationshipTools
+            KikiRelationshipStageFooter(layout: layout, selection: modeSelection)
         }
+        .frame(width: layout.width, height: layout.height, alignment: .top)
         .onChange(of: seatSignature, initial: true) { _, _ in updateMotion() }
         .onChange(of: rtc.currentRoomID) { _, _ in
             relationships = nil
@@ -235,7 +370,7 @@ struct KikiRelationshipStage: View {
     }
 
     private var circle: some View {
-        let geometry = KikiRelationshipStageGeometry(width: min(440, max(240, width)))
+        let geometry = stageLayout.geometry
         return TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !isMoving)) { timeline in
             KikiRelationshipCircle(geometry: geometry,
                 seats: retainedSeats.keys.sorted().compactMap { currentSeatMap[$0] ?? retainedSeats[$0] },
@@ -256,28 +391,28 @@ struct KikiRelationshipStage: View {
                 .disabled(!rtc.canUseRoom || rtc.isPerformingRoomAction)
             }
         }
+        .overlay(alignment: .topTrailing) {
+            Button { showsRelationships = true } label: {
+                Image(systemName: "info.circle").font(.system(size: 16))
+                    .frame(width: 44, height: 44)
+            }
+            .tint(KikiPalette.secondary)
+            .accessibilityLabel("关系说明")
+            .accessibilityIdentifier("livekit.room.relationship.details")
+        }
+        .overlay(alignment: .topLeading) {
+            if isLoading && relationships == nil && seats.count > 1 {
+                ProgressView().controlSize(.mini).frame(width: 44, height: 44)
+            } else if loadFailed && seats.count > 1 {
+                Button { refreshID = UUID() } label: {
+                    Image(systemName: "arrow.clockwise").frame(width: 44, height: 44)
+                }.accessibilityLabel("重新获取关系")
+            }
+        }
         .frame(maxWidth: .infinity)
         .accessibilityIdentifier("livekit.room.relationship.circle")
     }
 
-    private var relationshipTools: some View {
-        HStack(spacing: 8) {
-            if isLoading && relationships == nil && seats.count > 1 {
-                ProgressView().controlSize(.mini)
-                Text("正在连接关系").font(.caption).foregroundStyle(KikiPalette.secondary)
-            } else if loadFailed && seats.count > 1 {
-                Button("重新获取关系") { refreshID = UUID() }.font(.caption)
-            }
-            Spacer(minLength: 0)
-            Button { showsRelationships = true } label: {
-                Label("关系说明", systemImage: "info.circle")
-                    .font(.caption).frame(minHeight: 44)
-            }
-            .accessibilityIdentifier("livekit.room.relationship.details")
-        }
-        .tint(KikiPalette.purple)
-        .frame(maxWidth: 440)
-    }
 
     private var relationshipsSheet: some View {
         KikiRelationshipDetails(mode: mode, pairs: pairs) { showsRelationships = false }
@@ -359,7 +494,7 @@ struct KikiRelationshipCurve {
                      trim: CGFloat, pairID: String, lane: CGFloat = 0) -> Self? {
         let dx = b.x - a.x, dy = b.y - a.y
         let distance = hypot(dx, dy)
-        guard radius > 0, distance > trim * 2 + 4 else { return nil }
+        guard radius > 0, distance > trim * 2 + 1 else { return nil }
         let normal = CGPoint(x: -dy / distance, y: dx / distance)
         let midpoint = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
         let hash = pairID.utf8.reduce(UInt64(14_695_981_039_346_656_037)) { ($0 ^ UInt64($1)) &* 1_099_511_628_211 }
@@ -375,7 +510,7 @@ struct KikiRelationshipCurve {
         let gentleBend = min(10, 5 + visibleLength * 0.018 + variation)
         let midpointOffset = lane == 0
             ? sign * min(gentleBend, visibleLength * 0.24)
-            : sign * (lane < 0 ? -1 : 1) * min(abs(lane), visibleLength * 0.30)
+            : sign * lane
         let control = CGPoint(x: midpoint.x + normal.x * midpointOffset * 2,
                               y: midpoint.y + normal.y * midpointOffset * 2)
         // Trim on the original chord. This keeps both colors attached at the
@@ -431,8 +566,7 @@ enum KikiRelationshipVisuals {
         case "SILVER", "ADJACENT": return [.init(color: color(for: code), dash: [10, 4])]
         case "CONFLICT_ONLY", "PEDAGOGUE", "SQUARE", "SEXTILE": return [.init(color: color(for: code), dash: [6, 4])]
         case "SAME_TYPE", "QUINCUNX": return [.init(color: color(for: code), dash: [1.2, 4.5])]
-        case "OTHER", "OPPOSITION": return [.init(color: color(for: code), dash: [9, 3, 1.5, 3])]
-        case "NONE": return [.init(color: color(for: code), dash: [2, 6])]
+        case "OPPOSITION": return [.init(color: color(for: code), dash: [9, 3, 1.5, 3])]
         default: return []
         }
     }
@@ -495,21 +629,70 @@ struct KikiRelationshipLineSample: View {
 
 struct KikiRelationshipLegend: View {
     let mode: KikiRelationshipMode
+    var columns = 4
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), alignment: .leading)], alignment: .leading, spacing: 8) {
-            ForEach(KikiRelationshipCategory.categories(for: mode).filter { $0.code != "UNAVAILABLE" }) { category in
-                HStack(spacing: 5) {
-                    KikiRelationshipLineSample(code: category.code).frame(width: 24, height: 15)
-                    Text(KikiRelationshipVisuals.legendTitle(for: category))
-                        .font(.system(size: 11, weight: .medium)).foregroundStyle(KikiPalette.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 4, alignment: .leading), count: columns),
+                  alignment: .leading, spacing: 4) {
+            ForEach(KikiRelationshipCategory.categories(for: mode).filter { KikiRelationshipCategory.isDisplayed($0.code, in: mode) }) { category in
+                HStack(spacing: 3) {
+                    KikiRelationshipLineSample(code: category.code).frame(width: 18, height: 14)
+                    Text(category.label)
+                        .font(.system(size: 10, weight: .medium)).foregroundStyle(KikiPalette.secondary)
+                        .lineLimit(1).minimumScaleFactor(0.85)
+                }.frame(height: 14, alignment: .leading)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(KikiRelationshipVisuals.legendTitle(for: category))
+                .accessibilityLabel(category.label)
             }
         }
-        .padding(.horizontal, 4).padding(.top, 2)
         .accessibilityIdentifier("livekit.room.relationship.legend")
+    }
+}
+
+struct KikiRelationshipModeSelector: View {
+    @Binding var selection: KikiRelationshipMode
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(KikiRelationshipMode.allCases) { mode in
+                Button { selection = mode } label: {
+                    Text(mode.title).font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(selection == mode ? KikiPalette.text : KikiPalette.secondary)
+                        .frame(width: 44, height: 44)
+                        .background {
+                            if selection == mode {
+                                Capsule().fill(KikiPalette.purple.opacity(0.22)).padding(.vertical, 6).padding(.horizontal, 1)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selection == mode ? .isSelected : [])
+                .accessibilityIdentifier("livekit.room.relationship.mode.\(mode.rawValue)")
+            }
+        }
+        .background { Capsule().fill(KikiPalette.surface.opacity(0.8)).padding(.vertical, 6) }
+        .frame(width: KikiRelationshipStageLayout.selectorWidth, height: 44)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: selection)
+        .accessibilityIdentifier("livekit.room.relationship.mode")
+    }
+}
+
+struct KikiRelationshipStageFooter: View {
+    let layout: KikiRelationshipStageLayout
+    @Binding var selection: KikiRelationshipMode
+
+    var legend: some View {
+        KikiRelationshipLegend(mode: selection, columns: layout.legendColumns)
+            .frame(width: layout.legendWidth, height: layout.footerHeight, alignment: .topLeading)
+    }
+    var selector: some View { KikiRelationshipModeSelector(selection: $selection) }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 10) {
+            legend
+            selector
+        }
+        .frame(width: layout.width, height: layout.footerHeight, alignment: .bottomTrailing)
     }
 }
 
@@ -520,25 +703,31 @@ struct KikiRelationshipDetails: View {
     let pairs: [KikiStageRelationshipPair]
     let onDismiss: () -> Void
 
+    static func displayedPairs(_ pairs: [KikiStageRelationshipPair], in mode: KikiRelationshipMode) -> [KikiStageRelationshipPair] {
+        pairs.filter { KikiRelationshipCategory.isDisplayed($0.code, in: mode) }
+    }
+
+    private var visiblePairs: [KikiStageRelationshipPair] { Self.displayedPairs(pairs, in: mode) }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    if !pairs.isEmpty {
+                    if !visiblePairs.isEmpty {
                         Text("当前配对").font(.headline).padding(.top, 4)
-                        ForEach(pairs) { pair in
+                        ForEach(visiblePairs) { pair in
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("\(pair.a.member.name) · \(pair.b.member.name)")
                                     .font(.subheadline.weight(.semibold)).foregroundStyle(KikiPalette.text)
-                                explanation(code: pair.code, label: pair.code == "NONE" ? "无直接合冲" : pair.label)
+                                explanation(code: pair.code, label: pair.label)
                             }
                             .padding(16)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 18))
                         }
                     }
-                    Text("全部关系图示").font(.headline).padding(.top, pairs.isEmpty ? 4 : 8)
-                    ForEach(KikiRelationshipCategory.categories(for: mode).filter { $0.code != "UNAVAILABLE" }) { category in
+                    Text("全部关系图示").font(.headline).padding(.top, visiblePairs.isEmpty ? 4 : 8)
+                    ForEach(KikiRelationshipCategory.categories(for: mode).filter { KikiRelationshipCategory.isDisplayed($0.code, in: mode) }) { category in
                         explanation(code: category.code, label: KikiRelationshipVisuals.legendTitle(for: category))
                             .padding(16)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -576,15 +765,34 @@ struct KikiRelationshipDetails: View {
 /// The avatar keeps a fixed anchor while the optional public label unfolds
 /// below its nickname. Bazi has no blank label or background placeholder.
 enum KikiRelationshipSeatLabelLayout {
-    static func tagHeight(mode: KikiRelationshipMode, value: String?) -> CGFloat {
-        mode != .bazi && value?.isEmpty == false ? 17 : 0
+    static func tagHeight(mode: KikiRelationshipMode, value: String?, compact: Bool = false) -> CGFloat {
+        mode != .bazi && value?.isEmpty == false ? (compact ? 13 : 17) : 0
     }
-    static func plateHeight(mode: KikiRelationshipMode, value: String?) -> CGFloat {
-        20 + tagHeight(mode: mode, value: value)
+    static func plateHeight(mode: KikiRelationshipMode, value: String?, compact: Bool = false) -> CGFloat {
+        (compact ? 11 : 14) + tagHeight(mode: mode, value: value, compact: compact)
     }
 }
 
-/// Stateless production renderer, also used by presentation fixtures. Its only
+/// The visible caption can move outside the avatar's anchor while remaining
+/// part of the same profile button, including its VoiceOver identity.
+struct KikiRelationshipSeatHitShape: Shape {
+    let avatarHeight: CGFloat
+    let nicknameGap: CGFloat
+    let labelHeight: CGFloat
+    let labelOffset: CGSize
+
+    func path(in rect: CGRect) -> Path {
+        var value = Path()
+        value.addRect(CGRect(x: rect.midX - avatarHeight / 2, y: rect.minY,
+                             width: avatarHeight, height: avatarHeight))
+        value.addRect(CGRect(x: rect.minX + labelOffset.width,
+                             y: rect.minY + avatarHeight + nicknameGap + labelOffset.height,
+                             width: rect.width, height: labelHeight))
+        return value
+    }
+}
+
+/// Production renderer, also used by presentation fixtures. Its only
 /// relationship inputs are the public result projections returned by the server.
 struct KikiRelationshipCircle: View {
     let geometry: KikiRelationshipStageGeometry
@@ -599,8 +807,14 @@ struct KikiRelationshipCircle: View {
     let edgeOpacity: Double
     let onOpenPerson: (String) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var previousLabelOffsets: [String: CGSize] = [:]
 
     var body: some View {
+        let tags = Dictionary(uniqueKeysWithValues: seats.compactMap { seat -> (String, String)? in
+            publicTag(for: seat.id).map { (seat.id, $0) }
+        })
+        let labels = KikiRelationshipLabelPlacement.resolve(geometry: geometry, frame: frame,
+                                                           mode: mode, tags: tags, previous: previousLabelOffsets)
         ZStack(alignment: .topLeading) {
             Circle()
                 .fill(RadialGradient(colors: [KikiPalette.purple.opacity(0.015), KikiPalette.purple.opacity(0.065)],
@@ -614,7 +828,7 @@ struct KikiRelationshipCircle: View {
                 .allowsHitTesting(false).accessibilityHidden(true)
             ForEach(seats) { occupant in
                 if let value = frame[occupant.id] {
-                    avatar(occupant)
+                    avatar(occupant, labelOffset: labels.offsets[occupant.id] ?? .zero)
                         .opacity(value.opacity)
                         .position(geometry.point(value))
                         .allowsHitTesting(activeIDs.contains(occupant.id) && value.opacity > 0.9)
@@ -623,36 +837,38 @@ struct KikiRelationshipCircle: View {
             }
         }
         .frame(width: geometry.width, height: geometry.height)
+        .onChange(of: labels.offsets, initial: true) { _, next in previousLabelOffsets = next }
     }
 
-    private func avatar(_ occupant: KikiRelationshipSeat) -> some View {
+    private func avatar(_ occupant: KikiRelationshipSeat, labelOffset: CGSize) -> some View {
         let tag = publicTag(for: occupant.id)
-        let tagHeight = KikiRelationshipSeatLabelLayout.tagHeight(mode: mode, value: tag)
+        let tagHeight = KikiRelationshipSeatLabelLayout.tagHeight(mode: mode, value: tag, compact: geometry.isCompact)
         let labelAnimation: Animation? = reduceMotion ? nil : .easeInOut(duration: 0.24)
         return Button { onOpenPerson(occupant.id) } label: {
             VStack(spacing: 0) {
                 KikiRoomSeatTile(slot: occupant.slot, member: occupant.member,
                     participant: participants.first { $0.id == occupant.id },
-                    localUserID: localUserID, avatarSize: geometry.avatarSize)
+                    localUserID: localUserID, avatarSize: geometry.avatarSize, compact: geometry.isCompact, labelOffset: labelOffset)
                     .overlay(alignment: .topLeading) {
                         Text("\(occupant.slot.index)")
-                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .font(.system(size: geometry.isCompact ? 8 : 9, weight: .semibold, design: .rounded))
                             .foregroundStyle(KikiPalette.secondary)
-                            .frame(width: 17, height: 17)
+                            .frame(width: geometry.isCompact ? 13 : 17, height: geometry.isCompact ? 13 : 17)
                             .background(KikiPalette.surface.opacity(0.96), in: Circle())
                     }
                 ZStack(alignment: .top) {
                     if tagHeight > 0, let tag {
                         Text(tag)
                             .id("\(mode.rawValue):\(tag)")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: geometry.isCompact ? 9 : 10, weight: .medium))
                             .foregroundStyle(KikiPalette.lavender).lineLimit(1)
-                            .padding(.top, 3)
+                            .padding(.top, geometry.isCompact ? 2 : 3)
                             .transition(.opacity)
                     }
                 }
                 .frame(maxWidth: .infinity).frame(height: tagHeight, alignment: .top)
                 .clipped()
+                .offset(labelOffset)
             }
             .frame(width: geometry.cellWidth)
             .background(alignment: .top) {
@@ -661,12 +877,16 @@ struct KikiRelationshipCircle: View {
             }
             .background(alignment: .bottom) {
                 Capsule().fill(KikiPalette.background.opacity(0.97))
-                    .frame(height: KikiRelationshipSeatLabelLayout.plateHeight(mode: mode, value: tag))
-                    .padding(.horizontal, -3).offset(y: 3)
+                    .frame(height: KikiRelationshipSeatLabelLayout.plateHeight(mode: mode, value: tag, compact: geometry.isCompact))
+                    .offset(labelOffset)
             }
             .animation(labelAnimation, value: mode)
             .animation(labelAnimation, value: tag)
-            .contentShape(Rectangle())
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: labelOffset)
+            .contentShape(KikiRelationshipSeatHitShape(avatarHeight: geometry.avatarSize + 6,
+                nicknameGap: geometry.isCompact ? 3 : 6,
+                labelHeight: KikiRelationshipSeatLabelLayout.plateHeight(mode: mode, value: tag, compact: geometry.isCompact),
+                labelOffset: labelOffset))
         }
         // Position only this stable avatar-sized anchor. The label may change
         // height, but cannot move the avatar or any relationship endpoint.
@@ -684,7 +904,7 @@ struct KikiRelationshipCircle: View {
 
     private func drawEdges(context: inout GraphicsContext) {
         for pair in pairs {
-            guard let a = frame[pair.a.id], let b = frame[pair.b.id] else { continue }
+            guard KikiRelationshipCategory.isDisplayed(pair.code, in: mode), let a = frame[pair.a.id], let b = frame[pair.b.id] else { continue }
             let first = pair.a.id < pair.b.id ? a : b
             let last = pair.a.id < pair.b.id ? b : a
             let start = geometry.point(first), end = geometry.point(last)
@@ -692,7 +912,7 @@ struct KikiRelationshipCircle: View {
             let opacity = min(a.opacity, b.opacity) * (offline ? 0.68 : 0.94)
             for stroke in KikiRelationshipVisuals.strokes(for: pair.code) {
                 guard let curve = KikiRelationshipCurve.make(from: start, to: end, center: geometry.center,
-                    radius: geometry.radius, trim: geometry.avatarSize / 2 + 7, pairID: pair.id, lane: stroke.lane) else { continue }
+                    radius: geometry.radius, trim: geometry.edgeTrim, pairID: pair.id, lane: stroke.lane) else { continue }
                 context.stroke(curve.path, with: .color(stroke.color.opacity(opacity * 0.13)),
                                style: StrokeStyle(lineWidth: 6.5, lineCap: .round, dash: stroke.dash))
                 context.stroke(curve.path, with: .color(stroke.color.opacity(opacity)),

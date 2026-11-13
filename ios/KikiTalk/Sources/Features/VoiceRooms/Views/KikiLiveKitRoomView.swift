@@ -23,6 +23,8 @@ struct KikiLiveKitRoomView: View {
     @State private var isComposing = false
     @State private var headerHeight: CGFloat = 44
     @State private var stageContentHeight: CGFloat = 0
+    @State private var stageNoticeHeight: CGFloat = 0
+    @ScaledMetric(relativeTo: .caption2) private var audienceLabelHeight: CGFloat = 14
     @State private var roomNotice: String?
     @State private var roomNoticeID = UUID()
     @State private var hasPositionedChat = false
@@ -45,11 +47,12 @@ struct KikiLiveKitRoomView: View {
     var body: some View {
         KikiRoomBottomLayout(hasChatContent: !chatScrollIdentity.isEmpty || rtc.chatSyncNotice != nil,
                              stageContentHeight: stageContentHeight, contentTopInset: headerHeight + 24,
-                             showsControls: rtc.disconnectionReason == nil) {
+                             showsControls: rtc.disconnectionReason == nil,
+                             invitation: AnyView(incomingSeatInvitation)) {
             GeometryReader { _ in
                 let horizontalPadding: CGFloat = 18
                 ZStack {
-                    VStack(spacing: 14) {
+                    VStack(spacing: 6) {
                         header
                             .background {
                                 GeometryReader { geometry in
@@ -58,13 +61,13 @@ struct KikiLiveKitRoomView: View {
                             }
                             .onPreferenceChange(KikiRoomHeaderHeightKey.self) { headerHeight = $0 }
                         KikiRoomContentLayout(hasChatContent: !chatScrollIdentity.isEmpty || rtc.chatSyncNotice != nil,
-                                              onStageHeightChange: { stageContentHeight = $0 }) { width, columns in
-                            roomStage(width: width, avatarSize: columns ? 68 : 55)
+                                              onStageHeightChange: { stageContentHeight = $0 }) { width, height, columns in
+                            roomStage(width: width, availableHeight: height, avatarSize: columns ? 68 : 55)
                         } chat: {
                             chat
                         }
                     }
-                    .padding(.horizontal, horizontalPadding).padding(.top, 10).padding(.bottom, 2)
+                    .padding(.horizontal, horizontalPadding).padding(.top, 6)
                     .frame(maxWidth: 1180)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .foregroundStyle(KikiPalette.text)
@@ -72,7 +75,7 @@ struct KikiLiveKitRoomView: View {
                 }
             }
         } footer: { placement in
-            composerWithSeatInvitation(placement: placement)
+            bottomBar
         } controls: {
             roomActions.foregroundStyle(KikiPalette.text)
         }
@@ -144,11 +147,23 @@ struct KikiLiveKitRoomView: View {
         .sheet(isPresented: $showsRoomEditor) { roomEditor.kikiRoomSheet() }
     }
 
-    private func roomStage(width: CGFloat, avatarSize: CGFloat) -> some View {
-        VStack(spacing: 14) {
-            connectionBanner
-            seats(width: width, avatarSize: avatarSize)
+    private func roomStage(width: CGFloat, availableHeight: CGFloat, avatarSize: CGFloat) -> some View {
+        let audienceHeight: CGFloat = (rtc.roomState?.listeners.contains { $0.online && $0.seatIndex == nil } ?? false) ? 40 + audienceLabelHeight : 0
+        let relationHeight = max(0, availableHeight - audienceHeight - (audienceHeight > 0 ? 6 : 0)
+                                 - stageNoticeHeight - (stageNoticeHeight > 0 ? 6 : 0))
+        return VStack(spacing: 0) {
+            VStack(spacing: 6) { connectionBanner }
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(key: KikiRoomStageNoticeHeightKey.self, value: geometry.size.height)
+                    }
+                }
+                .onPreferenceChange(KikiRoomStageNoticeHeightKey.self) { stageNoticeHeight = $0 }
+            seats(width: width, maxHeight: relationHeight, avatarSize: avatarSize)
+                .padding(.top, stageNoticeHeight > 0 ? 6 : 0)
             audienceStrip
+                .padding(.top, audienceHeight > 0 ? 6 : 0)
+                .padding(.trailing, 56)
         }
         .frame(maxWidth: .infinity)
     }
@@ -253,8 +268,8 @@ struct KikiLiveKitRoomView: View {
         }
     }
 
-    private func seats(width: CGFloat, avatarSize: CGFloat) -> some View {
-        KikiRelationshipStage(rtc: rtc, width: width, onOpenPerson: openPerson,
+    private func seats(width: CGFloat, maxHeight: CGFloat, avatarSize: CGFloat) -> some View {
+        KikiRelationshipStage(rtc: rtc, width: width, maxHeight: maxHeight, onOpenPerson: openPerson,
                               onRequestSeat: handleSeatRequest, onEndComposing: endComposing)
     }
 
@@ -276,7 +291,7 @@ struct KikiLiveKitRoomView: View {
 
     private var audienceStrip: some View {
         KikiRoomAudienceStrip(listeners: rtc.roomState?.listeners ?? [],
-                              onOpenPerson: openPerson) { member in
+                              onOpenPerson: openPerson, compact: true) { member in
             KikiAvatar(index: member.avatarIndex,
                                 size: 36, customURL: member.avatarURL)
         }
@@ -585,18 +600,16 @@ struct KikiLiveKitRoomView: View {
 
     private func endComposing() { isComposing = false }
 
-    private func composerWithSeatInvitation(placement: KikiRoomInvitationPlacement) -> some View {
+    private var incomingSeatInvitation: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let state = rtc.roomState
             let hasInvitation = state?.room.id == rtc.currentRoomID && rtc.disconnectionReason == nil
                 && state?.pendingIncomingInvitation(at: Int(context.date.timeIntervalSince1970)) != nil
-            KikiRoomComposerWithInvitation(hasInvitation: hasInvitation, placement: placement) {
+            if hasInvitation {
                 KikiIncomingSeatInvitationCard(isBusy: rtc.isPerformingRoomAction, isEnabled: rtc.canUseRoom,
                     isRoomFull: state?.availableSeats.isEmpty ?? false,
                     onAccept: { respondToSeatInvitation(.acceptInvite) },
                     onDecline: { respondToSeatInvitation(.declineInvite) })
-            } composer: {
-                bottomBar
             }
         }
     }
@@ -896,6 +909,11 @@ struct KikiRoomHeader<Avatar: View, Controls: View>: View {
     }
 }
 
+private struct KikiRoomStageNoticeHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 private struct KikiRoomHeaderHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
@@ -909,12 +927,14 @@ struct KikiRoomSeatTile: View {
     let participant: KikiVoiceParticipant?
     let localUserID: String?
     let avatarSize: CGFloat
+    var compact = false
+    var labelOffset: CGSize = .zero
     private let secondary = KikiPalette.secondary
 
     var body: some View {
         let online = member?.online != false
         let speaking = online && participant?.isSpeaking == true
-        return VStack(spacing: 6) {
+        return VStack(spacing: compact ? 3 : 6) {
             ZStack(alignment: .bottomTrailing) {
                 ZStack {
                     if let member {
@@ -934,20 +954,21 @@ struct KikiRoomSeatTile: View {
                 .animation(.easeOut(duration: 0.18), value: speaking)
                 if member != nil || slot.audioLocked {
                     Image(systemName: slot.audioLocked ? "lock.fill" : (participant?.microphoneEnabled == true ? "mic.fill" : "mic.slash.fill"))
-                        .font(.system(size: 9)).foregroundStyle(.white)
-                        .frame(width: 20, height: 20).background(KikiPalette.action, in: Circle())
+                        .font(.system(size: compact ? 8 : 9)).foregroundStyle(.white)
+                        .frame(width: compact ? 14 : 20, height: compact ? 14 : 20).background(KikiPalette.action, in: Circle())
                 }
             }
             HStack(spacing: 3) {
                 if let member, member.role != .member {
-                    Text(member.role.label).font(.system(size: 8, weight: .semibold))
+                    Text(member.role.label).font(.system(size: compact ? 7 : 8, weight: .semibold))
                         .foregroundStyle(KikiPalette.roleBadgeText)
-                        .padding(.horizontal, 3).padding(.vertical, 2)
+                        .padding(.horizontal, 3).padding(.vertical, compact ? 1 : 2)
                         .background(KikiPalette.roleBadgeBackground, in: RoundedRectangle(cornerRadius: 3))
                 }
                 Text(member.map { $0.name + ($0.userID == localUserID ? " (我)" : "") } ?? "\(slot.index)")
-                    .font(.system(size: 10)).foregroundStyle(member == nil ? secondary : KikiPalette.text).lineLimit(1)
-            }.frame(height: 14)
+                    .font(.system(size: compact ? 9 : 10)).foregroundStyle(member == nil ? secondary : KikiPalette.text).lineLimit(1)
+            }.frame(height: compact ? 11 : 14)
+                .offset(labelOffset)
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)

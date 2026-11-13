@@ -1,7 +1,7 @@
 import Foundation
 
 enum KikiRelationshipMode: String, Codable, CaseIterable, Identifiable, Sendable {
-    case bazi, mbti, zodiac
+    case bazi, zodiac, mbti
     var id: String { rawValue }
     var title: String {
         switch self { case .bazi: return "八字"; case .mbti: return "MBTI"; case .zodiac: return "星座" }

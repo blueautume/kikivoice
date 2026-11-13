@@ -2,15 +2,15 @@
 
 ## KikiTalk 版本自动迭代
 
-用户要求：后续修改应用时自动升级版本号，无需再次询问。
+用户最新要求（2026-11-13）：除非用户明确要求调整版本号，后续默认只升级构建号并上传 TestFlight，无需再次询问。
 
-- 每轮 KikiTalk 功能修改或问题修复完成后，自动将 `MARKETING_VERSION` 的补丁位加一，并将 `CURRENT_PROJECT_VERSION` 加一。同一轮多文件改动、修复及重试只递增一次。
+- 每轮 KikiTalk 功能修改或问题修复完成后，保持 `MARKETING_VERSION` 不变，仅将 `CURRENT_PROJECT_VERSION` 加一并按既有流程上传 TestFlight。同一轮多文件改动、修复及重试只递增一次；用户明确指定营销版本或构建号时以其要求为准。
 - 操作前读取工程当前值，保留用户最新设置；用户明确指定版本时以其要求为准。
 - 同步更新 `ios/KikiTalk/KikiTalk.xcodeproj/project.pbxproj` 中 KikiTalk 目标的 Debug 与 Release 配置。
 - 打包后核对实际 App 的 `CFBundleShortVersionString` 和 `CFBundleVersion`，在交付说明中报告最终版本。
 - 此约定针对 KikiTalk 应用目标，不自动修改仓库内其他示例目标的版本。
 
-记录此约定时的应用版本为 `1.0.5 (2)`；若期间没有其他版本调整，下一轮应用修改应升级为 `1.0.6 (3)`。
+最新规则生效前的版本为 `1.1.2 (48)`；本轮保持 `1.1.2`，构建号升级为 `49`。后续仍应先读取工程实际值，不能按此记录覆盖用户的新设置。
 
 ## 服务端发布
 

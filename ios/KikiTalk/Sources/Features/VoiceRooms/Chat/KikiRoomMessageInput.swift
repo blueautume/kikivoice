@@ -198,6 +198,11 @@ struct KikiRoomMessageInput: UIViewRepresentable {
         private var focusWork: DispatchWorkItem?
         private var compositionWork: DispatchWorkItem?
         private var focusRevision = 0
+        #if DEBUG
+        var focusDiagnostic: String {
+            "binding=\(focus?.wrappedValue.description ?? "nil") observed=\(lastObservedFocus?.description ?? "nil") firstResponder=\(view?.textView.isFirstResponder.description ?? "nil") revision=\(focusRevision)"
+        }
+        #endif
         private var compositionRevision = 0
 
         deinit {
@@ -279,9 +284,15 @@ struct KikiRoomMessageInput: UIViewRepresentable {
             focusWork?.cancel()
             focusRevision += 1
             let revision = focusRevision
+            let requestedFocus = focus?.wrappedValue
             let work = DispatchWorkItem { [weak self] in
                 guard let self, !self.isInvalidated, self.focusRevision == revision,
                       let field = self.view?.textView, let focus = self.focus else { return }
+                // A delegate observation can reach the queue before a newer
+                // dismiss request but execute before its hosting-root redraw.
+                // Preserve that newer intent instead of writing old UIKit focus
+                // back over it and reopening the keyboard indefinitely.
+                guard focus.wrappedValue == requestedFocus else { return }
                 let actual = self.enabled && field.isFirstResponder
                 if focus.wrappedValue != actual { focus.wrappedValue = actual }
             }

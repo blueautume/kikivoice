@@ -6,9 +6,9 @@ import XCTest
 final class KikiRelationshipStageTests: XCTestCase {
     func testLegendsAlwaysExposeEveryModeCategoryAndEveryKnownCategoryHasACurve() {
         XCTAssertEqual(KikiRelationshipCategory.categories(for: .bazi).map(\.code),
-                       ["HARMONY_ONLY", "CONFLICT_ONLY", "MIXED", "NONE", "UNAVAILABLE"])
+                       ["HARMONY_ONLY", "CONFLICT_ONLY", "MIXED", "UNAVAILABLE"])
         XCTAssertEqual(KikiRelationshipCategory.categories(for: .mbti).map(\.code),
-                       ["GOLDEN", "SILVER", "PEDAGOGUE", "SAME_TYPE", "OTHER", "UNAVAILABLE"])
+                       ["GOLDEN", "SILVER", "PEDAGOGUE", "SAME_TYPE", "UNAVAILABLE"])
         XCTAssertEqual(KikiRelationshipCategory.categories(for: .zodiac).map(\.code),
                        ["SAME_SIGN", "ADJACENT", "SEXTILE", "SQUARE", "TRINE", "QUINCUNX", "OPPOSITION", "UNAVAILABLE"])
         for mode in KikiRelationshipMode.allCases {
@@ -17,6 +17,9 @@ final class KikiRelationshipStageTests: XCTestCase {
             }
         }
         XCTAssertTrue(KikiRelationshipVisuals.strokes(for: "UNAVAILABLE").isEmpty)
+        XCTAssertTrue(KikiRelationshipVisuals.strokes(for: "NONE").isEmpty)
+        XCTAssertTrue(KikiRelationshipVisuals.strokes(for: "OTHER").isEmpty)
+        XCTAssertEqual(KikiRelationshipMode.allCases, [.bazi, .zodiac, .mbti])
         XCTAssertGreaterThanOrEqual(KikiRelationshipVisuals.lineWidth, 2.5)
     }
 
@@ -92,6 +95,127 @@ final class KikiRelationshipStageTests: XCTestCase {
                     }
                 }
             }
+        }
+    }
+
+    func testFixedStageBudgetFitsAllSeatsAndKeepsEveryAdjacentCurve() throws {
+        for (width, budget): (CGFloat, CGFloat) in [(284, 244), (284, 250), (354, 350), (394, 430), (440, 600)] {
+            let layout = KikiRelationshipStageLayout(width: width, maxHeight: budget)
+            let geometry = layout.geometry
+            XCTAssertLessThanOrEqual(layout.height, budget)
+            XCTAssertEqual(layout.footerHeight, max(44, CGFloat(ceil(7.0 / Double(layout.legendColumns))) * 18 - 4))
+            XCTAssertEqual(layout.legendWidth + 10 + KikiRelationshipStageLayout.selectorWidth, width)
+            for count in 1...8 {
+                let points = (0..<count).map { index in
+                    geometry.point(angle: -.pi / 2 + Double(index) * 2 * .pi / Double(count), radius: count == 1 ? 0 : 1)
+                }
+                for point in points {
+                    let bounds = CGRect(x: point.x - geometry.cellWidth / 2,
+                                        y: point.y - geometry.avatarSize / 2 - 3,
+                                        width: geometry.cellWidth, height: geometry.cellHeight)
+                    XCTAssertGreaterThanOrEqual(bounds.minX, 0)
+                    XCTAssertGreaterThanOrEqual(bounds.minY, 0)
+                    XCTAssertLessThanOrEqual(bounds.maxX, geometry.width)
+                    XCTAssertLessThanOrEqual(bounds.maxY, geometry.height)
+                    // Footer starts after the complete bottom nickname/tag.
+                    XCTAssertLessThan(bounds.maxY, geometry.height + KikiRelationshipStageLayout.footerSpacing)
+                }
+                guard count > 1 else { continue }
+                for index in points.indices {
+                    let next = points[(index + 1) % count]
+                    for stroke in KikiRelationshipVisuals.strokes(for: "MIXED") {
+                        XCTAssertNotNil(KikiRelationshipCurve.make(from: points[index], to: next,
+                            center: geometry.center, radius: geometry.radius, trim: geometry.edgeTrim,
+                            pairID: "adjacent-\(index)", lane: stroke.lane), "\(width)x\(budget), \(count)人")
+                    }
+                }
+            }
+        }
+    }
+
+    func testEveryModeAndOccupantCountKeepsCaptionRectanglesClearOfAvatarsAndEachOther() {
+        for (width, budget): (CGFloat, CGFloat) in [(284, 244), (284, 250), (339, 300), (354, 350), (394, 430), (440, 600)] {
+            let geometry = KikiRelationshipStageLayout(width: width, maxHeight: budget).geometry
+            for mode in KikiRelationshipMode.allCases {
+                for count in 1...8 {
+                    let ids = (0..<count).map { "seat-\($0)" }
+                    var motion = KikiRelationshipMotion()
+                    motion.retarget(orderedIDs: ids, at: .now, animated: false)
+                    let frame = motion.frame(at: .now)
+                    let tags = Dictionary(uniqueKeysWithValues: ids.map { ($0, mode == .mbti ? "INFJ" : "处女座") })
+                    let result = KikiRelationshipLabelPlacement.resolve(geometry: geometry, frame: frame, mode: mode, tags: tags)
+                    XCTAssertTrue(result.unresolvedIDs.isEmpty, "\(width)x\(budget), \(mode), \(count)人")
+                    assertClearCaptions(result, geometry: geometry, frame: frame)
+                    if width == 394, count == 8 {
+                        XCTAssertTrue(result.offsets.values.allSatisfy { $0 == .zero }, "430pt保留原有宽裕布局")
+                    }
+                    for id in ids {
+                        guard let offset = result.offsets[id] else { return XCTFail("Missing caption offset") }
+                        let tag = mode == .bazi ? nil : tags[id]
+                        let shape = KikiRelationshipSeatHitShape(avatarHeight: geometry.avatarSize + 6,
+                            nicknameGap: geometry.isCompact ? 3 : 6,
+                            labelHeight: KikiRelationshipSeatLabelLayout.plateHeight(mode: mode, value: tag, compact: geometry.isCompact),
+                            labelOffset: offset)
+                        let path = shape.path(in: CGRect(x: 0, y: 0, width: geometry.cellWidth, height: geometry.avatarSize + 6))
+                        let captionCenter = CGPoint(x: geometry.cellWidth / 2 + offset.width,
+                            y: geometry.avatarSize + 6 + (geometry.isCompact ? 3 : 6)
+                                + KikiRelationshipSeatLabelLayout.plateHeight(mode: mode, value: tag, compact: geometry.isCompact) / 2 + offset.height)
+                        XCTAssertTrue(path.contains(captionCenter), "移开的昵称和标签仍能点开对应用户")
+                    }
+                }
+            }
+        }
+    }
+
+    func testCaptionTargetsRemainClearThroughoutInterruptedSeatReflow() {
+        let geometry = KikiRelationshipStageLayout(width: 339, maxHeight: 300).geometry
+        let start = Date(timeIntervalSince1970: 8_000)
+        var motion = KikiRelationshipMotion()
+        motion.retarget(orderedIDs: (0..<5).map { "seat-\($0)" }, at: start, animated: false)
+        motion.retarget(orderedIDs: (0..<8).map { "seat-\($0)" }, at: start, animated: true)
+        var previous: [String: CGSize] = [:]
+        for step in 0...10 {
+            let date = start.addingTimeInterval(Double(step) * 0.05)
+            if step == 4 { motion.retarget(orderedIDs: ["seat-0", "seat-2", "seat-5"], at: date, animated: true) }
+            let frame = motion.frame(at: date)
+            let tags = Dictionary(uniqueKeysWithValues: frame.keys.map { ($0, "INFJ") })
+            let result = KikiRelationshipLabelPlacement.resolve(geometry: geometry, frame: frame, mode: .mbti, tags: tags, previous: previous)
+            XCTAssertTrue(result.unresolvedIDs.isEmpty)
+            assertClearCaptions(result, geometry: geometry, frame: frame)
+            previous = result.offsets
+        }
+    }
+
+    private func assertClearCaptions(_ result: KikiRelationshipLabelPlacement.Result,
+                                     geometry: KikiRelationshipStageGeometry,
+                                     frame: [String: KikiRelationshipMotion.Point], file: StaticString = #filePath, line: UInt = #line) {
+        let bounds = CGRect(x: 0, y: 0, width: geometry.width, height: geometry.height)
+        for (id, rect) in result.rectangles {
+            XCTAssertTrue(bounds.contains(rect), id, file: file, line: line)
+            for (otherID, point) in frame where point.opacity > 0.01 {
+                XCTAssertFalse(rect.intersects(geometry.avatarRect(at: geometry.point(point))),
+                               "\(id) caption covers \(otherID) avatar", file: file, line: line)
+            }
+            for (otherID, other) in result.rectangles where otherID != id {
+                XCTAssertFalse(rect.intersects(other), "\(id) caption covers \(otherID) caption", file: file, line: line)
+            }
+        }
+    }
+
+    func testHiddenCategoriesNeverProduceLinesLegendOrCurrentPairCards() {
+        let a = KikiRelationshipSeat(slot: .init(index: 1, userID: "a", locked: false, audioLocked: false),
+                                     member: member("a", seat: 1, online: true))
+        let b = KikiRelationshipSeat(slot: .init(index: 2, userID: "b", locked: false, audioLocked: false),
+                                     member: member("b", seat: 2, online: true))
+        for (mode, hidden, shown): (KikiRelationshipMode, String, String) in [(.bazi, "NONE", "MIXED"), (.mbti, "OTHER", "GOLDEN")] {
+            let hiddenPair = KikiStageRelationshipPair(a: a, b: b, summary: .init(code: hidden, label: hidden, description: hidden))
+            let shownPair = KikiStageRelationshipPair(a: a, b: b, summary: .init(code: shown, label: shown, description: shown))
+            XCTAssertFalse(KikiRelationshipCategory.isDisplayed(hidden, in: mode))
+            XCTAssertFalse(KikiRelationshipCategory.categories(for: mode).contains { $0.code == hidden })
+            XCTAssertTrue(KikiRelationshipVisuals.strokes(for: hidden).isEmpty)
+            XCTAssertTrue(KikiRelationshipDetails.displayedPairs([hiddenPair], in: mode).isEmpty)
+            XCTAssertEqual(KikiRelationshipDetails.displayedPairs([shownPair], in: mode).map(\.code), [shown])
+            XCTAssertFalse(KikiRelationshipCategory.isDisplayed("UNAVAILABLE", in: mode))
         }
     }
 
@@ -180,7 +304,7 @@ final class KikiRelationshipStageTests: XCTestCase {
 
     func testBaziHasNoPublicTagPlaceholderOrLargeNicknamePlate() {
         XCTAssertEqual(KikiRelationshipSeatLabelLayout.tagHeight(mode: .bazi, value: "INFJ"), 0)
-        XCTAssertEqual(KikiRelationshipSeatLabelLayout.plateHeight(mode: .bazi, value: nil), 20)
+        XCTAssertEqual(KikiRelationshipSeatLabelLayout.plateHeight(mode: .bazi, value: nil), 14)
         XCTAssertEqual(KikiRelationshipSeatLabelLayout.tagHeight(mode: .mbti, value: "INFJ"), 17)
         XCTAssertEqual(KikiRelationshipSeatLabelLayout.tagHeight(mode: .zodiac, value: "处女座"), 17)
         XCTAssertEqual(KikiRelationshipSeatLabelLayout.tagHeight(mode: .mbti, value: nil), 0)
@@ -209,27 +333,44 @@ final class KikiRelationshipStageTests: XCTestCase {
         let previous = scene.windows.first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: scene)
         defer { window.isHidden = true; previous?.makeKeyAndVisible() }
-        let scenarios: [(String, CGFloat, Int, KikiRelationshipMode, ColorScheme)] = [
-            ("small-eight-bazi-light", 320, 8, .bazi, .light),
-            ("phone-eight-mbti-dark", 390, 8, .mbti, .dark),
-            ("phone-eight-zodiac-light", 390, 8, .zodiac, .light),
-            ("phone-one-bazi-dark", 390, 1, .bazi, .dark),
-            ("phone-one-mbti-dark", 390, 1, .mbti, .dark),
-            ("phone-one-zodiac-dark", 390, 1, .zodiac, .dark),
-            ("phone-two-mixed-bazi-light", 390, 2, .bazi, .light),
-            ("phone-two-mixed-bazi-dark", 390, 2, .bazi, .dark),
-            ("phone-empty-bazi-light", 390, 0, .bazi, .light),
-            ("ipad-eight-bazi-dark", 744, 8, .bazi, .dark)
+        let scenarios: [(String, CGFloat, CGFloat, CGFloat, Int, KikiRelationshipMode, ColorScheme)] = [
+            ("small-eight-bazi-light", 320, 568, 250, 8, .bazi, .light),
+            ("small-eight-zodiac-dark", 320, 568, 250, 8, .zodiac, .dark),
+            ("small-eight-mbti-dark", 320, 568, 250, 8, .mbti, .dark),
+            ("small-eight-long-zodiac-dark", 320, 568, 250, 8, .zodiac, .dark),
+            ("small-eight-long-mbti-dark", 320, 568, 250, 8, .mbti, .dark),
+            ("supported-small-eight-long-zodiac-dark", 375, 667, 300, 8, .zodiac, .dark),
+            ("supported-small-eight-long-mbti-dark", 375, 667, 300, 8, .mbti, .dark),
+            ("small-one-bazi-light", 320, 568, 250, 1, .bazi, .light),
+            ("small-empty-zodiac-dark", 320, 568, 250, 0, .zodiac, .dark),
+            ("phone-eight-mbti-dark", 390, 844, 350, 8, .mbti, .dark),
+            ("phone-eight-zodiac-light", 390, 844, 350, 8, .zodiac, .light),
+            ("phone-eight-long-zodiac-dark", 390, 844, 350, 8, .zodiac, .dark),
+            ("phone-eight-long-mbti-dark", 390, 844, 350, 8, .mbti, .dark),
+            ("phone-one-bazi-dark", 390, 844, 350, 1, .bazi, .dark),
+            ("phone-one-mbti-dark", 390, 844, 350, 1, .mbti, .dark),
+            ("phone-one-zodiac-dark", 390, 844, 350, 1, .zodiac, .dark),
+            ("phone-two-mixed-bazi-light", 390, 844, 350, 2, .bazi, .light),
+            ("phone-two-mixed-bazi-dark", 390, 844, 350, 2, .bazi, .dark),
+            ("phone-empty-bazi-light", 390, 844, 350, 0, .bazi, .light),
+            ("large-eight-bazi-dark", 430, 932, 430, 8, .bazi, .dark),
+            ("large-eight-zodiac-dark", 430, 932, 430, 8, .zodiac, .dark),
+            ("large-eight-long-zodiac-dark", 430, 932, 430, 8, .zodiac, .dark),
+            ("large-eight-long-mbti-dark", 430, 932, 430, 8, .mbti, .dark),
+            ("ipad-eight-bazi-dark", 744, 1133, 600, 8, .bazi, .dark)
         ]
         let names = ["青禾", "知夏", "晚晴", "南风", "星野", "听雨", "望舒", "阿岚"]
+        let longNames = ["今天也想好好听你说话", "北方有个爱看星星的人", "夜里的小岛总有温柔晚风", "周末一起去很远的地方散步",
+                         "夏日限定的橘子汽水", "清晨第一缕阳光和你", "云端收藏了很多有趣故事", "山海之间慢慢寻找新朋友"]
         let mbti = ["INFJ", "ENFP", "ISFJ", "ENTP", "ISTP", "INTJ", "ENFJ", "ESTP"]
         let zodiac = ["处女座", "狮子座", "双鱼座", "双子座", "金牛座", "射手座", "白羊座", "双鱼座"]
         let output = URL(fileURLWithPath: "/tmp/kiki-relationship-stage-screenshots", isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-        for (name, viewport, count, mode, scheme) in scenarios {
+        for (name, viewport, viewportHeight, stageBudget, count, mode, scheme) in scenarios {
+            let displayNames = name.contains("long") ? longNames : names
             let occupants = (0..<count).map { index in
                 let id = "fixture-\(index)"
-                let person = KikiRoomMember(userID: id, name: names[index], avatarIndex: index, avatarURL: nil,
+                let person = KikiRoomMember(userID: id, name: displayNames[index], avatarIndex: index, avatarURL: nil,
                     role: index == 0 ? .owner : .member, seatIndex: index + 1,
                     audioMuted: false, chatMuted: false, online: index != 6,
                     canPublishAudio: true, canPublishData: true)
@@ -251,19 +392,19 @@ final class KikiRelationshipStageTests: XCTestCase {
             }
             var motion = KikiRelationshipMotion()
             motion.retarget(orderedIDs: occupants.map(\.id), at: .now, animated: false)
-            let geometry = KikiRelationshipStageGeometry(width: min(440, viewport - 36))
+            let layout = KikiRelationshipStageLayout(width: min(440, viewport - 36), maxHeight: stageBudget)
+            let geometry = layout.geometry
             let circle = KikiRelationshipCircle(geometry: geometry, seats: occupants, activeIDs: Set(occupants.map(\.id)),
                 frame: motion.frame(at: .now), pairs: pairs, profiles: profiles,
                 participants: [], localUserID: occupants.first?.id, mode: mode,
                 edgeOpacity: 1, onOpenPerson: { _ in })
             let content = VStack(spacing: 12) {
                 Text("圆形麦位").font(.headline).padding(.top, 18)
-                Picker("关系模式", selection: .constant(mode)) {
-                    ForEach(KikiRelationshipMode.allCases) { Text($0.title).tag($0) }
-                }.pickerStyle(.segmented).frame(maxWidth: 420).padding(.horizontal, 18)
-                circle
-                KikiRelationshipLegend(mode: mode).padding(.horizontal, 18)
-                Text("\(mode.title) · 关系说明").font(.caption).foregroundStyle(KikiPalette.secondary)
+                VStack(spacing: KikiRelationshipStageLayout.footerSpacing) {
+                    circle
+                    KikiRelationshipStageFooter(layout: layout, selection: .constant(mode))
+                }
+                .frame(width: layout.width, height: layout.height, alignment: .top)
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -272,7 +413,7 @@ final class KikiRelationshipStageTests: XCTestCase {
             let host = UIHostingController(rootView: content)
             host.safeAreaRegions = SafeAreaRegions.container
             window.rootViewController = host
-            window.frame = CGRect(x: 0, y: 0, width: viewport, height: viewport > 500 ? 1133 : 844)
+            window.frame = CGRect(x: 0, y: 0, width: viewport, height: viewportHeight)
             host.view.frame = window.bounds
             window.makeKeyAndVisible()
             try await Task.sleep(for: .milliseconds(180))
@@ -368,18 +509,15 @@ private struct KikiRelationshipModeTransitionFixture: View {
     let seat: KikiRelationshipSeat
 
     var body: some View {
-        let geometry = KikiRelationshipStageGeometry(width: 354)
-        VStack(spacing: 12) {
-            Picker("关系模式", selection: $state.mode) {
-                ForEach(KikiRelationshipMode.allCases) { Text($0.title).tag($0) }
-            }.pickerStyle(.segmented).padding(.top, 30).padding(.horizontal, 18)
-            KikiRelationshipCircle(geometry: geometry, seats: [seat], activeIDs: [seat.id],
+        let layout = KikiRelationshipStageLayout(width: 354, maxHeight: 350)
+        VStack(spacing: KikiRelationshipStageLayout.footerSpacing) {
+            KikiRelationshipCircle(geometry: layout.geometry, seats: [seat], activeIDs: [seat.id],
                 frame: [seat.id: .init(angle: -.pi / 2, radius: 0, opacity: 1)], pairs: [],
                 profiles: [.init(userID: seat.id, mbtiType: "INFJ", zodiacSign: "处女座")],
                 participants: [], localUserID: seat.id, mode: state.mode, edgeOpacity: 1, onOpenPerson: { _ in })
-            KikiRelationshipLegend(mode: state.mode).padding(.horizontal, 18)
-            Spacer()
+            KikiRelationshipStageFooter(layout: layout, selection: $state.mode)
         }
+        .frame(width: layout.width, height: layout.height, alignment: .top)
         .background(KikiPalette.background)
     }
 }
