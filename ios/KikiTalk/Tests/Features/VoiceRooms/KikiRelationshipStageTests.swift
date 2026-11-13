@@ -5,6 +5,43 @@ import XCTest
 
 final class KikiRelationshipStageTests: XCTestCase {
     @MainActor
+    func testShortChineseLabelsFitLegendAndServerBackedDetails() throws {
+        let previous = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .simplifiedChinese
+        defer { KikiLanguageSettings.shared.selection = previous }
+        let a = KikiRelationshipSeat(slot: .init(index: 1, userID: "host", locked: false, audioLocked: false),
+                                    member: member("host", seat: 1, online: true))
+        let b = KikiRelationshipSeat(slot: .init(index: 2, userID: "guest", locked: false, audioLocked: false),
+                                    member: member("guest", seat: 2, online: true))
+        for (mode, code, legacy, expected): (KikiRelationshipMode, String, String, String) in [
+            (.bazi, "MIXED", "合冲并见", "合冲"), (.zodiac, "ADJACENT", "相邻星座", "相邻")
+        ] {
+            let category = try XCTUnwrap(KikiRelationshipCategory.categories(for: mode).first { $0.code == code })
+            XCTAssertEqual(category.label, expected)
+            XCTAssertEqual(category.label.count, 2)
+            XCTAssertEqual(KikiRelationshipVisuals.legendTitle(for: category), expected)
+            XCTAssertEqual(KikiRelationshipVisuals.compactLegendTitle(for: category), expected)
+            let pair = KikiStageRelationshipPair(a: a, b: b, summary: .init(code: code, label: legacy, description: ""))
+            XCTAssertEqual(pair.summary?.label, legacy, "The server protocol value must remain intact")
+            XCTAssertEqual(pair.label, expected, "Current-pair explanations must use the same short label")
+            XCTAssertEqual(KikiRelationshipDetails.displayedPairs([pair], in: mode).first?.label, expected)
+        }
+        let font = UIFont.systemFont(ofSize: 10, weight: .medium)
+        for width: CGFloat in [284, 339, 354, 366, 394, 440] {
+            let layout = KikiRelationshipStageLayout(width: width, maxHeight: 300)
+            let textWidth = (layout.legendWidth - CGFloat(layout.legendColumns - 1) * 4) / CGFloat(layout.legendColumns)
+                - KikiRelationshipLegend.sampleWidth - 3
+            for mode in [KikiRelationshipMode.bazi, .zodiac] {
+                for category in KikiRelationshipCategory.categories(for: mode) where KikiRelationshipCategory.isDisplayed(category.code, in: mode) {
+                    let label = KikiRelationshipVisuals.compactLegendTitle(for: category)
+                    XCTAssertLessThanOrEqual(ceil((label as NSString).size(withAttributes: [.font: font]).width), textWidth,
+                                             "\(width)pt / \(label) must fit without ellipsis")
+                }
+            }
+        }
+    }
+
+    @MainActor
     func testEnglishLegendAndSelectorLabelsFitTheirProductionFramesWithoutScaling() {
         let previous = KikiLanguageSettings.shared.selection
         KikiLanguageSettings.shared.selection = .english
@@ -417,6 +454,10 @@ final class KikiRelationshipStageTests: XCTestCase {
         let window = UIWindow(windowScene: scene)
         defer { window.isHidden = true; previous?.makeKeyAndVisible() }
         let scenarios: [(String, CGFloat, CGFloat, CGFloat, Int, KikiRelationshipMode, ColorScheme)] = [
+            ("short-label-375-single-bazi", 375, 667, 300, 1, .bazi, .dark),
+            ("short-label-375-single-zodiac", 375, 667, 300, 1, .zodiac, .dark),
+            ("short-label-430-single-bazi", 430, 932, 430, 1, .bazi, .dark),
+            ("short-label-430-single-zodiac", 430, 932, 430, 1, .zodiac, .dark),
             ("small-eight-bazi-light", 320, 568, 250, 8, .bazi, .light),
             ("small-eight-zodiac-dark", 320, 568, 250, 8, .zodiac, .dark),
             ("small-eight-mbti-dark", 320, 568, 250, 8, .mbti, .dark),
@@ -559,7 +600,7 @@ final class KikiRelationshipStageTests: XCTestCase {
         let second = KikiRelationshipSeat(slot: .init(index: 2, userID: "guest", locked: false, audioLocked: false),
                                          member: member("guest", seat: 2, online: true))
         for mode in KikiRelationshipMode.allCases {
-            let code = mode == .bazi ? "MIXED" : (mode == .mbti ? "GOLDEN" : "SEXTILE")
+            let code = mode == .bazi ? "MIXED" : (mode == .mbti ? "GOLDEN" : "ADJACENT")
             let label = try XCTUnwrap(KikiRelationshipCategory.categories(for: mode).first { $0.code == code }?.label)
             let pair = KikiStageRelationshipPair(a: seat, b: second,
                 summary: .init(code: code, label: label, description: KikiRelationshipVisuals.explanation(for: code)))

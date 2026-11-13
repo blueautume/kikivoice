@@ -664,6 +664,7 @@ struct KikiRelationshipLegend: View {
                     Text(KikiRelationshipVisuals.compactLegendTitle(for: category))
                         .font(.system(size: 10, weight: .medium)).foregroundStyle(KikiPalette.secondary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.95)
                 }.frame(height: 14, alignment: .leading)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(category.label)

@@ -62,5 +62,13 @@
     "zh-Hans": "显示最近 %@ 天的可用记录。房间举报另在社区安全中查看。",
     "en": "Available reports from the last %@ days are shown. Find room reports in Community safety.",
     "en.one": "Available reports from the last %@ day are shown. Find room reports in Community safety."
+  },
+  "合冲并见": {
+    "zh-Hans": "合冲",
+    "en": "Harmony and contrast"
+  },
+  "相邻星座": {
+    "zh-Hans": "相邻",
+    "en": "Adjacent signs"
   }
 }
