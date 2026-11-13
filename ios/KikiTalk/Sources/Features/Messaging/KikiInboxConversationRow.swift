@@ -20,12 +20,13 @@ struct KikiInboxConversationRow: View {
                         Text(entry.name)
                             .font(.body.weight(.semibold))
                             .foregroundStyle(KikiPalette.text)
-                            .lineLimit(1)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                         if entry.isPinned {
                             Image(systemName: "pin.fill")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(KikiPalette.purple)
-                                .accessibilityLabel("已置顶")
+                                .accessibilityLabel(KikiL10n.text("已置顶"))
                         }
                         Spacer(minLength: 5)
                         if let time = KikiInboxTime.label(entry.activityAt) {
@@ -36,10 +37,11 @@ struct KikiInboxConversationRow: View {
                         }
                     }
                     HStack(spacing: 12) {
-                        Text(entry.preview)
+                        Text(entry.localizedPreview)
                             .font(.subheadline)
                             .foregroundStyle(KikiPalette.secondary)
-                            .lineLimit(1)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
                         if let unread = entry.unreadLabel {
                             Text(unread)
@@ -48,7 +50,7 @@ struct KikiInboxConversationRow: View {
                                 .padding(.horizontal, 6)
                                 .frame(minWidth: 20, minHeight: 20)
                                 .background(KikiPalette.action, in: Capsule())
-                                .accessibilityLabel("\(entry.unreadCount) 条未读")
+                                .accessibilityLabel(KikiL10n.format("%@ 条未读", String(entry.unreadCount)))
                         }
                     }
                 }
@@ -62,7 +64,7 @@ struct KikiInboxConversationRow: View {
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             // The first trailing action sits at the outer edge of the row.
             if canDelete {
-                Button(action: onDelete) { Label("删除", systemImage: "trash") }
+                Button(action: onDelete) { Label(KikiL10n.text("删除"), systemImage: "trash") }
                     .tint(.red)
                     .disabled(isWorking)
                     .accessibilityIdentifier("messages.delete." + entry.id)
@@ -70,7 +72,7 @@ struct KikiInboxConversationRow: View {
 
             if canPin, case .direct = entry.content {
                 Button(action: onTogglePin) {
-                    Label(entry.isPinned ? "取消置顶" : "置顶", systemImage: entry.isPinned ? "pin.slash" : "pin")
+                    Label(entry.isPinned ? KikiL10n.text("取消置顶") : KikiL10n.text("置顶"), systemImage: entry.isPinned ? "pin.slash" : "pin")
                 }
                 .tint(KikiPalette.action)
                 .disabled(isWorking)

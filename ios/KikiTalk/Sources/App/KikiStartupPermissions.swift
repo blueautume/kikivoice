@@ -207,7 +207,7 @@ final class KikiStartupPermissions: ObservableObject {
                     try await requestNotifications(consent, receipt: receipt, operation: id)
                 } catch {
                     try requireCurrent(consent, receipt: receipt, operation: id)
-                    notificationNotice = "暂时无法开启通知，你仍可继续登录，之后在系统设置中调整。"
+                    notificationNotice = KikiL10n.text("暂时无法开启通知，你仍可继续登录，之后在系统设置中调整。")
                 }
                 try requireCurrent(consent, receipt: receipt, operation: id)
                 notificationPermission = await notifications.permission()
@@ -225,7 +225,7 @@ final class KikiStartupPermissions: ObservableObject {
             guard operation == id else { return }
             readyReceipt = nil
             stage = .failed
-            errorMessage = "暂时无法连接服务，请检查网络连接后重试，也可以前往系统设置检查网络访问。"
+            errorMessage = KikiL10n.text("暂时无法连接服务，请检查网络连接后重试，也可以前往系统设置检查网络访问。")
         }
     }
 }

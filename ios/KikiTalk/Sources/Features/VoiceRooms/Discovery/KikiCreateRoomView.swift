@@ -28,7 +28,7 @@ struct KikiCreateRoomView: View {
                 VStack(alignment: .leading, spacing: 26) {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            fieldTitle("房间名称")
+                            fieldTitle(KikiL10n.text("房间名称"))
                             Spacer()
                             Text("\(title.count)/36")
                                 .font(.system(size: 11))
@@ -46,13 +46,13 @@ struct KikiCreateRoomView: View {
                             }
                             .accessibilityIdentifier("newRoomTitle")
                         if trimmedTitle.utf8.count > 100 {
-                            Text("名称过长，请减少文字或表情。")
+                            Text(KikiL10n.text("名称过长，请减少文字或表情。"))
                                 .font(.system(size: 12)).foregroundStyle(Color.red.opacity(0.9))
                         }
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
-                        fieldTitle("背景")
+                        fieldTitle(KikiL10n.text("背景"))
                         KikiRoomBackgroundPicker(theme: $theme)
                     }
 
@@ -67,7 +67,7 @@ struct KikiCreateRoomView: View {
                         HStack(spacing: 10) {
                             if isCreating { ProgressView().tint(.white) }
                             else { Image(systemName: isLive ? "video.fill" : "mic.fill") }
-                            Text(isCreating ? "正在创建…" : (isLive ? "创建并开启直播" : "创建并进入语聊房"))
+                            Text(isCreating ? KikiL10n.text("正在创建…") : (isLive ? KikiL10n.text("创建并开启直播") : KikiL10n.text("创建并进入语聊房")))
                         }
                         .font(.system(size: 15, weight: .semibold))
                         .frame(maxWidth: .infinity)
@@ -86,11 +86,11 @@ struct KikiCreateRoomView: View {
             .scrollDismissesKeyboard(.interactively)
             .background(KikiPalette.background)
             .foregroundStyle(KikiPalette.text)
-            .navigationTitle(isLive ? "创建直播间" : "创建语聊房")
+            .navigationTitle(isLive ? KikiL10n.text("创建直播间") : KikiL10n.text("创建语聊房"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
+                    Button(KikiL10n.text("取消")) { dismiss() }
                         .foregroundStyle(KikiPalette.secondary)
                         .disabled(isCreating)
                 }

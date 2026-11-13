@@ -95,18 +95,79 @@ struct KikiLegalBundle: Decodable {
               var object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               object["draft"] as? Bool != true,
               !["draft", "草稿"].contains((object["status"] as? String ?? "").lowercased()) else {
-            throw KikiAPIError.security("协议内容无法验证，请重新获取。")
+            throw KikiAPIError.security(KikiL10n.text("协议内容无法验证，请重新获取。"))
         }
         var value = try JSONDecoder().decode(KikiLegalBundle.self, from: data)
-        guard value.isValid else { throw KikiAPIError.security("协议内容不完整，请重新获取。") }
+        guard value.isValid else { throw KikiAPIError.security(KikiL10n.text("协议内容不完整，请重新获取。")) }
         object.removeValue(forKey: "documentHash")
         let canonical = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
         let digest = SHA256.hash(data: canonical).map { String(format: "%02x", $0) }.joined()
         guard digest == value.documentHash else {
-            throw KikiAPIError.security("协议正文与校验值不一致，请重新获取。")
+            throw KikiAPIError.security(KikiL10n.text("协议正文与校验值不一致，请重新获取。"))
         }
         value.validatedData = data
         return value
+    }
+}
+
+/// Display-only English text. Consent always uses the canonical bundle's hash.
+struct KikiLegalEnglish: Decodable {
+    let schemaVersion: Int
+    let privacyVersion: String
+    let termsVersion: String
+    let updatedAt: String
+    let minimumAge: Int
+    let locale: String
+    let sourceDocumentHash: String
+    let renderingHash: String
+    let `operator`: KikiLegalBundle.Operator
+    let documents: [KikiLegalBundle.Document]
+    private(set) var validatedData: Data?
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, privacyVersion, termsVersion, updatedAt, minimumAge, locale
+        case sourceDocumentHash, renderingHash, `operator`, documents
+    }
+
+    func matches(_ canonical: KikiLegalBundle) -> Bool {
+        schemaVersion == canonical.schemaVersion && minimumAge == canonical.minimumAge
+        && privacyVersion == canonical.privacyVersion && termsVersion == canonical.termsVersion
+        && updatedAt == canonical.updatedAt && sourceDocumentHash == canonical.documentHash
+        && `operator`.email == canonical.operator.email && documents.count == canonical.documents.count
+        && zip(documents, canonical.documents).allSatisfy { translated, original in
+            translated.id == original.id && translated.version == original.version && !translated.title.isEmpty
+            && translated.sections.count == original.sections.count
+            && zip(translated.sections, original.sections).allSatisfy { section, source in
+                !section.title.isEmpty && section.paragraphs.count == source.paragraphs.count
+                && section.paragraphs.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            }
+        }
+    }
+
+    static func decodeValidated(_ data: Data, canonical: KikiLegalBundle) throws -> KikiLegalEnglish {
+        guard !data.isEmpty, data.count <= 512 * 1024,
+              var object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == Set(["schemaVersion", "privacyVersion", "termsVersion", "updatedAt", "minimumAge", "locale", "sourceDocumentHash", "renderingHash", "operator", "documents"]) else {
+            throw KikiAPIError.security(KikiL10n.text("英文协议内容无法验证，请重新获取。"))
+        }
+        var value = try JSONDecoder().decode(KikiLegalEnglish.self, from: data)
+        guard value.locale == "en", value.matches(canonical) else {
+            throw KikiAPIError.security(KikiL10n.text("英文协议与当前版本不一致，请重新获取。"))
+        }
+        object.removeValue(forKey: "renderingHash")
+        let bytes = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        guard digest == value.renderingHash else {
+            throw KikiAPIError.security(KikiL10n.text("英文协议正文与校验值不一致，请重新获取。"))
+        }
+        value.validatedData = data
+        return value
+    }
+
+    static func bundled(canonical: KikiLegalBundle) -> KikiLegalEnglish? {
+        guard let url = Bundle.main.url(forResource: "KikiLegalDocuments.en", withExtension: "json"),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return try? decodeValidated(data, canonical: canonical)
     }
 }
 
@@ -117,6 +178,7 @@ final class KikiConsentStore: ObservableObject {
     static let shared = KikiConsentStore()
     static let storageKey = "kiki.legalConsent.v1"
     static let documentsStorageKey = "kiki.legalDocuments.v1"
+    static let englishDocumentsStorageKey = "kiki.legalDocuments.en.v1"
 
     enum Presentation: Equatable { case checking, acceptanceRequired, accepted, withdrawing }
 
@@ -131,6 +193,7 @@ final class KikiConsentStore: ObservableObject {
     }
 
     @Published private(set) var documents: KikiLegalBundle?
+    @Published private(set) var englishDocuments: KikiLegalEnglish?
     @Published private(set) var isRefreshingDocuments = false
     @Published private(set) var documentError: String?
     @Published private(set) var hasVerifiedRemoteDocuments = false
@@ -156,6 +219,11 @@ final class KikiConsentStore: ObservableObject {
         self.identity = identity
         self.apiProvider = apiProvider
         self.requiresRemoteDocuments = requiresRemoteDocuments
+        if let canonical = self.documents {
+            englishDocuments = defaults.data(forKey: Self.englishDocumentsStorageKey)
+                .flatMap { try? KikiLegalEnglish.decodeValidated($0, canonical: canonical) }
+                ?? KikiLegalEnglish.bundled(canonical: canonical)
+        }
         if let data = defaults.data(forKey: Self.storageKey) {
             receipt = try? JSONDecoder().decode(Receipt.self, from: data)
         }
@@ -184,7 +252,14 @@ final class KikiConsentStore: ObservableObject {
         return (!requiresRemoteDocuments || hasVerifiedRemoteDocuments)
             && receipt.status == .accepted && receipt.adultConfirmed && receipt.versions == documents.versions
     }
-    var canAccept: Bool { documents != nil && !requiresDocumentRefresh && !isRefreshingDocuments && !isWithdrawalPending && !serviceTransitionInProgress }
+    var hasCurrentEnglish: Bool { documents.map { englishDocuments?.matches($0) == true } ?? false }
+    var displayedDocuments: [KikiLegalBundle.Document] {
+        KikiL10n.isEnglish ? (hasCurrentEnglish ? englishDocuments?.documents ?? [] : []) : documents?.documents ?? []
+    }
+    func displayedDocument(_ canonical: KikiLegalBundle.Document) -> KikiLegalBundle.Document? {
+        displayedDocuments.first { $0.id == canonical.id && $0.version == canonical.version }
+    }
+    var canAccept: Bool { documents != nil && (!KikiL10n.isEnglish || hasCurrentEnglish) && !requiresDocumentRefresh && !isRefreshingDocuments && !isWithdrawalPending && !serviceTransitionInProgress }
 
     func refreshDocuments() async {
         guard !isRefreshingDocuments, !isWithdrawalPending, !serviceTransitionInProgress else { return }
@@ -198,7 +273,27 @@ final class KikiConsentStore: ObservableObject {
             guard let data = current.validatedData else { throw KikiAPIError.invalidResponse }
             defaults.set(data, forKey: Self.documentsStorageKey)
             documents = current
+            if englishDocuments?.matches(current) != true {
+                englishDocuments = defaults.data(forKey: Self.englishDocumentsStorageKey)
+                    .flatMap { try? KikiLegalEnglish.decodeValidated($0, canonical: current) }
+                    ?? KikiLegalEnglish.bundled(canonical: current)
+            }
             hasVerifiedRemoteDocuments = true
+            // A hash-matched local rendering already represents the exact
+            // remotely verified consent text; no second request is needed.
+            if KikiL10n.isEnglish && !hasCurrentEnglish {
+                do {
+                    let englishData = try await apiProvider().legalDocumentsEnglish()
+                    try Task.checkCancellation()
+                    guard !isWithdrawalPending, !serviceTransitionInProgress else { return }
+                    let translated = try KikiLegalEnglish.decodeValidated(englishData, canonical: current)
+                    defaults.set(englishData, forKey: Self.englishDocumentsStorageKey)
+                    englishDocuments = translated
+                } catch is CancellationError { throw CancellationError() }
+                catch {
+                    documentError = "暂时无法获取当前版本的完整英文协议，请联网重试。"
+                }
+            }
             // Persisted updateRequired can describe an earlier deployment.
             // Only the current server snapshot decides which text to present.
             if var pending = receipt, pending.status == .updateRequired {
@@ -207,7 +302,7 @@ final class KikiConsentStore: ObservableObject {
                 notice = "协议已更新，请阅读当前完整文本后重新确认。"
             }
         } catch is CancellationError { }
-        catch { documentError = "暂时无法获取最新协议：\(error.localizedDescription)" }
+        catch { documentError = KikiL10n.format("暂时无法获取最新协议：%@", error.localizedDescription) }
     }
 
     func setServiceTransition(_ active: Bool) { serviceTransitionInProgress = active }
@@ -216,7 +311,7 @@ final class KikiConsentStore: ObservableObject {
     /// confirms the adjacent 18+ declaration; login never writes this receipt.
     func accept() throws {
         guard canAccept, let documents else {
-            throw KikiAPIError.security("请先阅读当前协议，确认同意且已满 18 周岁后继续。")
+            throw KikiAPIError.security(KikiL10n.text("请先阅读当前协议，确认同意且已满 18 周岁后继续。"))
         }
         // Repeated UI delivery must not replace an already-current decision.
         if !hasCurrentConsent {
@@ -230,14 +325,14 @@ final class KikiConsentStore: ObservableObject {
     /// manufacture consent or require a second confirmation.
     func acceptance() throws -> KikiLegalAcceptance {
         guard hasCurrentConsent, let documents else {
-            throw KikiAPIError.security("请先阅读并同意当前协议，确认已满 18 周岁。")
+            throw KikiAPIError.security(KikiL10n.text("请先阅读并同意当前协议，确认已满 18 周岁。"))
         }
         return KikiLegalAcceptance(versions: documents.versions, accepted: true, adultConfirmed: true)
     }
 
     func verify(_ status: KikiLegalStatus) throws {
         guard status.requiredVersions == documents?.versions, !status.requiresAcceptance else {
-            throw KikiAPIError.legalUpdateRequired("服务器协议已更新或尚未确认，请重新核对协议。", status.requiredVersions)
+            throw KikiAPIError.legalUpdateRequired(KikiL10n.text("服务器协议已更新或尚未确认，请重新核对协议。"), status.requiredVersions)
         }
     }
 
@@ -269,7 +364,7 @@ final class KikiConsentStore: ObservableObject {
         var failures: [String] = []
         if let teardown = pendingTeardown {
             do { try await teardown(); pendingTeardown = nil }
-            catch { failures.append("音视频退出未完成：\(error.localizedDescription)") }
+            catch { failures.append(KikiL10n.format("音视频退出未完成：%@", error.localizedDescription)) }
         }
         if receipt?.serverWithdrawalConfirmed != true {
             if let token = identity.read("sessionToken") {
@@ -279,8 +374,8 @@ final class KikiConsentStore: ObservableObject {
                         pending.serverWithdrawalConfirmed = true
                         save(pending)
                     }
-                } catch { failures.append("服务器撤回未获确认：\(error.localizedDescription)") }
-            } else { failures.append("缺少服务器撤回凭据，无法确认账号撤回结果，请联系开发者处理。") }
+                } catch { failures.append(KikiL10n.format("服务器撤回未获确认：%@", error.localizedDescription)) }
+            } else { failures.append(KikiL10n.text("缺少服务器撤回凭据，无法确认账号撤回结果，请联系开发者处理。")) }
         }
         if receipt?.serverWithdrawalConfirmed == true {
             identity.remove("sessionToken")
@@ -296,7 +391,7 @@ final class KikiConsentStore: ObservableObject {
             save(nil)
             notice = "已撤回同意并退出登录。你仍可离线阅读协议；账号注销请在重新同意并登录后操作。"
         } else {
-            withdrawalError = "撤回尚未全部完成。\(failures.joined(separator: "；"))。本机已停止业务服务，请重试。"
+            withdrawalError = KikiL10n.format("撤回尚未全部完成。%@。本机已停止业务服务，请重试。", failures.joined(separator: KikiL10n.isEnglish ? "; " : "；"))
         }
     }
 

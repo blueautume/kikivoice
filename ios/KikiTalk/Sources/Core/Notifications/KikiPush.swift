@@ -7,11 +7,11 @@ enum KikiPushPermission: String, Equatable {
     var permitsDelivery: Bool { self == .authorized || self == .provisional }
     var label: String {
         switch self {
-        case .unknown: return "正在检查"
-        case .notDetermined: return "尚未允许"
-        case .denied: return "系统通知已关闭"
-        case .authorized: return "已允许"
-        case .provisional: return "静默通知已允许"
+        case .unknown: return KikiL10n.text("正在检查")
+        case .notDetermined: return KikiL10n.text("尚未允许")
+        case .denied: return KikiL10n.text("系统通知已关闭")
+        case .authorized: return KikiL10n.text("已允许")
+        case .provisional: return KikiL10n.text("静默通知已允许")
         }
     }
 }
@@ -113,11 +113,11 @@ struct KikiForegroundNotice: Identifiable, Equatable {
     let scope: KikiForegroundNotificationScope
     let candidate: KikiForegroundNotificationCandidate
     var hideContent = false
-    var title: String { hideContent ? "收到新消息" : candidate.preview?.title ?? "收到新消息" }
+    var title: String { hideContent ? KikiL10n.text("收到新消息") : candidate.preview?.title ?? KikiL10n.text("收到新消息") }
     var message: String {
         if !hideContent, let preview = candidate.preview { return preview.message }
-        if case .direct = candidate.kind { return "收到一条新私信，可在消息页查看。" }
-        return "有新的互动消息，可在消息页查看。"
+        if case .direct = candidate.kind { return KikiL10n.text("收到一条新私信，可在消息页查看。") }
+        return KikiL10n.text("有新的互动消息，可在消息页查看。")
     }
 }
 
@@ -298,7 +298,7 @@ enum KikiPushEnvironment {
             guard valid(id, key: key) else { return }
             await resolvePendingTap(id: id, key: key)
         } catch is CancellationError { }
-        catch { if valid(id, key: key) { message = "通知状态暂时无法同步，请稍后重试。" } }
+        catch { if valid(id, key: key) { message = KikiL10n.text("通知状态暂时无法同步，请稍后重试。") } }
     }
 
     func enable() async {
@@ -312,7 +312,7 @@ enum KikiPushEnvironment {
             permission = await system.permission()
             guard store.pushSessionKey == key else { return }
             if permission.permitsDelivery { try await store.setNotificationsEnabled(true) }
-            else { message = "请在系统设置中允许通知，再开启消息提醒。" }
+            else { message = KikiL10n.text("请在系统设置中允许通知，再开启消息提醒。") }
             await refresh()
         } catch is CancellationError { }
         catch { if store.pushSessionKey == key { message = error.localizedDescription } }
@@ -343,7 +343,7 @@ enum KikiPushEnvironment {
     }
     func registrationFailed() {
         token = nil; registeredFingerprint = nil; isRegistered = false
-        if store?.pushSessionKey != nil { message = "系统通知注册未完成，可稍后重试。" }
+        if store?.pushSessionKey != nil { message = KikiL10n.text("系统通知注册未完成，可稍后重试。") }
     }
     func receiveTap(_ tap: KikiPushTap) {
         if let store, store.pushSessionKey != nil {
@@ -460,7 +460,7 @@ enum KikiPushEnvironment {
         var installation = identity.read("pushInstallationID")
         if installation == nil, create {
             let id = UUID().uuidString.lowercased()
-            guard (try? identity.write(id, key: "pushInstallationID")) != nil else { message = "无法安全保存通知设备标识。"; return nil }
+            guard (try? identity.write(id, key: "pushInstallationID")) != nil else { message = KikiL10n.text("无法安全保存通知设备标识。"); return nil }
             installation = id
         }
         guard let installation, UUID(uuidString: installation) != nil else { return nil }
@@ -468,7 +468,7 @@ enum KikiPushEnvironment {
         guard previous >= 0, previous < Int64.max else { return nil }
         let revision = previous + 1
         do { try identity.write(String(revision), key: "pushRegistrationRevision"); return (installation, revision) }
-        catch { message = "无法安全保存通知设备状态。"; return nil }
+        catch { message = KikiL10n.text("无法安全保存通知设备状态。"); return nil }
     }
     private func unbindCurrent() async {
         guard let removal = nextRevision(create: false), let action = store?.pushUnbindOperation(installationID: removal.0, revision: removal.1) else { return }
@@ -476,8 +476,8 @@ enum KikiPushEnvironment {
     }
     private func bindIfReady(id: UUID, key: String) async {
         guard valid(id, key: key), permission.permitsDelivery, let store, store.notificationsEnabled, let token else { return }
-        guard let environment = environment() else { message = "当前安装包尚不能确认通知签名环境，请使用已启用推送的真机版本。"; return }
-        let fingerprint = "\(key)|\(token)|\(environment)|\(permission.rawValue)"
+        guard let environment = environment() else { message = KikiL10n.text("当前安装包尚不能确认通知签名环境，请使用已启用推送的真机版本。"); return }
+        let fingerprint = "\(key)|\(token)|\(environment)|\(permission.rawValue)|\(KikiL10n.languageCode)"
         guard registeredFingerprint != fingerprint || Date().timeIntervalSince(lastRegisteredAt ?? .distantPast) >= 43_200 else { return }
         guard bindingFingerprint != fingerprint else { return }
         let attempt = UUID(); bindingAttempt = attempt
@@ -491,9 +491,9 @@ enum KikiPushEnvironment {
             guard receipt.ok, receipt.accountTag == accountTag else { throw KikiAPIError.invalidResponse }
             isRegistered = receipt.registered; registeredFingerprint = receipt.registered ? fingerprint : nil
             lastRegisteredAt = receipt.registered ? Date() : nil
-            message = receipt.registered ? nil : "通知提醒暂未启用，请检查账号通知开关。"
+            message = receipt.registered ? nil : KikiL10n.text("通知提醒暂未启用，请检查账号通知开关。")
         } catch is CancellationError { }
-        catch { if valid(id, key: key), bindingAttempt == attempt { isRegistered = false; message = "通知设备登记未完成，请稍后重试。" } }
+        catch { if valid(id, key: key), bindingAttempt == attempt { isRegistered = false; message = KikiL10n.text("通知设备登记未完成，请稍后重试。") } }
     }
     private func resolvePendingTap(id: UUID, key: String) async {
         guard let tap = pendingTap, !resolving, let store, valid(id, key: key) else { return }
@@ -540,7 +540,7 @@ enum KikiPushEnvironment {
         catch {
             guard valid(id, key: key), navigationRevision == store.socialNavigationRevision else { return }
             pendingTap = nil; tapAccount = nil
-            store.notify("这条提醒已失效或当前账号无法查看。")
+            store.notify(KikiL10n.text("这条提醒已失效或当前账号无法查看。"))
         }
     }
 
@@ -595,15 +595,15 @@ struct KikiPushPreferencesView: View {
         NavigationStack {
             List {
                 Section {
-                    Label("消息提醒", systemImage: "bell.badge").font(.title3.weight(.semibold))
-                    Text("收到私信、新的关注或关注的人开播时，及时提醒你。开启隐藏消息内容后，通知将不显示对方姓名和消息正文。")
+                    Label(KikiL10n.text("消息提醒"), systemImage: "bell.badge").font(.title3.weight(.semibold))
+                    Text(KikiL10n.text("收到私信、新的关注或关注的人开播时，及时提醒你。开启隐藏消息内容后，通知将不显示对方姓名和消息正文。"))
                         .foregroundStyle(KikiPalette.secondary)
                 }
-                Section("提醒设置") {
-                    Toggle("允许账号接收通知", isOn: Binding(get: { store.notificationsEnabled }, set: { enabled in
+                Section(KikiL10n.text("提醒设置")) {
+                    Toggle(KikiL10n.text("允许账号接收通知"), isOn: Binding(get: { store.notificationsEnabled }, set: { enabled in
                         Task { if enabled { await push.enable() } else { await push.disable() } }
                     })).disabled(push.isBusy).accessibilityIdentifier("push.accountToggle")
-                    Toggle("隐藏消息内容", isOn: Binding(get: { store.hideNotificationContent }, set: { hidden in
+                    Toggle(KikiL10n.text("隐藏消息内容"), isOn: Binding(get: { store.hideNotificationContent }, set: { hidden in
                         contentPreferenceError = nil
                         let account = store.pushSessionKey
                         Task {
@@ -613,25 +613,25 @@ struct KikiPushPreferencesView: View {
                             catch { if account == store.pushSessionKey { contentPreferenceError = error.localizedDescription } }
                         }
                     })).disabled(store.isUpdatingNotificationContent).accessibilityIdentifier("push.hideContentToggle")
-                    LabeledContent("本机系统权限", value: push.permission.label)
+                    LabeledContent(KikiL10n.text("本机系统权限"), value: push.permission.label)
                     if push.permission == .denied {
-                        Link("前往系统设置允许通知", destination: URL(string: UIApplication.openSettingsURLString)!)
+                        Link(KikiL10n.text("前往系统设置允许通知"), destination: URL(string: UIApplication.openSettingsURLString)!)
                     } else if push.permission == .notDetermined {
-                        Button("允许系统通知") { Task { await push.enable() } }.disabled(push.isBusy)
+                        Button(KikiL10n.text("允许系统通知")) { Task { await push.enable() } }.disabled(push.isBusy)
                     } else if store.notificationsEnabled && push.permission.permitsDelivery {
-                        Label(push.isRegistered ? "本机已登记" : "正在准备本机通知", systemImage: push.isRegistered ? "checkmark.circle" : "arrow.triangle.2.circlepath")
+                        Label(push.isRegistered ? KikiL10n.text("本机已登记") : KikiL10n.text("正在准备本机通知"), systemImage: push.isRegistered ? "checkmark.circle" : "arrow.triangle.2.circlepath")
                             .foregroundStyle(KikiPalette.secondary)
                     }
                     if let message = push.message { Text(message).font(.footnote).foregroundStyle(KikiPalette.secondary) }
                     if let contentPreferenceError { Text(contentPreferenceError).font(.footnote).foregroundStyle(KikiPalette.secondary) }
                 }
                 Section {
-                    Text("账号开关会同步到你登录的其他设备。关闭通知不影响 App 内的私信和互动记录。系统是否展示横幅、声音或角标，还取决于本机的通知设置和专注模式。")
+                    Text(KikiL10n.text("账号开关会同步到你登录的其他设备。关闭通知不影响 App 内的私信和互动记录。系统是否展示横幅、声音或角标，还取决于本机的通知设置和专注模式。"))
                         .font(.footnote).foregroundStyle(KikiPalette.secondary)
                 }
             }.scrollContentBackground(.hidden).background(KikiPalette.background)
-                .navigationTitle("通知设置").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+                .navigationTitle(KikiL10n.text("通知设置")).navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button(KikiL10n.text("完成")) { dismiss() } } }
                 .task { await push.refresh() }
                 .onChange(of: store.pushSessionKey) { _ in contentPreferenceError = nil }
         }.tint(KikiPalette.purple)

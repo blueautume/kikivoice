@@ -184,17 +184,23 @@ class ProfileUpdate(Model):
         return value
 
 
-def default_room_title(name):
-    suffix = "的房间"
+def default_room_title(name, *, english=False):
+    suffix = "’s room" if english else "的房间"
     prefix = ""
-    for char in str(name or "我").strip():
+    for char in str(name or ("" if english else "我")).strip():
         if ord(char) < 32 or ord(char) == 127:
             continue
         candidate = prefix + char + suffix
         if len(candidate) > 36 or len(candidate.encode("utf-8")) > 100:
             break
         prefix += char
+    if english and not prefix:
+        return "My room"
     return (prefix or "我") + suffix
+
+
+def requests_english(request):
+    return request.headers.get("accept-language", "").split(",", 1)[0].strip().lower().startswith("en")
 
 
 def clean_room_title(value):
@@ -399,6 +405,11 @@ def create_app(settings=None, gateway=None):
     async def lifespan(app):
         settings.validate()
         app.state.legal_manifest = load_legal_manifest(settings.legal_path)
+        from .legal_translation import load_english
+        try:
+            app.state.legal_english = load_english(Path(settings.legal_path).with_name("legal_documents.en.json"), app.state.legal_manifest)
+        except ValueError:
+            app.state.legal_english = None
         app.state.legal = {key: app.state.legal_manifest[key]
                            for key in ("privacyVersion", "termsVersion", "documentHash")}
         app.state.db = initialize_database(settings.db_path)
@@ -584,6 +595,18 @@ def create_app(settings=None, gateway=None):
         if isinstance(error.detail,dict) and error.detail.get("code") in incidents.CODES:
             _request.state.incident_code=error.detail["code"]
         body = error.detail if isinstance(error.detail, dict) else {"detail": error.detail}
+        # Fixed Chinese errors remain compatible with older clients and are
+        # translated by the app catalog. Variable capacity messages need their
+        # numeric value rendered here rather than translating user content.
+        if requests_english(_request):
+            detail = body.get("detail")
+            if isinstance(detail, str):
+                match = re.fullmatch(r"房间入场人数已达实验上限(\d+)人，请稍后重试", detail)
+                full = re.fullmatch(r"房间已满，实验上限(\d+)人", detail)
+                if match:
+                    body = {**body, "detail": f"This room has reached its trial limit of {match[1]} participants. Please try again later."}
+                elif full:
+                    body = {**body, "detail": f"The room is full. The trial limit is {full[1]} participants."}
         return JSONResponse(body, status_code=error.status_code, headers=error.headers)
 
     def require_consent():
@@ -1417,6 +1440,12 @@ def create_app(settings=None, gateway=None):
         # Text and acceptance requirements share the verified startup snapshot.
         return JSONResponse(app.state.legal_manifest, headers={"Cache-Control": "no-store"})
 
+    @app.get("/v1/legal/documents/en")
+    async def legal_documents_english():
+        if app.state.legal_english is None:
+            raise HTTPException(503, "The current English legal documents are unavailable. Please try again.")
+        return JSONResponse(app.state.legal_english, headers={"Cache-Control": "no-store", "Content-Language": "en"})
+
     @app.get("/v1/diagnostics")
     async def diagnostics(request: Request):
         async with lock:
@@ -1547,7 +1576,7 @@ def create_app(settings=None, gateway=None):
             raise HTTPException(422, "本次实验只支持语聊房，视频直播尚未接入")
         async with lock:
             user, session = authenticate(request)
-            title = payload.title or default_room_title(user["name"])
+            title = payload.title or default_room_title(user["name"], english=requests_english(request))
             app.state.safety.enforce(user["id"], "chat")
             app.state.safety.check_text(title)
             app.state.safety.check_text(payload.category)
@@ -1609,7 +1638,7 @@ def create_app(settings=None, gateway=None):
             if payload.title is not None or payload.theme is not None:
                 if payload.title is not None:
                     app.state.safety.enforce(user["id"], "chat")
-                    title = payload.title or default_room_title(user["name"])
+                    title = payload.title or default_room_title(user["name"], english=requests_english(request))
                     app.state.safety.check_text(title)
                 else:
                     title = room["title"]

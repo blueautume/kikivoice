@@ -48,6 +48,20 @@ PENDING_TTL = DAY
 RECEIPT_TTL = 7 * DAY
 HOSTS = {"sandbox":"https://api.sandbox.push.apple.com", "production":"https://api.push.apple.com"}
 GENERIC_ALERT = {"title":"kiki","body":"你有新的消息，请打开应用查看。"}
+ENGLISH_GENERIC_ALERT = {"title":"kikitalk","body":"You have a new message. Open the app to view it."}
+ENGLISH_NOTICE_KINDS = {
+    "follow": "Started following you",
+    "mutual_follow": "You now follow each other",
+    "room_started": "Started a voice chat. Tap to join.",
+}
+ENGLISH_NOTICE_TEXT = {
+    "关注了你": "Started following you",
+    room_started.TEXT: "Started a voice chat. Tap to join.",
+    "你的一条社交内容因违反社区规则被移除。": "One of your posts was removed for violating the community rules.",
+    "你的社交发布暂受限制，请遵守社区规则；限制不影响登录和查看通知。": "Your social activity is temporarily restricted. Please follow the community rules. You can still sign in and view notifications.",
+    "你的社交发布限制已解除。": "Your social activity restriction has been lifted.",
+    "社区提醒：请文明交流，遵守社区规则。": "Community reminder: be respectful and follow the community rules.",
+}
 MAX_ALERT_TITLE_BYTES = 160
 MAX_ALERT_BODY_BYTES = 2048
 MAX_PAYLOAD_BYTES = 4096
@@ -63,6 +77,9 @@ CREATE TABLE IF NOT EXISTS push_devices (
  permission TEXT NOT NULL, created_at INTEGER NOT NULL, last_seen INTEGER NOT NULL,
  UNIQUE(environment,token_hash));
 CREATE INDEX IF NOT EXISTS push_devices_account ON push_devices(account_id);
+CREATE TABLE IF NOT EXISTS push_device_languages (
+ binding_id TEXT PRIMARY KEY REFERENCES push_devices(id) ON DELETE CASCADE,
+ language TEXT NOT NULL DEFAULT 'zh-Hans' CHECK(language IN ('zh-Hans','en')));
 CREATE TABLE IF NOT EXISTS push_outbox (
  id TEXT PRIMARY KEY, event_id TEXT NOT NULL, event_kind TEXT NOT NULL,
  recipient_id TEXT NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
@@ -85,6 +102,7 @@ class DeviceRegistration(Model):
     environment: Literal["sandbox","production"]
     revision: int = Field(strict=True, ge=1, le=9223372036854775807)
     permission: Literal["authorized","provisional","denied"]
+    language: Literal["zh-Hans","en"] = "zh-Hans"
 
 
 class DeviceRemoval(Model):
@@ -190,7 +208,11 @@ class PushService:
         token = payload.token.lower()
         if len(token)%2:
             raise HTTPException(422,"通知凭证格式不正确")
-        request_hash = self.hashed(json.dumps([user["account_id"],user["token_hash"],token,payload.environment,payload.permission],separators=(",",":")))
+        request_fields = [user["account_id"],user["token_hash"],token,payload.environment,payload.permission]
+        # Preserve hashes for retries from existing Chinese-only clients.
+        if payload.language != "zh-Hans":
+            request_fields.append(payload.language)
+        request_hash = self.hashed(json.dumps(request_fields,separators=(",",":")))
         with self.database(self.settings) as db:
             db.execute("BEGIN IMMEDIATE")
             self.social.check(db,user)
@@ -208,7 +230,9 @@ class PushService:
                 count=db.execute("SELECT COUNT(*) FROM push_devices WHERE account_id=?",(user["account_id"],)).fetchone()[0]
                 if count>=10:
                     raise HTTPException(409,"通知设备已达到10台，请先退出其他设备")
-                db.execute("INSERT INTO push_devices VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(str(uuid.uuid4()),installation,payload.revision,str(uuid.uuid4()),user["account_id"],user["token_hash"],payload.environment,self.hashed(token),self.cipher.encrypt(token.encode()).decode(),payload.permission,now,now))
+                binding_id = str(uuid.uuid4())
+                db.execute("INSERT INTO push_devices VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(binding_id,installation,payload.revision,str(uuid.uuid4()),user["account_id"],user["token_hash"],payload.environment,self.hashed(token),self.cipher.encrypt(token.encode()).decode(),payload.permission,now,now))
+                db.execute("INSERT INTO push_device_languages(binding_id,language) VALUES(?,?)",(binding_id,payload.language))
             purge(db,now)
         return {"ok":True,"accountTag":self.account_tag(user["account_id"]),"registered":payload.permission!="denied"}
 
@@ -243,7 +267,7 @@ class PushService:
             db.execute("INSERT OR IGNORE INTO push_outbox(id,event_id,event_kind,recipient_id,actor_id,binding_id,binding_generation,source_id,created_at,expires_at,state,next_attempt_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(str(uuid.uuid4()),source_id,kind,recipient,actor,binding["id"],binding["generation"],source_id,now,min(now+PENDING_TTL,expires_at) if expires_at is not None else now+PENDING_TTL,"pending",now))
 
     def binding(self,db,row):
-        return db.execute("SELECT d.*,a.*,s.expires_at,s.token_hash AS source_session_hash FROM push_devices d JOIN sessions s ON s.token_hash=d.session_hash JOIN accounts a ON a.account_id=d.account_id WHERE d.id=? AND d.generation=? AND d.account_id=? AND d.last_seen>? AND s.expires_at>? AND a.notifications=1 AND d.permission IN ('authorized','provisional') AND "+self.social.valid_account_sql(),(row["binding_id"],row["binding_generation"],row["recipient_id"],int(self.clock())-BINDING_TTL,int(self.clock()),*self.social.legal_args)).fetchone()
+        return db.execute("SELECT d.*,a.*,s.expires_at,s.token_hash AS source_session_hash,COALESCE(l.language,'zh-Hans') AS push_language FROM push_devices d JOIN sessions s ON s.token_hash=d.session_hash JOIN accounts a ON a.account_id=d.account_id LEFT JOIN push_device_languages l ON l.binding_id=d.id WHERE d.id=? AND d.generation=? AND d.account_id=? AND d.last_seen>? AND s.expires_at>? AND a.notifications=1 AND d.permission IN ('authorized','provisional') AND "+self.social.valid_account_sql(),(row["binding_id"],row["binding_generation"],row["recipient_id"],int(self.clock())-BINDING_TTL,int(self.clock()),*self.social.legal_args)).fetchone()
 
     def destination(self,db,user,row,policy,*,must_unread=True):
         if row["recipient_id"]!=user["account_id"]:return None
@@ -286,7 +310,8 @@ class PushService:
     def notification_payload(self,db,user,row,badge):
         # Called only after destination authorization, in the same DB snapshot.
         # No preview is cached with the queued delivery or its retry receipt.
-        alert=dict(GENERIC_ALERT)
+        english = "push_language" in user.keys() and user["push_language"] == "en"
+        alert=dict(ENGLISH_GENERIC_ALERT if english else GENERIC_ALERT)
         if not user["hide_notification_content"]:
             actor=db.execute("SELECT name FROM accounts WHERE account_id=?",(row["actor_id"],)).fetchone() if row["actor_id"] else None
             if actor:alert["title"]=actor["name"]
@@ -296,7 +321,9 @@ class PushService:
             else:
                 notice=db.execute("SELECT * FROM social_notifications WHERE is_retired=0 AND id=? AND recipient_id=?",(row["source_id"],user["account_id"])).fetchone()
                 if notice:
-                    alert["body"]=notice["text"]
+                    # These are server-authored notices, never user message text.
+                    alert["body"]=(ENGLISH_NOTICE_KINDS.get(notice["kind"], ENGLISH_NOTICE_TEXT.get(notice["text"], ENGLISH_GENERIC_ALERT["body"]))
+                                   if english else notice["text"])
         alert={"title":preview_text(alert["title"],MAX_ALERT_TITLE_BYTES),"body":preview_text(alert["body"],MAX_ALERT_BODY_BYTES)}
         payload={"aps":{"alert":alert,"sound":"default","badge":badge},"deliveryID":row["id"],"accountTag":self.account_tag(row["recipient_id"])}
         # JSON escaping also consumes APNs' byte budget (quotes, newlines, etc.).

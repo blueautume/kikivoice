@@ -10,11 +10,11 @@ enum KikiRoomBackgroundStyle: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .mist: return "简约"
-        case .daylight: return "晨光"
-        case .sky: return "晴空"
-        case .dusk: return "暮色"
-        case .mint: return "薄荷"
+        case .mist: return KikiL10n.text("简约")
+        case .daylight: return KikiL10n.text("晨光")
+        case .sky: return KikiL10n.text("晴空")
+        case .dusk: return KikiL10n.text("暮色")
+        case .mint: return KikiL10n.text("薄荷")
         }
     }
 
@@ -98,7 +98,7 @@ struct KikiRoomBackgroundPicker: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(style.title)背景")
+                .accessibilityLabel(KikiL10n.format("%@背景", String(describing: style.title)))
                 .accessibilityAddTraits(theme == style.rawValue ? .isSelected : [])
             }
         }

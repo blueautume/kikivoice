@@ -4,7 +4,7 @@ enum KikiRelationshipMode: String, Codable, CaseIterable, Identifiable, Sendable
     case bazi, zodiac, mbti
     var id: String { rawValue }
     var title: String {
-        switch self { case .bazi: return "八字"; case .mbti: return "MBTI"; case .zodiac: return "星座" }
+        switch self { case .bazi: return KikiL10n.text("八字"); case .mbti: return "MBTI"; case .zodiac: return KikiL10n.text("星座") }
     }
 }
 
@@ -49,13 +49,13 @@ struct KikiRoomRelationships: Codable, Equatable, Sendable {
 enum KikiBirthCalendar: String, Codable, CaseIterable, Identifiable, Sendable {
     case gregorian, lunar
     var id: String { rawValue }
-    var title: String { self == .gregorian ? "公历" : "农历" }
+    var title: String { self == .gregorian ? KikiL10n.text("公历") : KikiL10n.text("农历") }
 }
 
 enum KikiRelationshipEditor: String, CaseIterable, Identifiable, Sendable {
     case bazi, mbti
     var id: String { rawValue }
-    var title: String { self == .bazi ? "八字" : "MBTI" }
+    var title: String { self == .bazi ? KikiL10n.text("八字") : "MBTI" }
 }
 
 /// Only sent to the account owner's private endpoints. Explicit nulls allow

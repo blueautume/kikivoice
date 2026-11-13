@@ -160,7 +160,7 @@ private struct KikiForegroundNoticeBanner: View {
                         .font(.title3).foregroundStyle(KikiPalette.purple)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(notice.title).font(.subheadline.weight(.semibold)).foregroundStyle(KikiPalette.text)
-                            .lineLimit(1)
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                         Text(notice.message).font(.footnote).foregroundStyle(KikiPalette.secondary)
                             .lineLimit(3).fixedSize(horizontal: false, vertical: true)
                     }
@@ -171,7 +171,7 @@ private struct KikiForegroundNoticeBanner: View {
                 Image(systemName: "xmark").font(.subheadline.weight(.semibold))
                     .foregroundStyle(KikiPalette.secondary).frame(width: 32, height: 36)
                     .contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityLabel("关闭新消息提醒")
+            }.buttonStyle(.plain).accessibilityLabel(KikiL10n.text("关闭新消息提醒"))
                 .accessibilityIdentifier("foregroundNotice.close")
         }
         .padding(14)

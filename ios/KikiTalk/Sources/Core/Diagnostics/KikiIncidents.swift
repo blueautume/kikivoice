@@ -132,10 +132,10 @@ struct KikiTransportFailure: LocalizedError, Sendable {
     let code: KikiIncidentCode
     var errorDescription: String? {
         switch code {
-        case .requestTimeout: return "请求超时，请稍后重试。"
-        case .networkUnavailable, .networkConnectionLost: return "网络连接暂不可用，请检查网络后重试。"
-        case .networkTLSFailed: return "服务器身份校验失败，请使用最新版本或联系管理员。"
-        default: return "网络请求失败，请稍后重试。"
+        case .requestTimeout: return KikiL10n.text("请求超时，请稍后重试。")
+        case .networkUnavailable, .networkConnectionLost: return KikiL10n.text("网络连接暂不可用，请检查网络后重试。")
+        case .networkTLSFailed: return KikiL10n.text("服务器身份校验失败，请使用最新版本或联系管理员。")
+        default: return KikiL10n.text("网络请求失败，请稍后重试。")
         }
     }
 }
@@ -332,6 +332,6 @@ struct KikiRoomOperationFailure: LocalizedError {
     let eventID: String?
     var errorDescription: String? {
         guard let eventID else { return message }
-        return "\(message)\n问题编号：\(eventID.prefix(8).uppercased())"
+        return KikiL10n.format("%@\n问题编号：%@", message, String(eventID.prefix(8).uppercased()))
     }
 }

@@ -102,7 +102,7 @@ final class KikiRoomPresentationTests: XCTestCase {
             if !item.owner {
                 XCTAssertNil(edit, "A member's room identity must not become an edit button")
                 if let title = nodes.first(where: { $0.accessibilityLabel == item.title }),
-                   let owner = nodes.first(where: { $0.accessibilityLabel == "房主 一个昵称很长也需要清楚区分的房主" }) {
+                   let owner = nodes.first(where: { $0.accessibilityLabel == KikiL10n.format("房主 %@", "一个昵称很长也需要清楚区分的房主") }) {
                     XCTAssertLessThanOrEqual(title.accessibilityFrame.maxY, owner.accessibilityFrame.minY + 1,
                                              "The title must stay above the host nickname")
                 }
@@ -490,9 +490,9 @@ final class KikiRoomPresentationTests: XCTestCase {
         XCTAssertTrue(floating.bounds.inset(by: floating.safeAreaInsets).contains(bubble.convert(bubble.bounds, to: floating)))
         XCTAssertNil(floating.hitTest(CGPoint(x: 2, y: 2), with: nil), "Touches outside the avatar belong to the app underneath")
         XCTAssertNotNil(floating.hitTest(bubble.center, with: nil))
-        XCTAssertEqual(bubble.accessibilityLabel, "返回小岛的语聊房")
+        XCTAssertEqual(bubble.accessibilityLabel, KikiL10n.format("返回%@的语聊房", "小岛"))
         XCTAssertTrue(bubble.accessibilityValue?.contains("周末一起聊聊") == true)
-        XCTAssertEqual(Set(bubble.accessibilityCustomActions?.map(\.name) ?? []), ["移到左侧", "移到右侧"])
+        XCTAssertEqual(Set(bubble.accessibilityCustomActions?.map(\.name) ?? []), [KikiL10n.text("移到左侧"), KikiL10n.text("移到右侧")])
         XCTAssertTrue(bubble.gestureRecognizers?.contains { $0 is UIPanGestureRecognizer } == true)
         let captions = descendants(of: bubble).compactMap { ($0 as? UILabel)?.text }
         XCTAssertTrue(captions.isEmpty, "Default avatars use a native person symbol without emoji or a text capsule")
@@ -512,7 +512,7 @@ final class KikiRoomPresentationTests: XCTestCase {
 
         overlay.update(roomTitle: "周末一起聊聊", status: "语聊中", avatarURL: nil, avatarIndex: 4,
                        hostName: "小岛", isSpeaking: true)
-        XCTAssertTrue(bubble.accessibilityValue?.contains("房内有人正在发言") == true,
+        XCTAssertTrue(bubble.accessibilityValue?.contains(KikiL10n.text("房内有人正在发言")) == true,
                       "The ripple reflects anyone speaking in the room, including a listener's remote audio")
         if UIAccessibility.isReduceMotionEnabled {
             XCTAssertTrue(rings.contains { $0.opacity > 0 })
@@ -559,7 +559,7 @@ final class KikiRoomPresentationTests: XCTestCase {
         let onlineFrame = bubble.frame
         overlay.update(roomTitle: "周末一起聊聊", status: "重连中", avatarURL: nil, avatarIndex: 4,
                        hostName: "小岛", isSpeaking: false, isOnline: false)
-        XCTAssertTrue(bubble.accessibilityValue?.contains("连接中断") == true)
+        XCTAssertTrue(bubble.accessibilityValue?.contains(KikiL10n.text("连接中断，等待恢复")) == true)
         XCTAssertEqual(bubble.frame, onlineFrame)
         let avatar = try XCTUnwrap(descendants(of: bubble).first {
             $0.accessibilityIdentifier == "voiceRoomFloatingAvatar"

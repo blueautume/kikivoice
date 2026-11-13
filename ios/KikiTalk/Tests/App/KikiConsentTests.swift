@@ -9,6 +9,15 @@ import XCTest
 
 @MainActor
 final class KikiConsentTests: XCTestCase {
+    func testEnglishCoreOnboardingProfileAndNotificationScreenshots() async throws {
+        let previous = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .english
+        defer { KikiLanguageSettings.shared.selection = previous }
+        try await testConsentPageAndMinimalLoginOfflineFixtureScreenshots()
+        try await testP1NativeScreenshotsWithAuthenticatedFixtures()
+        try await testPushPreferencesForegroundFixtureScreenshots()
+    }
+
     private func defaults() -> UserDefaults {
         let name = "KikiConsentTests." + UUID().uuidString
         addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: name) }
@@ -770,7 +779,7 @@ extension KikiConsentTests {
         let docs = try XCTUnwrap(KikiLegalBundle.bundled), peer = "kiki_target0000"
         let folder = URL(fileURLWithPath: "/tmp/kiki-direct-access-screenshots", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        let device = (UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone") + (KikiL10n.isEnglish ? "-en" : "")
         let person = KikiPerson(id: peer, name: "小岛 · 离线界面验收", bio: "", avatarIndex: 4, avatarURL: nil,
                                 following: false, followsYou: false, mutual: false, followingCount: 0, followerCount: 0, currentRoomID: nil)
         var checks: [[String: Any]] = []
@@ -1402,7 +1411,7 @@ extension KikiConsentTests {
         let docs = try XCTUnwrap(KikiLegalBundle.bundled), peer = "kiki_fixture0002"
         let folder = URL(fileURLWithPath: "/tmp/kiki-public-profile-actions", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        let device = (UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone") + (KikiL10n.isEnglish ? "-en" : "")
         func nativeButtons(_ view: UIView) -> [UIButton] {
             ((view as? UIButton).map { [$0] } ?? []) + view.subviews.flatMap(nativeButtons)
         }
@@ -1497,19 +1506,25 @@ extension KikiConsentTests {
                 let more = try XCTUnwrap(buttons.first { $0.accessibilityIdentifier == "social.profile.more" })
                 let frames = [direct, follow, more].map { $0.convert($0.bounds, to: profile.view) }
                 XCTAssertTrue([direct, follow, more].allSatisfy(\.isEnabled))
-                XCTAssertEqual(frames[0].midY, frames[1].midY, accuracy: 1)
-                XCTAssertEqual(frames[1].midY, frames[2].midY, accuracy: 1)
-                XCTAssertLessThanOrEqual(frames[0].maxX, frames[1].minX)
-                XCTAssertLessThanOrEqual(frames[1].maxX, frames[2].minX)
+                if typeSize.isAccessibilitySize {
+                    XCTAssertEqual(frames[0].midX, frames[1].midX, accuracy: 1)
+                    XCTAssertEqual(frames[1].midX, frames[2].midX, accuracy: 1)
+                    XCTAssertLessThanOrEqual(frames[0].maxY + 4, frames[1].minY)
+                    XCTAssertLessThanOrEqual(frames[1].maxY + 4, frames[2].minY)
+                } else {
+                    XCTAssertEqual(frames[0].midY, frames[1].midY, accuracy: 1)
+                    XCTAssertEqual(frames[1].midY, frames[2].midY, accuracy: 1)
+                    XCTAssertLessThanOrEqual(frames[0].maxX, frames[1].minX)
+                    XCTAssertLessThanOrEqual(frames[1].maxX, frames[2].minX)
+                }
                 XCTAssertTrue(frames.allSatisfy { $0.width >= 44 && $0.height >= 44 && $0.minX >= -1 && $0.maxX <= profile.view.bounds.width + 1 && $0.maxY <= profile.view.bounds.height + 1 })
                 for button in [direct, follow] {
                     let label = try XCTUnwrap(button.titleLabel)
                     let titleFrame = label.convert(label.bounds, to: button)
-                    // UIButton.Configuration may restore numberOfLines=0 while
-                    // laying out a single fitted line. Check visible geometry,
-                    // rather than UIKit's internal line-limit implementation.
+                    // Translated titles may wrap. Their full rendered rectangle
+                    // must remain inside the native button's visible bounds.
                     XCTAssertGreaterThan(titleFrame.height, 0)
-                    XCTAssertLessThanOrEqual(titleFrame.height, min(button.bounds.height, label.font.lineHeight * 1.25) + 1)
+                    XCTAssertLessThanOrEqual(titleFrame.height, button.bounds.height + 1)
                     XCTAssertGreaterThanOrEqual(titleFrame.minX, -1)
                     XCTAssertLessThanOrEqual(titleFrame.maxX, button.bounds.width + 1)
                     XCTAssertGreaterThanOrEqual(titleFrame.minY, -1)
@@ -2272,7 +2287,7 @@ extension KikiConsentTests {
         for output in [folder, layoutFolder] {
             try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         }
-        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        let device = (UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone") + (KikiL10n.isEnglish ? "-en" : "")
 
         func capture(_ name: String, screen: AnyView, size: CGSize? = nil, output: URL) async throws {
             defer { window.frame = originalFrame }
@@ -2364,7 +2379,7 @@ extension KikiConsentTests {
         defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
         let folder = URL(fileURLWithPath: "/tmp/kiki-native-tabs-screenshots", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        let device = (UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone") + (KikiL10n.isEnglish ? "-en" : "")
         var manifest: [[String: Any]] = []
         defer {
             if let data = try? JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys]) {
@@ -2930,7 +2945,7 @@ extension KikiConsentTests {
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)) }
         let folder = URL(fileURLWithPath: "/tmp/kiki-apns-screenshots", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        let device = (UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone") + (KikiL10n.isEnglish ? "-en" : "")
         try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent(device + "-notification-settings.png"))
         let attachment = XCTAttachment(image: image); attachment.name = device + "-notification-settings"; attachment.lifetime = .keepAlways; add(attachment)
         await store.logout()
@@ -3020,7 +3035,7 @@ extension KikiConsentTests {
         defer { window.frame = originalFrame; window.isHidden = true; previous?.makeKeyAndVisible() }
         let folder = URL(fileURLWithPath: "/tmp/kiki-onboarding-clean-screenshots", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        let device = (UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone") + (KikiL10n.isEnglish ? "-en" : "")
 
         func capture(_ name: String, screen: AnyView, size: CGSize? = nil) async throws {
             defer { window.frame = originalFrame }
@@ -3040,9 +3055,9 @@ extension KikiConsentTests {
 
         try await capture("silent-startup-light", screen: AnyView(KikiStartupView().preferredColorScheme(.light)))
         try await capture("silent-startup-dark", screen: AnyView(KikiStartupView().preferredColorScheme(.dark)))
-        try await capture("startup-legal-error-light", screen: AnyView(KikiStartupView(errorMessage: "暂时无法获取最新协议，请检查网络后重试。", showsOfflineDocuments: true)
+        try await capture("startup-legal-error-light", screen: AnyView(KikiStartupView(errorMessage: KikiL10n.text("暂时无法获取最新协议，请检查网络后重试。"), showsOfflineDocuments: true)
             .environmentObject(consent).preferredColorScheme(.light)))
-        try await capture("startup-legal-error-short-320x568", screen: AnyView(KikiStartupView(errorMessage: "暂时无法获取最新协议，请检查网络后重试。", showsOfflineDocuments: true)
+        try await capture("startup-legal-error-short-320x568", screen: AnyView(KikiStartupView(errorMessage: KikiL10n.text("暂时无法获取最新协议，请检查网络后重试。"), showsOfflineDocuments: true)
             .environmentObject(consent).preferredColorScheme(.light)), size: CGSize(width: 320, height: 568))
         try await capture("consent-page-light", screen: AnyView(KikiConsentGateView().environmentObject(consent).preferredColorScheme(.light)))
         try await capture("consent-page-dark", screen: AnyView(KikiConsentGateView().environmentObject(consent).preferredColorScheme(.dark)))
@@ -4328,7 +4343,7 @@ extension KikiConsentTests {
             XCTAssertTrue(clearedPage.entries.isEmpty)
             let folder = URL(fileURLWithPath: "/tmp/kiki-inbox-empty-screenshots", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+            let device = (UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone") + (KikiL10n.isEnglish ? "-en" : "")
             for (name, size, scheme) in [
                 ("phone-light", CGSize(width: 375, height: 812), ColorScheme.light),
                 ("phone-dark", CGSize(width: 375, height: 812), ColorScheme.dark),
@@ -5015,7 +5030,7 @@ extension KikiConsentTests {
         try await withSocialWindow { window in
             let folder = URL(fileURLWithPath: "/tmp/kiki-relationships-screenshots", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+            let device = (UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone") + (KikiL10n.isEnglish ? "-en" : "")
             for kind in KikiRelationshipKind.allCases {
                 for (name, scheme, size) in [("light", ColorScheme.light, DynamicTypeSize.large),
                                              ("dark", ColorScheme.dark, .large),
@@ -5026,10 +5041,15 @@ extension KikiConsentTests {
                     try await self.waitUntil { self.relationshipButton(in: window, userID: fixture.mutualID) != nil }
                     try await Task.sleep(nanoseconds: 180_000_000)
                     window.layoutIfNeeded()
-                    let control = try XCTUnwrap(self.relationshipSegmentedControls(window).first)
-                    XCTAssertEqual((0..<control.numberOfSegments).compactMap { control.titleForSegment(at: $0) },
-                                   ["互相关注", "正在关注", "粉丝"])
-                    XCTAssertEqual(control.selectedSegmentIndex, KikiRelationshipKind.allCases.firstIndex(of: kind))
+                    let controls = self.relationshipSegmentedControls(window)
+                    if size.isAccessibilitySize {
+                        XCTAssertTrue(controls.isEmpty, "Large text uses a menu so translated segment labels cannot collide")
+                    } else {
+                        let control = try XCTUnwrap(controls.first)
+                        XCTAssertEqual((0..<control.numberOfSegments).compactMap { control.titleForSegment(at: $0) },
+                                       [KikiL10n.text("互相关注"), KikiL10n.text("正在关注"), KikiL10n.text("粉丝")])
+                        XCTAssertEqual(control.selectedSegmentIndex, KikiRelationshipKind.allCases.firstIndex(of: kind))
+                    }
                     let buttons = self.relationshipNativeButtons(window).filter {
                         $0.accessibilityIdentifier?.hasPrefix("relationships.action.") == true
                     }
@@ -5231,7 +5251,7 @@ extension KikiConsentTests {
         store.updateDirectDraft("离线验收草稿，不发送", personID: peer)
         let folder = URL(fileURLWithPath: "/tmp/kiki-direct-identity-screenshots", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        let device = (UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone") + (KikiL10n.isEnglish ? "-en" : "")
         var checks: [[String: Any]] = []
         try await withSocialWindow { window in
             for (name, scheme, size) in [("light", ColorScheme.light, DynamicTypeSize.large),
@@ -5344,7 +5364,7 @@ extension KikiConsentTests {
                                 followingCount: 12, followerCount: 18, currentRoomID: nil)
         let folder = URL(fileURLWithPath: "/tmp/kiki-direct-entry-screenshots", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        let device = (UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone") + (KikiL10n.isEnglish ? "-en" : "")
         var checks: [[String: Any]] = []
         for populated in [false, true] {
             let name = populated ? "existing-chat" : "new-chat"

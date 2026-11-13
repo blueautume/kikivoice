@@ -1,0 +1,66 @@
+{
+  "举报用户": "Report User",
+  "拉黑用户": "Block User",
+  "此用户": "this user",
+  "查看房主主页": "View host’s profile",
+  "取消收藏": "Remove from Saved",
+  "房间编号无效。": "This room could not be verified.",
+  "处理中": "In review",
+  "文字禁言": "Chat muted",
+  "关注": "Follow",
+  "星座": "Zodiac",
+  "1–16 字，之后可以在「我」中修改昵称和头像。": "Use 1–16 characters. You can change your nickname and photo in Profile later.",
+  "已创建房间，浏览记录暂未同步。": "Room created. Your recent rooms haven’t synced yet.",
+  "已加入房间，浏览记录暂未同步。": "Room joined. Your recent rooms haven’t synced yet.",
+  "已取消收藏": "Room removed from saved rooms",
+  "单房人数上限": "Room capacity",
+  "解除禁麦": "Allow speaking",
+  "已被禁言": "You’re muted in chat",
+  "音视频退出未完成：%@": "Couldn’t fully disconnect from voice chat: %@",
+  "缺少服务器撤回凭据，无法确认账号撤回结果，请联系开发者处理。": "We’re missing the record needed to confirm your consent withdrawal. Contact the developer for help.",
+  "点击“同意并继续”，表示你已阅读并同意《用户协议》《隐私政策》及上述关系资料使用方式，并确认已满 18 周岁。": "By tapping “Agree and Continue”, you confirm that you have read and agree to the Terms of Service, Privacy Policy, and use of compatibility information described above, and that you are at least 18.",
+  "关系说明": "About compatibility",
+  "重新获取关系": "Refresh compatibility",
+  "全部关系图示": "Compatibility guide",
+  "%@关系说明": "About %@ compatibility",
+  "暂无法展示关系": "Compatibility unavailable",
+  "灵感搭子。适合交换思路，轮流当彼此的小老师。少一点说教，多一点好奇，问问对方的理由，让聊天多出有趣的新发现。": "Learning from each other. Swap ideas and take turns learning from each other. Stay curious, ask why, and leave room for discoveries without turning the conversation into a lecture.",
+  "新奇磨合。想法和习惯可能不在同一频道，好奇心能打开新话题。把期待说具体，给彼此一点调整的时间，慢慢找到共同节奏。": "Finding your rhythm. Your ideas and habits may differ, giving curiosity plenty to work with. Be specific about what you expect and give each other time to find a shared rhythm.",
+  "反差来电。不同的表达和习惯让互动有张力，也有互补的想象空间。先听懂另一边的想法，再一起找平衡，别急着把对话变成辩论。": "Different styles, fresh energy. Different styles and habits can bring energy and balance to the conversation. Hear each other out and find common ground before jumping into debate.",
+  "互相关注": "Mutuals",
+  "%@ 个房间": {
+    "zh-Hans": "%@ 个房间",
+    "en": "%@ rooms",
+    "en.one": "%@ room"
+  },
+  "%@ 条未读": {
+    "zh-Hans": "%@ 条未读",
+    "en": "%@ unread messages",
+    "en.one": "%@ unread message"
+  },
+  "%@ 条未读消息": {
+    "zh-Hans": "%@ 条未读消息",
+    "en": "%@ unread messages",
+    "en.one": "%@ unread message"
+  },
+  "对方回复前，还可发送 %@ 条消息。": {
+    "zh-Hans": "对方回复前，还可发送 %@ 条消息。",
+    "en": "You can send %@ more messages before they reply.",
+    "en.one": "You can send %@ more message before they reply."
+  },
+  "%@ 条待处理申请": {
+    "zh-Hans": "%@ 条待处理申请",
+    "en": "%@ pending requests",
+    "en.one": "%@ pending request"
+  },
+  "显示最近 %@ 天的可用记录。举报提交成功不表示已认定违规；运营核查后更新状态。": {
+    "zh-Hans": "显示最近 %@ 天的可用记录。举报提交成功不表示已认定违规；运营核查后更新状态。",
+    "en": "Available reports from the last %@ days are shown. Submitting a report doesn’t confirm a violation. The status updates after our team reviews it.",
+    "en.one": "Available reports from the last %@ day are shown. Submitting a report doesn’t confirm a violation. The status updates after our team reviews it."
+  },
+  "显示最近 %@ 天的可用记录。房间举报另在社区安全中查看。": {
+    "zh-Hans": "显示最近 %@ 天的可用记录。房间举报另在社区安全中查看。",
+    "en": "Available reports from the last %@ days are shown. Find room reports in Community safety.",
+    "en.one": "Available reports from the last %@ day are shown. Find room reports in Community safety."
+  }
+}

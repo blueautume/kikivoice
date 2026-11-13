@@ -20,7 +20,7 @@ struct KikiInlineError: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.circle").accessibilityHidden(true)
             Text(message).font(.subheadline).frame(maxWidth: .infinity, alignment: .leading)
-            Button("重试", action: retry).font(.subheadline.weight(.semibold))
+            Button(KikiL10n.text("重试"), action: retry).font(.subheadline.weight(.semibold))
         }.foregroundStyle(KikiPalette.lavender).padding(16)
             .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 14))
     }
@@ -34,9 +34,9 @@ struct KikiPersonRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
                     Text(person.name).font(.body.weight(.semibold)).foregroundStyle(KikiPalette.text)
-                    if person.mutual { Text("互关").font(.caption).foregroundStyle(KikiPalette.lavender) }
+                    if person.mutual { Text(KikiL10n.text("互关")).font(.caption).foregroundStyle(KikiPalette.lavender) }
                 }
-                Text(person.bio.isEmpty ? "还没有填写简介" : person.bio)
+                Text(person.bio.isEmpty ? KikiL10n.text("还没有填写简介") : person.bio)
                     .font(.subheadline).foregroundStyle(KikiPalette.secondary).lineLimit(1)
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(.vertical, 10).contentShape(Rectangle())
@@ -61,8 +61,8 @@ struct KikiPeopleDirectoryView: View {
                     if let error { KikiInlineError(message: error) { Task { await reload() } } }
                     if isLoading && people.isEmpty { ProgressView().padding(30) }
                     else if people.isEmpty && error == nil {
-                        KikiEmptyState(symbol: "person.2", title: query.isEmpty ? "认识同频的人" : "没有找到用户",
-                                       message: query.isEmpty ? "这里会展示已完成资料的社区成员。" : "试试昵称或完整账号编号。")
+                        KikiEmptyState(symbol: "person.2", title: query.isEmpty ? KikiL10n.text("认识同频的人") : KikiL10n.text("没有找到用户"),
+                                       message: query.isEmpty ? KikiL10n.text("这里会展示已完成资料的社区成员。") : KikiL10n.text("试试昵称或完整账号编号。"))
                     }
                     LazyVStack(spacing: 0) {
                         ForEach(people) { person in
@@ -70,13 +70,13 @@ struct KikiPeopleDirectoryView: View {
                             if person.id != people.last?.id { Divider().overlay(KikiPalette.elevated) }
                         }
                     }.padding(.horizontal, 16).background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 18))
-                    if nextCursor != nil { Button(isLoading ? "正在加载…" : "加载更多") { Task { await loadMore() } }.disabled(isLoading) }
+                    if nextCursor != nil { Button(isLoading ? KikiL10n.text("正在加载…") : KikiL10n.text("加载更多")) { Task { await loadMore() } }.disabled(isLoading) }
                 }.padding(20).frame(maxWidth: 720).frame(maxWidth: .infinity)
             }
             .background(KikiPalette.background.ignoresSafeArea()).refreshable { await reload() }
-            .navigationTitle("找朋友").navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: "搜索昵称或账号编号")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .navigationTitle(KikiL10n.text("找朋友")).navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, prompt: KikiL10n.text("搜索昵称或账号编号"))
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(KikiL10n.text("完成")) { dismiss() } } }
             .onChange(of: store.socialPrivacyRevision) { _ in
                 generation = UUID(); people = []; nextCursor = nil; isLoading = false
                 Task { await reload() }
@@ -118,6 +118,7 @@ struct KikiPublicProfileView: View {
     @ObservedObject var store: KikiAppStore
     var leadingAction: AnyView? = nil
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var person: KikiPerson?
     @State private var error: String?
     @State private var isLoading = false
@@ -142,34 +143,34 @@ struct KikiPublicProfileView: View {
                             if person.mbtiType != nil || person.zodiacSign != nil {
                                 KikiPublicRelationshipTags(mbtiType: person.mbtiType, zodiacSign: person.zodiacSign)
                             }
-                            Text(person.bio.isEmpty ? "这个人很安静，还没有留下简介。" : person.bio)
+                            Text(person.bio.isEmpty ? KikiL10n.text("这个人很安静，还没有留下简介。") : person.bio)
                                 .font(.body).foregroundStyle(KikiPalette.secondary).multilineTextAlignment(.center)
                             Text(person.publicID).font(.caption.monospaced()).foregroundStyle(KikiPalette.muted).textSelection(.enabled)
                         }.frame(maxWidth: .infinity).padding(.top, 20)
                         HStack(spacing: 0) {
-                            count(person.followingCount, title: "关注")
+                            count(person.followingCount, title: KikiL10n.isEnglish ? KikiL10n.text("正在关注") : KikiL10n.text("关注"))
                             Divider().frame(height: 28)
-                            count(person.followerCount, title: "粉丝")
+                            count(person.followerCount, title: KikiL10n.text("粉丝"))
                         }.padding(18).background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 18))
                         if let room {
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("正在语聊").font(.headline)
+                                Text(KikiL10n.text("正在语聊")).font(.headline)
                                 KikiRoomCard(room: room)
-                                Button("进入房间") { Task { await open(room) } }.font(.body.weight(.semibold)).disabled(store.isJoiningRoom)
+                                Button(KikiL10n.text("进入房间")) { Task { await open(room) } }.font(.body.weight(.semibold)).disabled(store.isJoiningRoom)
                             }
                         }
-                        Text("关注后，可以在语聊页的「关注」中找到对方正在开的房间。")
+                        Text(KikiL10n.text("关注后，可以在语聊页的「关注」中找到对方正在开的房间。"))
                             .font(.footnote).foregroundStyle(KikiPalette.muted).frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }.padding(24).frame(maxWidth: 600).frame(maxWidth: .infinity)
             }.background(KikiPalette.background.ignoresSafeArea()).refreshable { await reload() }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if let person, userID != store.userID {
-                        actions(for: person).frame(maxWidth: 600).padding(.horizontal, 24).padding(.vertical, 12)
+                        actions(for: person).frame(maxWidth: 600).padding(.horizontal, 16).padding(.vertical, 12)
                             .frame(maxWidth: .infinity).background(KikiPalette.background)
                     }
                 }
-                .navigationTitle(userID == store.userID ? "我的主页" : "个人主页").navigationBarTitleDisplayMode(.inline)
+                .navigationTitle(userID == store.userID ? KikiL10n.text("我的主页") : KikiL10n.text("个人主页")).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     if let leadingAction {
                         if #available(iOS 26.0, *) {
@@ -179,7 +180,7 @@ struct KikiPublicProfileView: View {
                             ToolbarItem(placement: .topBarLeading) { leadingAction }
                         }
                     }
-                    ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) { Button(KikiL10n.text("完成")) { dismiss() } }
                 }
                 .task { await reload() }
                 .onChange(of: store.socialPrivacyRevision) { _ in
@@ -189,8 +190,8 @@ struct KikiPublicProfileView: View {
                 .sheet(item: $reportTarget) { target in
                     KikiSocialReportForm(target: target, store: store).kikiRoomSheet()
                 }
-                .confirmationDialog("拉黑后将停止互相关注、隐藏双方社交内容与私信，并屏蔽对方房间语音和文字。", isPresented: $confirmsBlock, titleVisibility: .visible) {
-                    Button("拉黑用户", role: .destructive) { Task { await block() } }; Button("取消", role: .cancel) { }
+                .confirmationDialog(KikiL10n.text("拉黑后将停止互相关注、隐藏双方社交内容与私信，并屏蔽对方房间语音和文字。"), isPresented: $confirmsBlock, titleVisibility: .visible) {
+                    Button(KikiL10n.text("拉黑用户"), role: .destructive) { Task { await block() } }; Button(KikiL10n.text("取消"), role: .cancel) { }
                 }
 
         }.environmentObject(store).tint(KikiPalette.lavender)
@@ -198,14 +199,17 @@ struct KikiPublicProfileView: View {
 
     private func actions(for person: KikiPerson) -> some View {
         let following = store.isFollowing(person)
-        return HStack(spacing: 10) {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 10))
+            : AnyLayout(HStackLayout(spacing: 10))
+        return layout {
             KikiPublicProfileButton(style: .message, isEnabled: !isBlocking, isBusy: false, action: {
                 guard reportTarget == nil, !isBlocking else { return }
                 store.requestDirectConversation(person)
-            }).frame(maxWidth: .infinity).frame(height: 48)
+            }).frame(maxWidth: .infinity, minHeight: 48)
             KikiPublicProfileButton(style: .follow(following), isEnabled: !isBlocking && !isFollowing, isBusy: isFollowing, action: {
                 Task { await follow(!following) }
-            }).frame(maxWidth: .infinity).frame(height: 48)
+            }).frame(maxWidth: .infinity, minHeight: 48)
             KikiPublicProfileButton(style: .more, isEnabled: !isBlocking, isBusy: false, action: {}, report: {
                     reportTarget = .init(kind: .profile, targetID: userID, name: person.name)
             }, block: { confirmsBlock = true }).frame(width: 44, height: 48)
@@ -270,10 +274,10 @@ private struct KikiPublicProfileButton: UIViewRepresentable {
         let foreground: UIColor, background: UIColor
         switch style {
         case .message:
-            title = "发私信"; symbol = "bubble.left.and.bubble.right"; identifier = "social.direct.open"
+            title = KikiL10n.text("发私信"); symbol = "bubble.left.and.bubble.right"; identifier = "social.direct.open"
             foreground = UIColor(KikiPalette.lavender); background = UIColor(KikiPalette.surface)
         case .follow(let following):
-            title = following ? "已关注" : "关注"; symbol = following ? "checkmark" : "plus"; identifier = "social.follow"
+            title = following ? KikiL10n.text("已关注") : KikiL10n.text("关注"); symbol = following ? "checkmark" : "plus"; identifier = "social.follow"
             foreground = following ? UIColor(KikiPalette.lavender) : .white
             background = following ? UIColor(KikiPalette.elevated) : UIColor(KikiPalette.action)
         case .relationship(let label, let prominent, let userID):
@@ -285,6 +289,7 @@ private struct KikiPublicProfileButton: UIViewRepresentable {
             foreground = UIColor(KikiPalette.lavender); background = UIColor(KikiPalette.surface)
         }
         configuration.title = title
+        configuration.titleLineBreakMode = .byWordWrapping
         configuration.image = symbol.isEmpty ? nil : UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold))
         configuration.imagePadding = 6; configuration.showsActivityIndicator = isBusy
         configuration.baseForegroundColor = foreground; configuration.baseBackgroundColor = background
@@ -296,7 +301,6 @@ private struct KikiPublicProfileButton: UIViewRepresentable {
             // Shrink the visible control while preserving its native tap area.
             configuration.background.backgroundInsets = .init(top: 5, leading: 0, bottom: 5, trailing: 0)
             configuration.background.cornerRadius = 12
-            configuration.titleLineBreakMode = .byClipping
             configuration.image = symbol.isEmpty ? nil : UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
             font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(for: .systemFont(ofSize: 14, weight: .semibold), compatibleWith: button.traitCollection)
             if case .relationship = style { configuration.cornerStyle = .capsule }
@@ -308,22 +312,26 @@ private struct KikiPublicProfileButton: UIViewRepresentable {
         }
         button.configuration = configuration
         button.titleLabel?.adjustsFontForContentSizeCategory = true
-        button.titleLabel?.adjustsFontSizeToFitWidth = true; button.titleLabel?.minimumScaleFactor = 0.55
-        button.titleLabel?.numberOfLines = 1
+        button.titleLabel?.adjustsFontSizeToFitWidth = false
+        button.titleLabel?.numberOfLines = 0
+        button.titleLabel?.textAlignment = .center
         button.isEnabled = isEnabled && context.environment.isEnabled
         button.accessibilityIdentifier = identifier
-        button.accessibilityLabel = title.isEmpty ? "更多操作" : title
+        button.accessibilityLabel = title.isEmpty ? KikiL10n.text("更多操作") : title
         if case .more = style {
             let coordinator = context.coordinator
             button.menu = UIMenu(children: [
-                UIAction(title: "举报用户", image: UIImage(systemName: "exclamationmark.bubble")) { [weak coordinator] _ in coordinator?.report() },
-                UIAction(title: "拉黑用户", image: UIImage(systemName: "person.crop.circle.badge.xmark"), attributes: .destructive) { [weak coordinator] _ in coordinator?.block() }
+                UIAction(title: KikiL10n.text("举报用户"), image: UIImage(systemName: "exclamationmark.bubble")) { [weak coordinator] _ in coordinator?.report() },
+                UIAction(title: KikiL10n.text("拉黑用户"), image: UIImage(systemName: "person.crop.circle.badge.xmark"), attributes: .destructive) { [weak coordinator] _ in coordinator?.block() }
             ])
             button.showsMenuAsPrimaryAction = true
         } else { button.menu = nil; button.showsMenuAsPrimaryAction = false }
     }
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? uiView.intrinsicContentSize.width, height: max(44, proposal.height ?? 48))
+        let width = proposal.width ?? uiView.intrinsicContentSize.width
+        let fitting = uiView.systemLayoutSizeFitting(CGSize(width: width, height: 0),
+            withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
+        return CGSize(width: width, height: max(44, fitting.height))
     }
     final class Coordinator: NSObject {
         var action: () -> Void = {}, report: () -> Void = {}, block: () -> Void = {}
@@ -334,6 +342,7 @@ private struct KikiPublicProfileButton: UIViewRepresentable {
 struct KikiRelationshipsView: View {
     @ObservedObject var store: KikiAppStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var kind: KikiRelationshipKind
     @State private var people: [KikiPerson] = []
     @State private var nextCursor: String?
@@ -354,17 +363,22 @@ struct KikiRelationshipsView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    Picker("关系", selection: $kind) {
-                        ForEach(KikiRelationshipKind.allCases) { Text($0.title).tag($0) }
-                    }.pickerStyle(.segmented).accessibilityIdentifier("relationships.tabs")
+                    if dynamicTypeSize.isAccessibilitySize {
+                        relationshipPicker.pickerStyle(.menu)
+                    } else {
+                        relationshipPicker.pickerStyle(.segmented)
+                    }
                     if let error { KikiInlineError(message: error) { Task { await reload() } } }
                     if isLoading && people.isEmpty { ProgressView().padding(30) }
                     else if people.isEmpty && error == nil {
-                        KikiEmptyState(symbol: "person.2", title: "暂无\(kind.title)", message: "")
+                        KikiEmptyState(symbol: "person.2", title: kind.emptyTitle, message: "")
                     }
                     LazyVStack(spacing: 0) {
                         ForEach(people) { person in
-                            HStack(spacing: 12) {
+                            let layout = dynamicTypeSize.isAccessibilitySize
+                                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
+                                : AnyLayout(HStackLayout(spacing: 12))
+                            layout {
                                 Button { selected = .init(id: person.id) } label: {
                                     KikiPersonRow(person: person).frame(maxWidth: .infinity, alignment: .leading)
                                 }.buttonStyle(.plain)
@@ -375,12 +389,12 @@ struct KikiRelationshipsView: View {
                         }
                     }.padding(.horizontal, 16).background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 18))
                     if nextCursor != nil {
-                        Button(isLoading ? "正在加载…" : "加载更多") { Task { await loadMore() } }.disabled(isLoading)
+                        Button(isLoading ? KikiL10n.text("正在加载…") : KikiL10n.text("加载更多")) { Task { await loadMore() } }.disabled(isLoading)
                     }
                 }.padding(20).frame(maxWidth: 720).frame(maxWidth: .infinity)
             }.background(KikiPalette.background.ignoresSafeArea()).refreshable { await reload() }
-                .navigationTitle("关注 / 粉丝").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+                .navigationTitle(KikiL10n.text("关注 / 粉丝")).navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button(KikiL10n.text("完成")) { dismiss() } } }
                 .task(id: kind) { await reload() }
                 .onChange(of: store.socialRevision) { _ in Task { await reload() } }
                 .onChange(of: store.socialPrivacyRevision) { _ in
@@ -394,15 +408,23 @@ struct KikiRelationshipsView: View {
         }.tint(KikiPalette.lavender)
     }
 
+    private var relationshipPicker: some View {
+        Picker(KikiL10n.text("关系"), selection: $kind) {
+            ForEach(KikiRelationshipKind.allCases) { Text($0.title).tag($0) }
+        }
+        .accessibilityIdentifier("relationships.tabs")
+    }
+
     private func relationshipAction(for person: KikiPerson) -> some View {
         let following = store.isFollowing(person)
-        let label = kind == .mutual ? "聊天" : (following ? (person.followsYou ? "互相关注" : "已关注") : "关注")
+        let label = kind == .mutual ? KikiL10n.text("聊天") : (following ? (person.followsYou ? KikiL10n.text("互相关注") : KikiL10n.text("已关注")) : KikiL10n.text("关注"))
         return KikiPublicProfileButton(style: .relationship(label, kind != .mutual && !following, person.id),
             isEnabled: !changingPeople.contains(person.id), isBusy: changingPeople.contains(person.id), action: {
                 if kind == .mutual { store.requestDirectConversation(person) }
                 else { Task { await setFollowing(person, enabled: !following) } }
             })
-            .frame(width: 88, height: 44)
+            .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: false)
+            .frame(minWidth: 88, maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, minHeight: 44)
             .disabled(changingPeople.contains(person.id))
     }
 
@@ -509,21 +531,21 @@ struct KikiMessagesView: View {
         Binding(get: { pendingDeletion != nil || pendingBulkDeletion != nil }, set: { if !$0 { pendingDeletion = nil; pendingBulkDeletion = nil } })
     }
     private var deletionTitle: String {
-        if pendingBulkDeletion != nil { return "删除全部消息？" }
-        guard let entry = pendingDeletion?.entry else { return "删除消息？" }
+        if pendingBulkDeletion != nil { return KikiL10n.text("删除全部消息？") }
+        guard let entry = pendingDeletion?.entry else { return KikiL10n.text("删除消息？") }
         switch entry.content {
-        case .notification: return "删除这条提醒？"
-        case .direct: return "删除“\(entry.name)”？"
+        case .notification: return KikiL10n.text("删除这条提醒？")
+        case .direct: return KikiL10n.format("删除“%@”？", entry.name)
         }
     }
     private var deletionMessage: String {
         if pendingBulkDeletion != nil {
-            return "清空你这一侧已有的私聊记录和互动提醒，对方不受影响。确认期间收到的新消息会保留。"
+            return KikiL10n.text("清空你这一侧已有的私聊记录和互动提醒，对方不受影响。确认期间收到的新消息会保留。")
         }
         if let entry = pendingDeletion?.entry, case .notification = entry.content {
-            return "仅删除这条提醒，其他提醒和私聊记录不受影响。"
+            return KikiL10n.text("仅删除这条提醒，其他提醒和私聊记录不受影响。")
         }
-        return "将移除此会话并清空你这一侧的记录，对方不受影响。新消息到来后会重新显示。"
+        return KikiL10n.text("将移除此会话并清空你这一侧的记录，对方不受影响。新消息到来后会重新显示。")
     }
     var body: some View {
         NavigationStack(path: $store.directConversationPath) {
@@ -536,14 +558,14 @@ struct KikiMessagesView: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            Button("全部已读", systemImage: "checkmark.bubble") { Task { await prepareBulk(clear: false) } }
+                            Button(KikiL10n.text("全部已读"), systemImage: "checkmark.bubble") { Task { await prepareBulk(clear: false) } }
                                 .disabled(store.unreadMessageCount == 0)
-                            Button("全部删除", systemImage: "trash", role: .destructive) { Task { await prepareBulk(clear: true) } }
+                            Button(KikiL10n.text("全部删除"), systemImage: "trash", role: .destructive) { Task { await prepareBulk(clear: true) } }
                         } label: {
                             if isPreparingBulk || activeBulk != nil { ProgressView() }
                             else { Image(systemName: "ellipsis").font(.system(size: 20)).frame(width: 24, height: 24) }
                         }
-                        .accessibilityLabel("消息操作").accessibilityIdentifier("messages.actions")
+                        .accessibilityLabel(KikiL10n.text("消息操作")).accessibilityIdentifier("messages.actions")
                         .disabled(!hasLoaded || isMutating || hasRetry)
                     }
                 }
@@ -564,13 +586,13 @@ struct KikiMessagesView: View {
                 .onChange(of: push.inboxRequest) { _ in handlePushRequest() }
                 .onChange(of: push.pendingInboxRequest) { _ in handlePushRequest() }
                 .alert(deletionTitle, isPresented: showsDeletion) {
-                    Button("删除", role: .destructive) {
+                    Button(KikiL10n.text("删除"), role: .destructive) {
                         let bulk = pendingBulkDeletion; let single = pendingDeletion
                         pendingBulkDeletion = nil; pendingDeletion = nil
                         if let bulk { Task { await performBulk(bulk) } }
                         else if let single { Task { await perform(single) } }
                     }
-                    Button("取消", role: .cancel) { pendingDeletion = nil; pendingBulkDeletion = nil }
+                    Button(KikiL10n.text("取消"), role: .cancel) { pendingDeletion = nil; pendingBulkDeletion = nil }
                 } message: {
                     Text(deletionMessage)
                 }
@@ -611,10 +633,10 @@ struct KikiMessagesView: View {
                     .listRowSeparatorTint(KikiPalette.elevated)
             }
             if isLoading {
-                ProgressView(hasLoaded ? "正在加载…" : "正在同步消息…").frame(maxWidth: .infinity).padding(.vertical, 20)
+                ProgressView(hasLoaded ? KikiL10n.text("正在加载…") : KikiL10n.text("正在同步消息…")).frame(maxWidth: .infinity).padding(.vertical, 20)
                     .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
             } else if nextCursor != nil {
-                Button("加载更多") { Task { await loadMore() } }.frame(maxWidth: .infinity).padding(.vertical, 12)
+                Button(KikiL10n.text("加载更多")) { Task { await loadMore() } }.frame(maxWidth: .infinity).padding(.vertical, 12)
                     .listRowSeparator(.hidden).listRowBackground(KikiPalette.background)
             }
         }.listStyle(.plain).scrollContentBackground(.hidden)
@@ -623,7 +645,7 @@ struct KikiMessagesView: View {
             .background(KikiPalette.background.ignoresSafeArea())
             .overlay {
                 if hasLoaded && entries.isEmpty && !isLoading && error == nil && nextCursor == nil {
-                    KikiEmptyState(symbol: "bubble.left.and.bubble.right", title: "这里什么都没有", message: "")
+                    KikiEmptyState(symbol: "bubble.left.and.bubble.right", title: KikiL10n.text("这里什么都没有"), message: "")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .allowsHitTesting(false)
                         .accessibilityIdentifier("messages.empty")
@@ -693,7 +715,7 @@ struct KikiMessagesView: View {
             guard action.privacyRevision == store.socialPrivacyRevision, store.userID == action.accountID, store.isAuthenticated else { return }
             activeBulk = nil
             if error is CancellationError || KikiSocialMutation.needsSameIDRetry(error) { retryBulk = action }
-            self.error = error is CancellationError ? "操作结果尚未确认，请重试。" : error.localizedDescription
+            self.error = error is CancellationError ? KikiL10n.text("操作结果尚未确认，请重试。") : error.localizedDescription
         }
     }
     private func perform(_ action: KikiInboxAction) async {
@@ -713,7 +735,7 @@ struct KikiMessagesView: View {
             guard privacy == store.socialPrivacyRevision, store.isAuthenticated else { return }
             activeMutation = nil
             if error is CancellationError || KikiSocialMutation.needsSameIDRetry(error) { retryMutation = action }
-            self.error = error is CancellationError ? "操作结果尚未确认，请重试。" : error.localizedDescription
+            self.error = error is CancellationError ? KikiL10n.text("操作结果尚未确认，请重试。") : error.localizedDescription
         }
     }
     private func handlePushRequest() {
@@ -800,18 +822,18 @@ struct KikiRoomRecordView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     KikiRoomCard(room: room)
-                    Label("本次语聊已结束", systemImage: "clock").font(.headline)
-                    Text("这条记录保留了你与这个房间的相遇。可以查看房主主页，关注下一次语聊。")
+                    Label(KikiL10n.text("本次语聊已结束"), systemImage: "clock").font(.headline)
+                    Text(KikiL10n.text("这条记录保留了你与这个房间的相遇。可以查看房主主页，关注下一次语聊。"))
                         .font(.body).foregroundStyle(KikiPalette.secondary)
                     if room.createdAt > 0 {
-                        LabeledContent("创建时间") { Text(Date(timeIntervalSince1970: Double(room.createdAt)), format: .dateTime.year().month().day().hour().minute()) }
+                        LabeledContent(KikiL10n.text("创建时间")) { Text(Date(timeIntervalSince1970: Double(room.createdAt)), format: .dateTime.year().month().day().hour().minute()) }
                             .font(.subheadline)
                     }
-                    Button { person = .init(id: room.hostID) } label: { Label("查看房主主页", systemImage: "person.crop.circle") }
+                    Button { person = .init(id: room.hostID) } label: { Label(KikiL10n.text("查看房主主页"), systemImage: "person.crop.circle") }
                 }.padding(24).frame(maxWidth: 600).frame(maxWidth: .infinity)
             }.background(KikiPalette.background.ignoresSafeArea())
-                .navigationTitle("房间记录").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+                .navigationTitle(KikiL10n.text("房间记录")).navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button(KikiL10n.text("完成")) { dismiss() } } }
                 .sheet(item: $person) { KikiPublicProfileView(userID: $0.id, store: store) }
         }.environmentObject(store).tint(KikiPalette.lavender)
     }
@@ -831,23 +853,23 @@ struct KikiSocialReportForm: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("举报对象") { Text(target.name) }
+                Section(KikiL10n.text("举报对象")) { Text(target.name) }
                 if let receipt {
-                    Section("已提交") {
-                        Text("运营会核查这条举报，提交成功不表示已认定违规。")
-                        LabeledContent("举报编号", value: receipt.id).font(.caption).textSelection(.enabled)
+                    Section(KikiL10n.text("已提交")) {
+                        Text(KikiL10n.text("运营会核查这条举报，提交成功不表示已认定违规。"))
+                        LabeledContent(KikiL10n.text("举报编号"), value: receipt.id).font(.caption).textSelection(.enabled)
                     }
                 } else {
-                    Section("问题类型") { Picker("原因", selection: $reason) { ForEach(KikiSocialReportReason.allCases) { Text($0.title).tag($0) } }.pickerStyle(.inline).labelsHidden().disabled(attempted) }
-                    Section("补充说明（可选）") {
-                        TextField("描述发生了什么，请勿填写密码或身份证信息。", text: $details, axis: .vertical).lineLimit(4...8)
+                    Section(KikiL10n.text("问题类型")) { Picker(KikiL10n.text("原因"), selection: $reason) { ForEach(KikiSocialReportReason.allCases) { Text($0.title).tag($0) } }.pickerStyle(.inline).labelsHidden().disabled(attempted) }
+                    Section(KikiL10n.text("补充说明（可选）")) {
+                        TextField(KikiL10n.text("描述发生了什么，请勿填写密码或身份证信息。"), text: $details, axis: .vertical).lineLimit(4...8)
                             .onChange(of: details) { if $0.count > 500 { details = String($0.prefix(500)) } }.disabled(attempted)
                     }
                     if let error { Section { Text(error).foregroundStyle(KikiPalette.lavender) } }
-                    Section { Button(isSending ? "正在提交…" : (attempted ? "重试提交" : "提交举报")) { Task { await send() } }.disabled(isSending) }
+                    Section { Button(isSending ? KikiL10n.text("正在提交…") : (attempted ? KikiL10n.text("重试提交") : KikiL10n.text("提交举报"))) { Task { await send() } }.disabled(isSending) }
                 }
-            }.navigationTitle("举报").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.disabled(isSending) } }
+            }.navigationTitle(KikiL10n.text("举报")).navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button(KikiL10n.text("完成")) { dismiss() }.disabled(isSending) } }
         }.tint(KikiPalette.lavender).interactiveDismissDisabled(isSending)
     }
     private func send() async {
@@ -872,18 +894,18 @@ struct KikiSocialReportsView: View {
         NavigationStack {
             List {
                 if isLoading { ProgressView() }
-                if let error { Section { Text(error); Button("重试") { Task { await reload() } } } }
-                if reports.isEmpty && !isLoading && error == nil { Text("暂无社交举报记录").foregroundStyle(.secondary) }
+                if let error { Section { Text(error); Button(KikiL10n.text("重试")) { Task { await reload() } } } }
+                if reports.isEmpty && !isLoading && error == nil { Text(KikiL10n.text("暂无社交举报记录")).foregroundStyle(.secondary) }
                 ForEach(reports) { report in
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack { Text(report.targetType == "profile" ? "用户举报" : (report.targetType == "direct_message" ? "私信举报" : "历史举报")); Spacer(); Text(report.status == "pending" ? "待处理" : "已处理").foregroundStyle(.secondary) }
+                        HStack { Text(report.targetType == "profile" ? KikiL10n.text("用户举报") : (report.targetType == "direct_message" ? KikiL10n.text("私信举报") : KikiL10n.text("历史举报"))); Spacer(); Text(report.status == "pending" ? KikiL10n.text("待处理") : KikiL10n.text("已处理")).foregroundStyle(.secondary) }
                         Text(report.id).font(.caption).textSelection(.enabled)
                         Text(Date(timeIntervalSince1970: report.createdAt), format: .dateTime.month().day().hour().minute()).font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Section { Text("显示最近 \(retentionDays) 天的可用记录。房间举报另在社区安全中查看。").font(.footnote).foregroundStyle(.secondary) }
-            }.navigationTitle("我的社交举报").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+                Section { Text(KikiL10n.format("显示最近 %@ 天的可用记录。房间举报另在社区安全中查看。", String(retentionDays))).font(.footnote).foregroundStyle(.secondary) }
+            }.navigationTitle(KikiL10n.text("我的社交举报")).navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button(KikiL10n.text("完成")) { dismiss() } } }
                 .task { await reload() }.refreshable { await reload() }
         }.tint(KikiPalette.lavender)
     }

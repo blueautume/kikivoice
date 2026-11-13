@@ -35,14 +35,14 @@ final class KikiVoiceRoomFloatingOverlay: NSObject {
         window.rootViewController = controller
         window.bubble = controller.bubble
         controller.onLayout = { [weak self] in self?.positionBubble() }
-        controller.bubble.accessibilityLabel = "返回语聊房"
+        controller.bubble.accessibilityLabel = KikiL10n.text("返回语聊房")
         controller.bubble.setAvatar(url: avatarURL, index: avatarIndex)
-        controller.bubble.setMetadata(roomTitle: roomTitle, status: "语聊中", hostName: hostName)
-        controller.bubble.accessibilityHint = "轻点返回聊天室，也可以拖动悬浮球调整位置"
+        controller.bubble.setMetadata(roomTitle: roomTitle, status: KikiL10n.text("语聊中"), hostName: hostName)
+        controller.bubble.accessibilityHint = KikiL10n.text("轻点返回聊天室，也可以拖动悬浮球调整位置")
         controller.bubble.accessibilityIdentifier = "voiceRoomFloatingBubble"
         controller.bubble.accessibilityCustomActions = [
-            UIAccessibilityCustomAction(name: "移到左侧", target: self, selector: #selector(moveToLeft)),
-            UIAccessibilityCustomAction(name: "移到右侧", target: self, selector: #selector(moveToRight))
+            UIAccessibilityCustomAction(name: KikiL10n.text("移到左侧"), target: self, selector: #selector(moveToLeft)),
+            UIAccessibilityCustomAction(name: KikiL10n.text("移到右侧"), target: self, selector: #selector(moveToRight))
         ]
         controller.bubble.addTarget(self, action: #selector(resumeRoom), for: .touchUpInside)
         controller.bubble.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(dragBubble(_:))))
@@ -330,8 +330,8 @@ final class KikiVoiceRoomBubbleButton: UIButton {
     private let imageContext = CIContext(options: [.cacheIntermediates: false])
     private var speaking = false
     private var presentationVisible = false
-    private var roomTitle = "语聊房"
-    private var status = "语聊中"
+    private var roomTitle = KikiL10n.text("语聊房")
+    private var status = KikiL10n.text("语聊中")
     private var hostName = ""
 
     override init(frame: CGRect) {
@@ -431,9 +431,9 @@ final class KikiVoiceRoomBubbleButton: UIButton {
     }
 
     private func updateAccessibility() {
-        accessibilityLabel = hostName.isEmpty ? "返回语聊房" : "返回\(hostName)的语聊房"
-        accessibilityValue = "\(roomTitle)，\(!isOnline ? "连接中断，等待恢复" : (speaking ? "房内有人正在发言" : status))"
-        accessibilityHint = "轻点返回聊天室，也可以拖动悬浮球调整位置"
+        accessibilityLabel = hostName.isEmpty ? KikiL10n.text("返回语聊房") : KikiL10n.format("返回%@的语聊房", String(describing: hostName))
+        accessibilityValue = [roomTitle, !isOnline ? KikiL10n.text("连接中断，等待恢复") : (speaking ? KikiL10n.text("房内有人正在发言") : status)].joined(separator: KikiL10n.isEnglish ? ", " : "，")
+        accessibilityHint = KikiL10n.text("轻点返回聊天室，也可以拖动悬浮球调整位置")
     }
 
     override func layoutSubviews() {

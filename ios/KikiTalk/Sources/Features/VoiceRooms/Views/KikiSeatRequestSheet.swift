@@ -36,8 +36,8 @@ struct KikiProfileSeatInviteButton: View {
         .labelStyle(.titleAndIcon)
         .buttonStyle(.plain)
         .disabled(!isEnabled || isBusy)
-        .accessibilityLabel("邀请上麦")
-        .accessibilityValue(isBusy ? "正在发送" : title)
+        .accessibilityLabel(KikiL10n.text("邀请上麦"))
+        .accessibilityValue(isBusy ? KikiL10n.text("正在发送") : title)
         .accessibilityIdentifier("social.profile.inviteSeat")
     }
 }
@@ -53,13 +53,13 @@ struct KikiIncomingSeatInvitationCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("收到上麦邀请", systemImage: "mic.fill")
+            Label(KikiL10n.text("收到上麦邀请"), systemImage: "mic.fill")
                 .font(.headline)
                 .foregroundStyle(KikiPalette.text)
                 .accessibilityAddTraits(.isHeader)
             Text(isRoomFull
-                 ? "麦位已满，接受后将等待空位；上麦后麦克风默认关闭。"
-                 : "接受后将加入麦位，麦克风默认关闭。")
+                 ? KikiL10n.text("麦位已满，接受后将等待空位；上麦后麦克风默认关闭。")
+                 : KikiL10n.text("接受后将加入麦位，麦克风默认关闭。"))
                 .font(.subheadline)
                 .foregroundStyle(KikiPalette.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -86,13 +86,13 @@ struct KikiIncomingSeatInvitationCard: View {
                 guard isEnabled, !isBusy else { return }
                 onDecline()
             } label: {
-                Text("暂不")
+                Text(KikiL10n.text("暂不"))
                     .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, minHeight: 24)
                     .padding(.horizontal, 15).padding(.vertical, 10)
                     .foregroundStyle(KikiPalette.text)
                     .background(KikiPalette.elevated, in: Capsule())
             }
-            .accessibilityLabel("暂不上麦")
+            .accessibilityLabel(KikiL10n.text("暂不上麦"))
             .accessibilityIdentifier("livekit.room.declineSeatInvitation")
             Button {
                 guard isEnabled, !isBusy else { return }
@@ -102,14 +102,14 @@ struct KikiIncomingSeatInvitationCard: View {
                     if isBusy {
                         ProgressView().controlSize(.small).tint(.white)
                     }
-                    Text(isBusy ? "处理中" : "接受")
+                    Text(isBusy ? KikiL10n.text("common.working") : KikiL10n.text("接受"))
                 }
                 .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, minHeight: 24)
                 .padding(.horizontal, 15).padding(.vertical, 10)
                 .foregroundStyle(.white)
                 .background(KikiPalette.action, in: Capsule())
             }
-            .accessibilityLabel("接受上麦邀请")
+            .accessibilityLabel(KikiL10n.text("接受上麦邀请"))
             .accessibilityIdentifier("livekit.room.acceptSeatInvitation")
         }
         .font(.subheadline.weight(.semibold))
@@ -169,14 +169,14 @@ struct KikiSeatRequestSheet: View {
                         .accessibilityIdentifier("livekit.room.seatRequestError")
                 }
                 if roomState == nil {
-                    ProgressView("正在同步上麦申请")
+                    ProgressView(KikiL10n.text("正在同步上麦申请"))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if pending.isEmpty && approved.isEmpty {
                     VStack(spacing: 15) {
                         Image("RaiseHand").renderingMode(.template).resizable().scaledToFit()
                             .frame(width: 42, height: 42).foregroundStyle(KikiPalette.muted)
                             .accessibilityHidden(true)
-                        Text("暂无上麦申请").font(.headline).foregroundStyle(KikiPalette.secondary)
+                        Text(KikiL10n.text("暂无上麦申请")).font(.headline).foregroundStyle(KikiPalette.secondary)
                     }
                     .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityElement(children: .combine)
@@ -185,7 +185,7 @@ struct KikiSeatRequestSheet: View {
                     List {
                         ForEach(pending) { request in requestRow(request) }
                         if !approved.isEmpty {
-                            Section("已同意，等待上麦") {
+                            Section(KikiL10n.text("已同意，等待上麦")) {
                                 ForEach(approved) { request in requestRow(request) }
                             }
                         }
@@ -195,10 +195,10 @@ struct KikiSeatRequestSheet: View {
                 }
             }
             .background(background)
-            .navigationTitle("上麦申请").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(KikiL10n.text("上麦申请")).navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成", action: onDismiss).accessibilityIdentifier("livekit.room.dismissSeatRequests")
+                    Button(KikiL10n.text("完成"), action: onDismiss).accessibilityIdentifier("livekit.room.dismissSeatRequests")
                 }
             }
         }
@@ -219,12 +219,12 @@ struct KikiSeatRequestSheet: View {
                                         size: 44, customURL: member?.avatarURL)
                         .saturation(online ? 1 : 0).opacity(online ? 1 : 0.42)
                 }
-                .buttonStyle(.plain).accessibilityLabel("查看\(request.name)的个人主页")
+                .buttonStyle(.plain).accessibilityLabel(KikiL10n.format("查看%@的个人主页", String(describing: request.name)))
                 .accessibilityIdentifier("livekit.room.seatRequestPerson.\(request.userID)")
                 VStack(alignment: .leading, spacing: 5) {
                     Text(request.name).font(.subheadline.weight(.medium)).foregroundStyle(KikiPalette.text)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    Text(request.status == "approved" ? "已同意，等待自动上麦" : "申请上麦")
+                    Text(request.status == "approved" ? KikiL10n.text("已同意，等待自动上麦") : KikiL10n.text("申请上麦"))
                         .font(.caption).foregroundStyle(KikiPalette.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -233,13 +233,13 @@ struct KikiSeatRequestSheet: View {
             if canReview(request) {
                 approvalButtons(request)
             } else if request.status == "approved" {
-                Label("已同意", systemImage: "checkmark.circle.fill")
+                Label(KikiL10n.text("已同意"), systemImage: "checkmark.circle.fill")
                     .font(.caption).foregroundStyle(KikiPalette.mint)
             }
         }
         .padding(.vertical, 9).listRowBackground(Color.clear)
         .accessibilityElement(children: .contain)
-        .accessibilityValue(online ? "在线" : "连接中断，申请已保留")
+        .accessibilityValue(online ? KikiL10n.text("在线") : KikiL10n.text("连接中断，申请已保留"))
         .accessibilityIdentifier("livekit.room.seatRequestRow.\(request.userID)")
     }
 
@@ -251,21 +251,21 @@ struct KikiSeatRequestSheet: View {
                 guard canReview(request), isAvailable, !isWorking else { return }
                 onReject(request.userID)
             } label: {
-                Text("拒绝").font(.subheadline.weight(.medium))
+                Text(KikiL10n.text("拒绝")).font(.subheadline.weight(.medium))
                     .frame(minWidth: 32, maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, minHeight: 30)
             }
             .buttonStyle(.bordered).tint(KikiPalette.secondary)
-            .accessibilityLabel("拒绝\(request.name)的上麦申请")
+            .accessibilityLabel(KikiL10n.format("拒绝%@的上麦申请", String(describing: request.name)))
             .accessibilityIdentifier("livekit.room.rejectSeatRequest.\(request.userID)")
             Button {
                 guard canReview(request), isAvailable, !isWorking else { return }
                 onApprove(request.userID)
             } label: {
-                Text("同意").font(.subheadline.weight(.semibold))
+                Text(KikiL10n.text("同意")).font(.subheadline.weight(.semibold))
                     .frame(minWidth: 32, maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil, minHeight: 30)
             }
             .buttonStyle(.borderedProminent).tint(KikiPalette.action)
-            .accessibilityLabel("同意\(request.name)的上麦申请")
+            .accessibilityLabel(KikiL10n.format("同意%@的上麦申请", String(describing: request.name)))
             .accessibilityIdentifier("livekit.room.approveSeatRequest.\(request.userID)")
         }
         .disabled(!isAvailable || isWorking)

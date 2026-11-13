@@ -2,18 +2,19 @@ import SwiftUI
 import UIKit
 
 enum KikiSettingsDestination: String, CaseIterable, Identifiable {
-    case account, notifications, privacy, rating, about, help
+    case account, notifications, language, privacy, rating, about, help
 
     var id: String { rawValue }
 
     fileprivate var title: String {
         switch self {
-        case .account: return "账户"
-        case .notifications: return "通知"
-        case .privacy: return "隐私中心"
-        case .rating: return "给 Kiki 评分"
-        case .about: return "关于 Kiki"
-        case .help: return "帮助与反馈"
+        case .account: return KikiL10n.text("账户")
+        case .notifications: return KikiL10n.text("通知")
+        case .language: return KikiL10n.text("语言")
+        case .privacy: return KikiL10n.text("隐私中心")
+        case .rating: return KikiL10n.text("给 kikitalk 评分")
+        case .about: return KikiL10n.text("关于 kikitalk")
+        case .help: return KikiL10n.text("帮助与反馈")
         }
     }
 
@@ -21,6 +22,7 @@ enum KikiSettingsDestination: String, CaseIterable, Identifiable {
         switch self {
         case .account: return "person.crop.circle.fill"
         case .notifications: return "bell.fill"
+        case .language: return "globe"
         case .privacy: return "checkmark.shield.fill"
         case .rating: return "star.fill"
         case .about: return "info.circle.fill"
@@ -31,7 +33,7 @@ enum KikiSettingsDestination: String, CaseIterable, Identifiable {
     fileprivate var tint: Color {
         switch self {
         case .account: return Color(hex: 0xA52AFF)
-        case .notifications, .privacy: return Color(hex: 0x7953FF)
+        case .notifications, .language, .privacy: return Color(hex: 0x7953FF)
         case .rating, .about: return Color(hex: 0x06B8C8)
         case .help: return Color(hex: 0x00C995)
         }
@@ -42,9 +44,10 @@ enum KikiSettingsDestination: String, CaseIterable, Identifiable {
 @available(iOS 16.0, *)
 struct KikiSettingsMenuContent: View {
     let onSelect: (KikiSettingsDestination) -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let groups: [[KikiSettingsDestination]] = [
-        [.account], [.notifications, .privacy], [.rating, .about], [.help]
+        [.account], [.notifications, .language, .privacy], [.rating, .about], [.help]
     ]
 
     var body: some View {
@@ -80,23 +83,20 @@ struct KikiSettingsMenuContent: View {
             guard destination != .rating else { return }
             onSelect(destination)
         } label: {
-            HStack(spacing: 13) {
-                Image(systemName: destination.symbol)
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(destination.tint)
-                    .frame(width: 34, height: 34)
-                    .background(destination.tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 11))
-                    .accessibilityHidden(true)
-                Text(destination.title)
-                    .font(.body)
-                    .foregroundStyle(KikiPalette.text)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(destination == .rating ? KikiPalette.muted : KikiPalette.text)
-                    .accessibilityHidden(true)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack { menuIcon(destination); Spacer(); menuChevron(destination) }
+                        menuTitle(destination).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } else {
+                    HStack(spacing: 13) {
+                        menuIcon(destination)
+                        menuTitle(destination)
+                        Spacer(minLength: 8)
+                        menuChevron(destination)
+                    }
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -106,7 +106,67 @@ struct KikiSettingsMenuContent: View {
         .buttonStyle(.plain)
         .disabled(destination == .rating)
         .accessibilityIdentifier("settings.\(destination.rawValue)")
-        .accessibilityHint(destination == .rating ? "上架后开放" : "")
+        .accessibilityHint(destination == .rating ? KikiL10n.text("上架后开放") : "")
+    }
+
+    private func menuTitle(_ destination: KikiSettingsDestination) -> some View {
+        Text(destination.title)
+            .font(.body)
+            .foregroundStyle(KikiPalette.text)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func menuIcon(_ destination: KikiSettingsDestination) -> some View {
+        Image(systemName: destination.symbol)
+            .font(.system(size: 19, weight: .semibold))
+            .foregroundStyle(destination.tint)
+            .frame(width: 34, height: 34)
+            .background(destination.tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 11))
+            .accessibilityHidden(true)
+    }
+
+    private func menuChevron(_ destination: KikiSettingsDestination) -> some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(destination == .rating ? KikiPalette.muted : KikiPalette.text)
+            .accessibilityHidden(true)
+    }
+}
+
+/// Changing language updates the existing view hierarchy and preserves sessions.
+@available(iOS 16.0, *)
+struct KikiLanguageSettingsContent: View {
+    private let settings = KikiLanguageSettings.shared
+
+    var body: some View {
+        List {
+            ForEach(KikiAppLanguage.allCases, id: \.rawValue) { language in
+                Button {
+                    settings.selection = language
+                } label: {
+                    HStack(spacing: 16) {
+                        Text(language.title)
+                            .foregroundStyle(KikiPalette.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        if settings.selection == language {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(KikiPalette.purple)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings.language." + language.rawValue)
+                .accessibilityAddTraits(settings.selection == language ? .isSelected : [])
+            }
+        }
+        .navigationTitle(KikiL10n.text("语言"))
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("settings.language.options")
     }
 }
 
@@ -125,14 +185,14 @@ struct KikiAccountSettingsContent: View {
             ScrollView {
                 VStack(spacing: 16) {
                     VStack(spacing: 0) {
-                        accountRow(title: "Kiki ID") {
+                        accountRow(title: "kikitalk ID") {
                             Text(userID)
                                 .textSelection(.enabled)
                                 .contextMenu {
                                     Button {
                                         UIPasteboard.general.string = userID
                                     } label: {
-                                        Label("复制 Kiki ID", systemImage: "doc.on.doc")
+                                        Label(KikiL10n.text("复制 kikitalk ID"), systemImage: "doc.on.doc")
                                     }
                                 }
                                 .accessibilityIdentifier("settings.kikiID")
@@ -141,7 +201,7 @@ struct KikiAccountSettingsContent: View {
                             .overlay(KikiPalette.elevated.opacity(0.45))
                             .padding(.horizontal, 16)
                         accountRow(title: "Apple ID") {
-                            Text(appleIDBound ? "已绑定" : "未确认")
+                            Text(appleIDBound ? KikiL10n.text("已绑定") : KikiL10n.text("未确认"))
                                 .accessibilityIdentifier("settings.appleID")
                         }
                     }
@@ -155,7 +215,7 @@ struct KikiAccountSettingsContent: View {
                             if isLoggingOut {
                                 ProgressView().tint(KikiPalette.secondary)
                             }
-                            Text(isLoggingOut ? "正在退出…" : "退出登录")
+                            Text(isLoggingOut ? KikiL10n.text("正在退出…") : KikiL10n.text("退出登录"))
                                 .font(.body.weight(.semibold))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -177,7 +237,7 @@ struct KikiAccountSettingsContent: View {
                         guard !isLoggingOut else { return }
                         onDelete()
                     } label: {
-                        Text("删除账户")
+                        Text(KikiL10n.text("删除账户"))
                             .font(.subheadline)
                             .foregroundStyle(KikiPalette.muted)
                             .padding(.horizontal, 24)

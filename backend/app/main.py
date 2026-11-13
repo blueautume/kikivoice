@@ -48,6 +48,7 @@ MAX_BODY = 16 * 1024
 MAX_AVATAR_BODY = 2 * 1024 * 1024
 AVATAR_NAME = re.compile(r"^[a-f0-9]{64}\.jpg$")
 LEGAL_DOCUMENTS_PATH = Path(__file__).with_name("legal_documents.json")
+LEGAL_ENGLISH_PATH = Path(__file__).with_name("legal_documents.en.json")
 
 
 def load_legal_manifest():
@@ -457,6 +458,11 @@ def create_app(settings: Settings | None = None):
     if not settings.voice_bridge_enabled and (settings.sdk_app_id <= 0 or len(settings.secret_key) < 32):
         raise RuntimeError("请在服务端配置有效的 SDKAPPID 与 SECRETKEY")
     legal_manifest = load_legal_manifest()
+    from .legal_translation import load_english
+    try:
+        legal_english = load_english(LEGAL_ENGLISH_PATH, legal_manifest)
+    except ValueError:
+        legal_english = None
     legal_requirements = {key: legal_manifest[key] for key in ("privacyVersion", "termsVersion", "documentHash")}
     limits = RequestLimits()
     apple = AppleAuth(settings)
@@ -796,6 +802,13 @@ def create_app(settings: Settings | None = None):
         # Public text must remain readable before login or renewed consent.
         # Use the startup snapshot so it always matches consent validation.
         return JSONResponse(legal_manifest, headers={"Cache-Control": "no-store"})
+
+    @app.get("/v1/legal/documents/en")
+    def legal_documents_english():
+        # Separate display-only snapshot: never changes canonical consent hashes.
+        if legal_english is None:
+            raise HTTPException(503, "The current English legal documents are unavailable. Please try again.")
+        return JSONResponse(legal_english, headers={"Cache-Control": "no-store", "Content-Language": "en"})
 
     @app.post("/v1/auth/apple/challenge")
     def apple_challenge(request: Request):

@@ -81,7 +81,7 @@ struct KikiRoomAudienceStrip<Avatar: View>: View {
                             .padding(.vertical, compact ? 2 : 4).frame(minWidth: 56, minHeight: compact ? 50 : 58).contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("查看\(member.name)的个人主页")
+                        .accessibilityLabel(KikiL10n.format("查看%@的个人主页", String(describing: member.name)))
                         .accessibilityIdentifier("livekit.room.listener.\(member.userID)")
                     }
                 }
@@ -109,9 +109,9 @@ struct KikiRoomChatBubbleRow<Avatar: View>: View {
                 avatar().frame(width: 32, height: 32).padding(4).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("查看\(senderName)的个人主页")
+            .accessibilityLabel(KikiL10n.format("查看%@的个人主页", String(describing: senderName)))
             .accessibilityIdentifier("livekit.room.messageAvatar.\(id)")
-            (Text(senderName + "：").foregroundColor(isLocal ? KikiPalette.purple : KikiPalette.secondary)
+            (Text(KikiL10n.format("%@：", senderName)).foregroundColor(isLocal ? KikiPalette.purple : KikiPalette.secondary)
              + Text(text).foregroundColor(KikiPalette.text))
                 .font(.subheadline).lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -137,7 +137,7 @@ struct KikiRoomAnnouncementChatRow: View {
                     .frame(width: 32, height: 32)
                     .background(KikiPalette.action, in: Circle()).padding(4)
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("公告").font(.caption2).foregroundStyle(KikiPalette.purple)
+                    Text(KikiL10n.text("公告")).font(.caption2).foregroundStyle(KikiPalette.purple)
                         .padding(.horizontal, 5).padding(.vertical, 2)
                         .background(KikiPalette.purple.opacity(0.12), in: Capsule())
                         .fixedSize()
@@ -152,7 +152,7 @@ struct KikiRoomAnnouncementChatRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("房间公告：" + text)
+        .accessibilityLabel(KikiL10n.text("房间公告：") + text)
         .accessibilityIdentifier("livekit.room.announcement")
     }
 }

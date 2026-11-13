@@ -107,23 +107,23 @@ struct KikiLiveKitRoomView: View {
                 showRoomNotice(mySeatStatusTitle)
             }
         }
-        .confirmationDialog(rtc.isRoomOwner ? "结束本次语聊？房间将关闭，所有成员都会离开。" : "确定离开本次语聊？",
+        .confirmationDialog(rtc.isRoomOwner ? KikiL10n.text("结束本次语聊？房间将关闭，所有成员都会离开。") : KikiL10n.text("确定离开本次语聊？"),
                             isPresented: $confirmsExit, titleVisibility: .visible) {
             if rtc.isRoomOwner {
-                Button("结束房间并离开", role: .destructive) {
+                Button(KikiL10n.text("结束房间并离开"), role: .destructive) {
                     isComposing = false
                     Task { await rtc.leaveRoom(endRoom: true) }
                 }
             } else {
-                Button("离开房间", role: .destructive) {
+                Button(KikiL10n.text("离开房间"), role: .destructive) {
                     isComposing = false
                     Task { await rtc.leaveRoom() }
                 }
             }
-            Button("取消", role: .cancel) { }
+            Button(KikiL10n.text("取消"), role: .cancel) { }
         }
-        .alert("语聊提示", isPresented: Binding(get: { rtc.roomError != nil && !showsParticipants && !showsSeatRequests && selectedPerson == nil }, set: { if !$0 { rtc.roomError = nil } })) {
-            Button("知道了") { rtc.roomError = nil }
+        .alert(KikiL10n.text("语聊提示"), isPresented: Binding(get: { rtc.roomError != nil && !showsParticipants && !showsSeatRequests && selectedPerson == nil }, set: { if !$0 { rtc.roomError = nil } })) {
+            Button(KikiL10n.text("知道了")) { rtc.roomError = nil }
         } message: { Text(rtc.roomError ?? "") }
         .sheet(isPresented: $showsParticipants, onDismiss: presentQueuedDestination) { participantList.kikiRoomSheet() }
         .sheet(isPresented: $showsSeatRequests, onDismiss: { rtc.roomError = nil; presentQueuedDestination() }) { seatRequestPanel.kikiRoomSheet() }
@@ -137,10 +137,10 @@ struct KikiLiveKitRoomView: View {
             }
         }
         .sheet(isPresented: $showsSafety) { KikiSafetyCenter(rtc: rtc).kikiRoomSheet() }
-        .confirmationDialog("拉黑后，你将不再听到对方的声音或看到对方的房间文字。对方仍可能在公开房间听到你；可在设置解除。", isPresented: blockConfirmation(inParticipants: false), titleVisibility: .visible) {
+        .confirmationDialog(KikiL10n.text("拉黑后，你将不再听到对方的声音或看到对方的房间文字。对方仍可能在公开房间听到你；可在设置解除。"), isPresented: blockConfirmation(inParticipants: false), titleVisibility: .visible) {
             blockConfirmationButtons
         }
-        .alert(pendingModeration?.title ?? "确认管理操作", isPresented: moderationConfirmation(inParticipants: false)) {
+        .alert(pendingModeration?.title ?? KikiL10n.text("确认管理操作"), isPresented: moderationConfirmation(inParticipants: false)) {
             moderationConfirmationButtons
         } message: { Text(pendingModeration?.message ?? "") }
         .sheet(isPresented: $showsAnnouncement) { KikiRoomAnnouncementView(rtc: rtc).kikiRoomSheet() }
@@ -169,7 +169,7 @@ struct KikiLiveKitRoomView: View {
     }
 
     private var header: some View {
-        KikiRoomHeader(title: rtc.roomInfo?.title ?? "语聊房", host: rtc.roomInfo?.host ?? "",
+        KikiRoomHeader(title: rtc.roomInfo?.title ?? KikiL10n.text("语聊房"), host: rtc.roomInfo?.host ?? "",
                        onEditTitle: rtc.isRoomOwner ? editRoom : nil,
                        isTitleEditingEnabled: rtc.canUseRoom) {
             Button { if let id = rtc.roomInfo?.hostID { openPerson(id) } } label: {
@@ -178,15 +178,15 @@ struct KikiLiveKitRoomView: View {
                     KikiAvatar(index: info.hostAvatarIndex, size: 36, customURL: info.hostAvatarURL)
                         .saturation(online ? 1 : 0).opacity(online ? 1 : 0.45)
                 } else { initials("", size: 36) }
-            }.buttonStyle(.plain).accessibilityLabel("查看房主主页")
+            }.buttonStyle(.plain).accessibilityLabel(KikiL10n.text("查看房主主页"))
         } controls: {
             HStack(spacing: 4) {
                 Menu {
                     if rtc.isRoomOwner {
-                        Button("编辑房间", systemImage: "pencil") { editRoom() }
+                        Button(KikiL10n.text("编辑房间"), systemImage: "pencil") { editRoom() }
                     }
                     if rtc.canManageRoom || !rtc.announcement.text.isEmpty {
-                        Button(rtc.canManageRoom ? (rtc.announcement.text.isEmpty ? "发布房间公告" : "编辑房间公告") : "查看房间公告", systemImage: "megaphone") {
+                        Button(rtc.canManageRoom ? (rtc.announcement.text.isEmpty ? KikiL10n.text("发布房间公告") : KikiL10n.text("编辑房间公告")) : KikiL10n.text("查看房间公告"), systemImage: "megaphone") {
                             endComposing()
                             showsAnnouncement = true
                         }
@@ -194,30 +194,30 @@ struct KikiLiveKitRoomView: View {
                     }
                     if !rtc.isRoomOwner {
                         if rtc.roomState?.me.seatIndex != nil {
-                            Button("主动下麦", systemImage: "arrow.down.circle", role: .destructive) { action(.leaveSeat) }
+                            Button(KikiL10n.text("主动下麦"), systemImage: "arrow.down.circle", role: .destructive) { action(.leaveSeat) }
                         } else if ["pending", "approved"].contains(mySeatRequestStatus) {
-                            Button("取消上麦申请", systemImage: "xmark.circle") { action(.cancelRequest) }
+                            Button(KikiL10n.text("取消上麦申请"), systemImage: "xmark.circle") { action(.cancelRequest) }
                         } else if rtc.canManageRoom {
-                            Button(action: submitSeatRequest) { Label("申请上麦", image: "RaiseHand") }
+                            Button(action: submitSeatRequest) { Label(KikiL10n.text("申请上麦"), image: "RaiseHand") }
                         }
                     }
-                    Button("举报房间", systemImage: "exclamationmark.bubble") {
-                        if let roomID = rtc.currentRoomID { openReport(.init(targetType: .room, roomID: roomID, targetUserID: nil, messageID: nil, name: rtc.roomInfo?.title ?? "当前房间")) }
+                    Button(KikiL10n.text("举报房间"), systemImage: "exclamationmark.bubble") {
+                        if let roomID = rtc.currentRoomID { openReport(.init(targetType: .room, roomID: roomID, targetUserID: nil, messageID: nil, name: rtc.roomInfo?.title ?? KikiL10n.text("当前房间"))) }
                     }
                 } label: { roomControlIcon("ellipsis", size: 36) }
                 .buttonStyle(.plain)
-                .accessibilityLabel("房间工具与举报").accessibilityIdentifier("livekit.room.tools")
+                .accessibilityLabel(KikiL10n.text("房间工具与举报")).accessibilityIdentifier("livekit.room.tools")
                 Button { showsParticipants = true } label: { roomControlIcon("person.2", size: 36) }
-                    .buttonStyle(.plain).accessibilityLabel("房间成员")
+                    .buttonStyle(.plain).accessibilityLabel(KikiL10n.text("房间成员"))
                 Button {
                     isComposing = false
                     Task { await rtc.minimizeRoom() }
                 } label: { roomControlIcon("arrow.down.right.and.arrow.up.left", size: 36) }
                 .buttonStyle(.plain).disabled(rtc.isLeavingRoom || rtc.isTransitioningRoom)
-                .accessibilityLabel("最小化语聊房").accessibilityIdentifier("livekit.room.minimize")
+                .accessibilityLabel(KikiL10n.text("最小化语聊房")).accessibilityIdentifier("livekit.room.minimize")
                 Button { confirmsExit = true } label: { roomControlIcon("xmark", size: 36) }
                     .buttonStyle(.plain).disabled(rtc.isLeavingRoom)
-                    .accessibilityLabel(rtc.isRoomOwner ? "结束房间" : "离开房间")
+                    .accessibilityLabel(rtc.isRoomOwner ? KikiL10n.text("结束房间") : KikiL10n.text("离开房间"))
                     .accessibilityIdentifier("livekit.room.leave")
             }
         }
@@ -250,15 +250,15 @@ struct KikiLiveKitRoomView: View {
     @ViewBuilder private var connectionBanner: some View {
         if let notice = rtc.safetyState.notices.first {
             Button { showsSafety = true } label: {
-                Label("社区通知：" + notice.message, systemImage: "shield.lefthalf.filled")
+                Label(KikiL10n.text("社区通知：") + notice.displayMessage, systemImage: "shield.lefthalf.filled")
                     .font(.system(size: 11)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8).background(accent.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
-            }.accessibilityLabel("查看运营通知：" + notice.message)
+            }.accessibilityLabel(KikiL10n.text("查看运营通知：") + notice.displayMessage)
         }
         if rtc.isLeavingRoom {
             HStack(spacing: 8) {
                 ProgressView().tint(accent).scaleEffect(0.7)
-                Text("正在离开房间…").font(.system(size: 11))
+                Text(KikiL10n.text("正在离开房间…")).font(.system(size: 11))
                 Spacer()
             }.padding(8).background(accent.opacity(0.25), in: RoundedRectangle(cornerRadius: 10))
         } else if !rtc.isRecovering, rtc.connectionState == .connected, let notice = rtc.audioState.notice {
@@ -285,7 +285,7 @@ struct KikiLiveKitRoomView: View {
             Circle().fill(KikiPalette.elevated).frame(width: avatarSize + 6, height: avatarSize + 6)
                 .overlay(Image(systemName: "mic").foregroundStyle(secondary))
             Text("\(number)").font(.system(size: 10)).foregroundStyle(secondary)
-                .accessibilityLabel("\(number)号麦位")
+                .accessibilityLabel(KikiL10n.format("%@号麦位", String(describing: number)))
         }.frame(maxWidth: .infinity)
     }
 
@@ -310,14 +310,14 @@ struct KikiLiveKitRoomView: View {
 
     private var mySeatStatusTitle: String {
         switch mySeatRequestStatus {
-        case "pending": return "申请已提交，等待同意"
-        case "approved": return "申请已同意，等待空位"
-        case "rejected": return "上麦申请已被拒绝"
+        case "pending": return KikiL10n.text("申请已提交，等待同意")
+        case "approved": return KikiL10n.text("申请已同意，等待空位")
+        case "rejected": return KikiL10n.text("上麦申请已被拒绝")
         case "seated":
-            if rtc.isRoomOwner { return "当前在房主麦位" }
-            return "已上麦 · \(rtc.roomState?.me.seatIndex ?? 0) 号麦"
-        case "loading": return "正在同步上麦状态"
-        default: return "当前为听众"
+            if rtc.isRoomOwner { return KikiL10n.text("当前在房主麦位") }
+            return KikiL10n.format("已上麦 · %@ 号麦", String(describing: rtc.roomState?.me.seatIndex ?? 0))
+        case "loading": return KikiL10n.text("正在同步上麦状态")
+        default: return KikiL10n.text("当前为听众")
         }
     }
 
@@ -423,11 +423,11 @@ struct KikiLiveKitRoomView: View {
         }
         .contextMenu {
             if !message.isLocal, let roomID = rtc.currentRoomID {
-                Button("举报这条消息", systemImage: "exclamationmark.bubble") {
+                Button(KikiL10n.text("举报这条消息"), systemImage: "exclamationmark.bubble") {
                     openReport(.init(targetType: .message, roomID: roomID, targetUserID: message.senderID,
-                                     messageID: message.id, name: "来自 \(message.senderName) 的消息"))
+                                     messageID: message.id, name: KikiL10n.format("来自 %@ 的消息", String(describing: message.senderName))))
                 }
-                Button(rtc.safetyState.blockedIDs.contains(message.senderID) ? "解除拉黑" : "拉黑此用户", systemImage: "person.crop.circle.badge.xmark") {
+                Button(rtc.safetyState.blockedIDs.contains(message.senderID) ? KikiL10n.text("解除拉黑") : KikiL10n.text("拉黑此用户"), systemImage: "person.crop.circle.badge.xmark") {
                     chooseBlock(userID: message.senderID, name: message.senderName)
                 }
             }
@@ -437,14 +437,14 @@ struct KikiLiveKitRoomView: View {
     private func pendingMessageRow(_ pending: KikiPendingChatMessage) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             KikiRoomChatBubbleRow(id: "pending-" + pending.clientMessageID,
-                                  senderName: rtc.roomState?.me.name ?? "我", text: pending.text,
+                                  senderName: rtc.roomState?.me.name ?? KikiL10n.text("我"), text: pending.text,
                                   isLocal: true, onOpenSender: { if let id = rtc.roomState?.me.userID { openPerson(id) } }) {
                 chatAvatar(userID: rtc.roomState?.me.userID ?? "")
             }
             if let failure = pending.failure {
                 HStack(spacing: 10) {
-                    Text("发送失败").foregroundStyle(KikiPalette.warning).accessibilityHint(failure)
-                    Button("重试") {
+                    Text(KikiL10n.text("发送失败")).foregroundStyle(KikiPalette.warning).accessibilityHint(failure)
+                    Button(KikiL10n.text("重试")) {
                         Task { if await rtc.sendMessage(pending.text), rtc.messageDraft == pending.text { rtc.messageDraft = "" } }
                     }
                     .disabled(!rtc.canSendChat || rtc.isSendingMessage)
@@ -464,7 +464,7 @@ struct KikiLiveKitRoomView: View {
     private var bottomBar: some View {
         KikiRoomComposerBar {
             KikiRoomMessageInput(text: $rtc.messageDraft, isFocused: $isComposing,
-                                 placeholder: rtc.roomState?.me.chatMuted == true ? "已被禁言" : "说点什么…",
+                                 placeholder: rtc.roomState?.me.chatMuted == true ? KikiL10n.text("已被禁言") : KikiL10n.text("说点什么…"),
                                  isEnabled: rtc.canSendChat, onSubmit: send, onNotice: showRoomNotice)
                 .background(KikiPalette.surface.opacity(0.9), in: RoundedRectangle(cornerRadius: 21))
                 .overlay(RoundedRectangle(cornerRadius: 21).stroke(KikiPalette.text.opacity(0.14), lineWidth: 1))
@@ -472,7 +472,7 @@ struct KikiLiveKitRoomView: View {
             Button(action: send) { roomControlIcon("paperplane.fill", size: 42, loading: rtc.isSendingMessage) }
                 .buttonStyle(.plain)
                 .disabled(!rtc.canSendChat || rtc.isSendingMessage || rtc.messageDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .accessibilityLabel("发送消息").accessibilityIdentifier("livekit.room.send")
+                .accessibilityLabel(KikiL10n.text("发送消息")).accessibilityIdentifier("livekit.room.send")
         }
     }
 
@@ -483,7 +483,7 @@ struct KikiLiveKitRoomView: View {
         }
         .buttonStyle(.plain)
         .disabled((!rtc.canUseRoom && !rtc.microphoneEnabled) || (!rtc.microphoneEnabled && !rtc.canPublishAudio) || rtc.isChangingMicrophone)
-        .accessibilityLabel(rtc.microphoneEnabled ? "关闭麦克风" : "打开麦克风")
+        .accessibilityLabel(rtc.microphoneEnabled ? KikiL10n.text("关闭麦克风") : KikiL10n.text("打开麦克风"))
         .accessibilityValue(rtc.microphoneStatus).accessibilityIdentifier("livekit.room.microphone")
         seatRequestControl
     }
@@ -492,23 +492,23 @@ struct KikiLiveKitRoomView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("房间名称", text: $roomNameDraft, axis: .vertical)
+                    TextField(KikiL10n.text("房间名称"), text: $roomNameDraft, axis: .vertical)
                         .lineLimit(1...3).submitLabel(.done)
                         .disabled(rtc.isUpdatingRoomDetails)
                         .accessibilityIdentifier("livekit.room.titleInput")
                 } footer: {
-                    Text("最多 36 字、100 字节。留空使用“\(KikiRoomTitlePolicy.defaultTitle(nickname: roomEditorNickname))”。")
+                    Text(KikiL10n.format("最多 36 字、100 字节。留空使用“%@”。", String(describing: KikiRoomTitlePolicy.defaultTitle(nickname: roomEditorNickname))))
                 }
-                Section("房间背景") {
+                Section(KikiL10n.text("房间背景")) {
                     KikiRoomBackgroundPicker(theme: $roomThemeDraft)
                         .padding(.vertical, 8)
                         .disabled(rtc.isUpdatingRoomDetails)
                 }
                 if let roomEditorError { Text(roomEditorError).foregroundStyle(.orange).font(.footnote) }
             }
-            .navigationTitle("编辑房间").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(KikiL10n.text("编辑房间")).navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { showsRoomEditor = false }.disabled(rtc.isUpdatingRoomDetails) }
+                ToolbarItem(placement: .cancellationAction) { Button(KikiL10n.text("取消")) { showsRoomEditor = false }.disabled(rtc.isUpdatingRoomDetails) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
                         guard !rtc.isUpdatingRoomDetails else { return }
@@ -525,7 +525,7 @@ struct KikiLiveKitRoomView: View {
                             catch { roomEditorError = error.localizedDescription }
                         }
                     } label: {
-                        if rtc.isUpdatingRoomDetails { ProgressView() } else { Text("保存") }
+                        if rtc.isUpdatingRoomDetails { ProgressView() } else { Text(KikiL10n.text("保存")) }
                     }
                     .disabled(rtc.isUpdatingRoomDetails || !rtc.isRoomOwner)
                     .accessibilityIdentifier("livekit.room.saveTitle")
@@ -544,21 +544,21 @@ struct KikiLiveKitRoomView: View {
             Menu {
                 Text(mySeatStatusTitle)
                 if mySeatRequestStatus == "seated" {
-                    Button("主动下麦", systemImage: "arrow.down.circle", role: .destructive) { action(.leaveSeat) }
+                    Button(KikiL10n.text("主动下麦"), systemImage: "arrow.down.circle", role: .destructive) { action(.leaveSeat) }
                         .accessibilityIdentifier("livekit.room.leaveSeat")
                 } else {
-                    Button("取消上麦申请", systemImage: "xmark.circle") { action(.cancelRequest) }
+                    Button(KikiL10n.text("取消上麦申请"), systemImage: "xmark.circle") { action(.cancelRequest) }
                         .accessibilityIdentifier("livekit.room.cancelSeatRequest")
                 }
             } label: { seatRequestIcon }
                 .disabled(!rtc.canUseRoom || rtc.isPerformingRoomAction)
-                .accessibilityLabel(mySeatRequestStatus == "seated" ? "上麦管理" : "上麦申请已提交")
+                .accessibilityLabel(mySeatRequestStatus == "seated" ? KikiL10n.text("上麦管理") : KikiL10n.text("上麦申请已提交"))
                 .accessibilityValue(mySeatStatusTitle).accessibilityIdentifier("livekit.room.seatRequests")
         } else {
             Button(action: handleSeatRequest) { seatRequestIcon }
                 .buttonStyle(.plain).disabled(!rtc.canUseRoom || rtc.isPerformingRoomAction)
-                .accessibilityLabel(rtc.canManageRoom ? "查看上麦申请" : "申请上麦")
-                .accessibilityValue(rtc.canManageRoom ? "\(pendingSeatRequests.count) 条待处理申请" : mySeatStatusTitle)
+                .accessibilityLabel(rtc.canManageRoom ? KikiL10n.text("查看上麦申请") : KikiL10n.text("申请上麦"))
+                .accessibilityValue(rtc.canManageRoom ? KikiL10n.format("%@ 条待处理申请", String(describing: pendingSeatRequests.count)) : mySeatStatusTitle)
                 .accessibilityIdentifier("livekit.room.seatRequests")
         }
     }
@@ -622,9 +622,9 @@ struct KikiLiveKitRoomView: View {
             guard await rtc.performRoomAction(action), rtc.currentRoomID == roomID else { return }
             if action == .acceptInvite {
                 if rtc.roomState?.me.seatIndex != nil {
-                    showRoomNotice("已上麦，点击麦克风开启声音")
+                    showRoomNotice(KikiL10n.text("已上麦，点击麦克风开启声音"))
                 } else if rtc.roomState?.myRequest?.status == "approved" {
-                    showRoomNotice("已接受邀请，正在等待空闲麦位")
+                    showRoomNotice(KikiL10n.text("已接受邀请，正在等待空闲麦位"))
                 }
             }
         }
@@ -658,10 +658,10 @@ struct KikiLiveKitRoomView: View {
             Color.black.opacity(0.65).ignoresSafeArea()
             VStack(spacing: 18) {
                 Image(systemName: "waveform.slash").font(.system(size: 38)).foregroundStyle(accent)
-                Text("已离开语聊").font(.system(size: 20, weight: .semibold))
+                Text(KikiL10n.text("已离开语聊")).font(.system(size: 20, weight: .semibold))
                 Text(reason).font(.system(size: 14)).foregroundStyle(secondary).multilineTextAlignment(.center)
                 Button { Task { await rtc.leaveRoom() } } label: {
-                    Text("返回大厅").font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 13)
+                    Text(KikiL10n.text("返回大厅")).font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 13)
                         .foregroundStyle(.white).background(KikiPalette.action, in: Capsule())
                 }.disabled(rtc.isLeavingRoom)
             }
@@ -672,7 +672,7 @@ struct KikiLiveKitRoomView: View {
 
     private func action(_ value: KikiRoomAction, target: String? = nil, seat: Int? = nil, enabled: Bool? = nil) {
         if [.kick, .setAdmin, .unban].contains(value) {
-            let name = rtc.roomState?.members.first { $0.userID == target }?.name ?? rtc.roomState?.bans.first { $0.userID == target }?.name ?? target ?? "此用户"
+            let name = rtc.roomState?.members.first { $0.userID == target }?.name ?? rtc.roomState?.bans.first { $0.userID == target }?.name ?? target ?? KikiL10n.text("此用户")
             pendingModeration = .init(action: value, target: target, seat: seat, enabled: enabled, name: name)
             return
         }
@@ -712,12 +712,12 @@ struct KikiLiveKitRoomView: View {
 
     private var blockConfirmationButtons: some View {
         Group {
-            Button("拉黑 \(pendingBlock?.name ?? "此用户")", role: .destructive) {
+            Button(KikiL10n.format("拉黑 %@", String(describing: pendingBlock?.name ?? KikiL10n.text("此用户"))), role: .destructive) {
                 guard let userID = pendingBlock?.userID else { return }
                 pendingBlock = nil
                 Task { do { try await rtc.setBlocked(userID, enabled: true) } catch { rtc.roomError = error.localizedDescription } }
             }
-            Button("取消", role: .cancel) { pendingBlock = nil }
+            Button(KikiL10n.text("取消"), role: .cancel) { pendingBlock = nil }
         }
     }
 
@@ -727,39 +727,39 @@ struct KikiLiveKitRoomView: View {
 
     private var moderationConfirmationButtons: some View {
         Group {
-            Button("确认", role: .destructive) {
+            Button(KikiL10n.text("确认"), role: .destructive) {
                 guard let pending = pendingModeration else { return }
                 pendingModeration = nil
                 Task { await rtc.performRoomAction(pending.action, targetUserID: pending.target, seatIndex: pending.seat, enabled: pending.enabled) }
             }
-            Button("取消", role: .cancel) { pendingModeration = nil }
+            Button(KikiL10n.text("取消"), role: .cancel) { pendingModeration = nil }
         }
     }
 
     @ViewBuilder private func memberActions(_ member: KikiRoomMember, state: KikiRoomState) -> some View {
-        if rtc.socialStore != nil { Button("查看个人主页", systemImage: "person.crop.circle") { openPerson(member.userID) } }
+        if rtc.socialStore != nil { Button(KikiL10n.text("查看个人主页"), systemImage: "person.crop.circle") { openPerson(member.userID) } }
         if member.userID != state.me.userID, let roomID = rtc.currentRoomID {
-            Button("举报用户", systemImage: "exclamationmark.bubble") {
+            Button(KikiL10n.text("举报用户"), systemImage: "exclamationmark.bubble") {
                 openReport(.init(targetType: .user, roomID: roomID, targetUserID: member.userID, messageID: nil, name: member.name))
             }
-            Button(rtc.safetyState.blockedIDs.contains(member.userID) ? "解除拉黑" : "拉黑用户", systemImage: "person.crop.circle.badge.xmark") {
+            Button(rtc.safetyState.blockedIDs.contains(member.userID) ? KikiL10n.text("解除拉黑") : KikiL10n.text("拉黑用户"), systemImage: "person.crop.circle.badge.xmark") {
                 chooseBlock(userID: member.userID, name: member.name)
             }.disabled(rtc.isUpdatingBlock)
         }
         if state.me.canModerate(member) {
             if member.seatIndex != nil {
-                Button(member.audioMuted ? "解除禁麦" : "强制禁麦") { action(.muteAudio, target: member.userID, enabled: !member.audioMuted) }
-                Button("踢下麦", role: .destructive) { action(.removeSeat, target: member.userID) }
+                Button(member.audioMuted ? KikiL10n.text("解除禁麦") : KikiL10n.text("强制禁麦")) { action(.muteAudio, target: member.userID, enabled: !member.audioMuted) }
+                Button(KikiL10n.text("踢下麦"), role: .destructive) { action(.removeSeat, target: member.userID) }
             } else if member.audioMuted {
-                Button("解除禁麦") { action(.muteAudio, target: member.userID, enabled: false) }
+                Button(KikiL10n.text("解除禁麦")) { action(.muteAudio, target: member.userID, enabled: false) }
             }
-            Button(member.chatMuted ? "解除文字禁言" : "文字禁言") { action(.muteChat, target: member.userID, enabled: !member.chatMuted) }
+            Button(member.chatMuted ? KikiL10n.text("解除文字禁言") : KikiL10n.text("room.action.muteChat")) { action(.muteChat, target: member.userID, enabled: !member.chatMuted) }
             if state.me.role == .owner {
-                Button(member.role == .admin ? "取消管理员" : "设为管理员") {
+                Button(member.role == .admin ? KikiL10n.text("取消管理员") : KikiL10n.text("设为管理员")) {
                     action(.setAdmin, target: member.userID, enabled: member.role != .admin)
                 }
             }
-            Button("踢出并禁止重入", role: .destructive) { action(.kick, target: member.userID) }
+            Button(KikiL10n.text("踢出并禁止重入"), role: .destructive) { action(.kick, target: member.userID) }
         }
     }
 
@@ -768,20 +768,20 @@ struct KikiLiveKitRoomView: View {
             KikiAvatar(index: member.avatarIndex, size: 36, customURL: member.avatarURL)
                 .saturation(member.online ? 1 : 0).opacity(member.online ? 1 : 0.42)
             VStack(alignment: .leading, spacing: 3) {
-                Text(member.name + (member.userID == state.me.userID ? " (我)" : "") + (rtc.safetyState.blockedIDs.contains(member.userID) ? " · 已拉黑" : ""))
-                Text("\(member.role.label) · \(member.seatIndex.map { "\($0) 号麦" } ?? "听众")\(member.chatMuted ? " · 已禁言" : "")")
+                Text(member.name + (member.userID == state.me.userID ? KikiL10n.text(" (我)") : "") + (rtc.safetyState.blockedIDs.contains(member.userID) ? KikiL10n.text(" · 已拉黑") : ""))
+                Text("\(member.role.label) · \(member.seatIndex.map { KikiL10n.format("%@ 号麦", String(describing: $0)) } ?? KikiL10n.text("听众"))\(member.chatMuted ? KikiL10n.text(" · 已禁言") : "")")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             if member.userID != state.me.userID {
                 Menu { memberActions(member, state: state) } label: { Image(systemName: "ellipsis.circle").padding(7) }
-                    .accessibilityLabel("管理或举报 \(member.name)")
+                    .accessibilityLabel(KikiL10n.format("管理或举报 %@", String(describing: member.name)))
             } else if member.seatIndex != nil {
                 Image(systemName: rtc.participants.first(where: { $0.id == member.userID })?.microphoneEnabled == true ? "mic.fill" : "mic.slash.fill")
                     .foregroundStyle(.secondary)
             }
         }
-        .accessibilityValue(member.online ? "在线" : "连接中断，等待恢复")
+        .accessibilityValue(member.online ? KikiL10n.text("在线") : KikiL10n.text("连接中断，等待恢复"))
         .listRowBackground(KikiPalette.surface)
     }
 
@@ -789,40 +789,40 @@ struct KikiLiveKitRoomView: View {
         NavigationStack {
             List {
                 if let state = rtc.roomState {
-                    Section("在麦成员 · \(state.members.filter { $0.seatIndex != nil }.count)") {
+                    Section(KikiL10n.format("在麦成员 · %@", String(describing: state.members.filter { $0.seatIndex != nil }.count))) {
                         ForEach(state.members.filter { $0.seatIndex != nil }.sorted { ($0.seatIndex ?? 0) < ($1.seatIndex ?? 0) }) { member in
                             memberRow(member, state: state)
                         }
                     }
                     let listeners = state.members.filter { $0.seatIndex == nil }
-                    Section("独立听众 · \(listeners.count)") {
-                        if listeners.isEmpty { Text("暂无听众").foregroundStyle(.secondary) }
+                    Section(KikiL10n.format("独立听众 · %@", String(describing: listeners.count))) {
+                        if listeners.isEmpty { Text(KikiL10n.text("暂无听众")).foregroundStyle(.secondary) }
                         ForEach(listeners) { member in memberRow(member, state: state) }
                     }
                     if state.me.isModerator {
-                        Section("禁止重入 · \(state.bans.count)") {
-                            if state.bans.isEmpty { Text("暂无禁止重入成员").foregroundStyle(.secondary) }
+                        Section(KikiL10n.format("禁止重入 · %@", String(describing: state.bans.count))) {
+                            if state.bans.isEmpty { Text(KikiL10n.text("暂无禁止重入成员")).foregroundStyle(.secondary) }
                             ForEach(state.bans) { ban in
                                 HStack {
                                     Text(ban.name)
                                     Spacer()
-                                    Button("解除禁入") { action(.unban, target: ban.userID) }.buttonStyle(.borderless)
+                                    Button(KikiL10n.text("解除禁入")) { action(.unban, target: ban.userID) }.buttonStyle(.borderless)
                                 }
                             }
                         }
                     }
-                } else { ProgressView("正在同步房间状态") }
+                } else { ProgressView(KikiL10n.text("正在同步房间状态")) }
             }
             .disabled(!rtc.canUseRoom || rtc.isPerformingRoomAction)
             .scrollContentBackground(.hidden).background(KikiPalette.background)
-            .navigationTitle(rtc.canManageRoom ? "房间成员与管理" : "房间成员").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showsParticipants = false } } }
+            .navigationTitle(rtc.canManageRoom ? KikiL10n.text("房间成员与管理") : KikiL10n.text("房间成员")).navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(KikiL10n.text("完成")) { showsParticipants = false } } }
         }
-        .alert("语聊提示", isPresented: Binding(get: { rtc.roomError != nil && showsParticipants }, set: { if !$0 { rtc.roomError = nil } })) {
-            Button("知道了") { rtc.roomError = nil }
+        .alert(KikiL10n.text("语聊提示"), isPresented: Binding(get: { rtc.roomError != nil && showsParticipants }, set: { if !$0 { rtc.roomError = nil } })) {
+            Button(KikiL10n.text("知道了")) { rtc.roomError = nil }
         } message: { Text(rtc.roomError ?? "") }
-        .confirmationDialog("拉黑后，你将不再听到对方的声音或看到对方的房间文字。对方仍可能在公开房间听到你；可在设置解除。", isPresented: blockConfirmation(inParticipants: true), titleVisibility: .visible) { blockConfirmationButtons }
-        .alert(pendingModeration?.title ?? "确认管理操作", isPresented: moderationConfirmation(inParticipants: true)) { moderationConfirmationButtons } message: { Text(pendingModeration?.message ?? "") }
+        .confirmationDialog(KikiL10n.text("拉黑后，你将不再听到对方的声音或看到对方的房间文字。对方仍可能在公开房间听到你；可在设置解除。"), isPresented: blockConfirmation(inParticipants: true), titleVisibility: .visible) { blockConfirmationButtons }
+        .alert(pendingModeration?.title ?? KikiL10n.text("确认管理操作"), isPresented: moderationConfirmation(inParticipants: true)) { moderationConfirmationButtons } message: { Text(pendingModeration?.message ?? "") }
     }
 }
 
@@ -838,14 +838,14 @@ private struct KikiRoomProfileInviteAction: View {
             if let state = rtc.roomState, state.room.id == rtc.currentRoomID,
                !rtc.safetyState.blockedIDs.contains(userID),
                let status = state.seatInviteState(for: userID, at: Int(context.date.timeIntervalSince1970)) {
-                KikiProfileSeatInviteButton(title: status == .pending ? "已邀请" : "邀请",
+                KikiProfileSeatInviteButton(title: status == .pending ? KikiL10n.text("已邀请") : KikiL10n.text("邀请"),
                     isBusy: isSending,
                     isEnabled: status == .available && rtc.canUseRoom && !rtc.isPerformingRoomAction,
                     action: invite)
             }
         }
-        .alert("邀请上麦", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
-            Button("知道了") { errorMessage = nil }
+        .alert(KikiL10n.text("邀请上麦"), isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button(KikiL10n.text("知道了")) { errorMessage = nil }
         } message: { Text(errorMessage ?? "") }
     }
 
@@ -860,7 +860,7 @@ private struct KikiRoomProfileInviteAction: View {
             let sent = await rtc.performRoomAction(.inviteSeat, targetUserID: userID)
             guard rtc.currentRoomID == roomID else { return }
             if !sent {
-                errorMessage = rtc.roomError ?? "邀请未发出，请稍后重试。"
+                errorMessage = rtc.roomError ?? KikiL10n.text("邀请未发出，请稍后重试。")
                 rtc.roomError = nil
             }
         }
@@ -884,7 +884,7 @@ struct KikiRoomHeader<Avatar: View, Controls: View>: View {
                 if let onEditTitle {
                     Button(action: onEditTitle) { identity }
                         .buttonStyle(.plain).disabled(!isTitleEditingEnabled)
-                        .accessibilityLabel("编辑房间")
+                        .accessibilityLabel(KikiL10n.text("编辑房间"))
                         .accessibilityValue(title)
                         .accessibilityIdentifier("livekit.room.editTitle")
                 } else { identity }
@@ -901,7 +901,7 @@ struct KikiRoomHeader<Avatar: View, Controls: View>: View {
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 2)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("房主 \(host)").font(.caption2)
+            Text(KikiL10n.format("房主 %@", String(describing: host))).font(.caption2)
                 .foregroundStyle(KikiPalette.secondary).lineLimit(1)
         }
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -960,20 +960,31 @@ struct KikiRoomSeatTile: View {
             }
             HStack(spacing: 3) {
                 if let member, member.role != .member {
-                    Text(member.role.label).font(.system(size: compact ? 7 : 8, weight: .semibold))
-                        .foregroundStyle(KikiPalette.roleBadgeText)
-                        .padding(.horizontal, 3).padding(.vertical, compact ? 1 : 2)
-                        .background(KikiPalette.roleBadgeBackground, in: RoundedRectangle(cornerRadius: 3))
+                    if KikiL10n.isEnglish {
+                        // A role symbol leaves room for the actual nickname
+                        // in the narrow ring captions; VoiceOver names it.
+                        Image(systemName: member.role == .owner ? "crown.fill" : "checkmark.shield.fill")
+                            .font(.system(size: compact ? 7 : 8, weight: .semibold))
+                            .foregroundStyle(KikiPalette.roleBadgeText)
+                            .frame(width: compact ? 11 : 13, height: compact ? 10 : 12)
+                            .background(KikiPalette.roleBadgeBackground, in: RoundedRectangle(cornerRadius: 3))
+                            .accessibilityLabel(member.role.label)
+                    } else {
+                        Text(member.role.label).font(.system(size: compact ? 7 : 8, weight: .semibold))
+                            .foregroundStyle(KikiPalette.roleBadgeText)
+                            .padding(.horizontal, 3).padding(.vertical, compact ? 1 : 2)
+                            .background(KikiPalette.roleBadgeBackground, in: RoundedRectangle(cornerRadius: 3))
+                    }
                 }
-                Text(member.map { $0.name + ($0.userID == localUserID ? " (我)" : "") } ?? "\(slot.index)")
+                Text(member.map { $0.name + ($0.userID == localUserID ? KikiL10n.text(" (我)") : "") } ?? "\(slot.index)")
                     .font(.system(size: compact ? 9 : 10)).foregroundStyle(member == nil ? secondary : KikiPalette.text).lineLimit(1)
             }.frame(height: compact ? 11 : 14)
                 .offset(labelOffset)
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(member == nil ? (slot.locked ? "麦位已锁定" : "空麦位")
-                            : (!online ? "连接中断，保留麦位等待重连" : (speaking ? "正在发言" : "")))
+        .accessibilityValue(member == nil ? (slot.locked ? KikiL10n.text("麦位已锁定") : KikiL10n.text("空麦位"))
+                            : (!online ? KikiL10n.text("连接中断，保留麦位等待重连") : (speaking ? KikiL10n.text("正在发言") : "")))
     }
 }
 
@@ -988,10 +999,10 @@ private struct KikiPendingModeration {
     let seat: Int?
     let enabled: Bool?
     let name: String
-    var title: String { action == .kick ? "踢出并禁止重入？" : (action == .unban ? "解除房间禁入？" : "更改房间管理员？") }
+    var title: String { action == .kick ? KikiL10n.text("踢出并禁止重入？") : (action == .unban ? KikiL10n.text("解除房间禁入？") : KikiL10n.text("更改房间管理员？")) }
     var message: String {
-        if action == .kick { return "\(name) 将离开本房间，并且在解除禁入前无法重新加入。" }
-        if action == .unban { return "\(name) 将可以重新加入本房间。" }
-        return enabled == true ? "\(name) 将获得本房间的上麦申请管理、禁言和踢人权限。" : "\(name) 将失去本房间的管理员权限。"
+        if action == .kick { return KikiL10n.format("%@ 将离开本房间，并且在解除禁入前无法重新加入。", String(describing: name)) }
+        if action == .unban { return KikiL10n.format("%@ 将可以重新加入本房间。", String(describing: name)) }
+        return enabled == true ? KikiL10n.format("%@ 将获得本房间的上麦申请管理、禁言和踢人权限。", String(describing: name)) : KikiL10n.format("%@ 将失去本房间的管理员权限。", String(describing: name))
     }
 }

@@ -210,7 +210,11 @@ struct KikiRelationshipStageLayout {
     static let selectorWidth: CGFloat = 132
     static let footerSpacing: CGFloat = 6
     var legendWidth: CGFloat { max(0, width - Self.selectorWidth - 10) }
-    var legendColumns: Int { max(1, min(4, Int((legendWidth + 4) / 64))) }
+    var legendColumns: Int {
+        // English needs room for a 13pt sample, a 3pt gap and the measured
+        // “Quincunx” label at its existing readable 10pt font.
+        max(1, min(4, Int((legendWidth + 4) / (KikiL10n.isEnglish ? 67 : 64))))
+    }
     var footerHeight: CGFloat {
         let rows = CGFloat(Int(ceil(7.0 / Double(legendColumns))))
         return max(44, rows * 14 + max(0, rows - 1) * 4)
@@ -230,15 +234,15 @@ struct KikiRelationshipCategory: Identifiable {
         let names: [(String, String)]
         switch mode {
         case .bazi:
-            names = [("HARMONY_ONLY", "相合"), ("CONFLICT_ONLY", "相冲"), ("MIXED", "合冲并见")]
+            names = [("HARMONY_ONLY", KikiL10n.text("相合")), ("CONFLICT_ONLY", KikiL10n.text("相冲")), ("MIXED", KikiL10n.text("合冲并见"))]
         case .mbti:
-            names = [("GOLDEN", "黄金配对"), ("SILVER", "白银配对"), ("PEDAGOGUE", "师生配对"),
-                     ("SAME_TYPE", "同类型")]
+            names = [("GOLDEN", KikiL10n.text("黄金配对")), ("SILVER", KikiL10n.text("白银配对")), ("PEDAGOGUE", KikiL10n.text("师生配对")),
+                     ("SAME_TYPE", KikiL10n.text("同类型"))]
         case .zodiac:
-            names = [("SAME_SIGN", "同星座"), ("ADJACENT", "相邻星座"), ("SEXTILE", "六分"),
-                     ("SQUARE", "刑"), ("TRINE", "拱"), ("QUINCUNX", "梅花"), ("OPPOSITION", "对宫")]
+            names = [("SAME_SIGN", KikiL10n.text("同星座")), ("ADJACENT", KikiL10n.text("相邻星座")), ("SEXTILE", KikiL10n.text("六分")),
+                     ("SQUARE", KikiL10n.text("刑")), ("TRINE", KikiL10n.text("拱")), ("QUINCUNX", KikiL10n.text("梅花")), ("OPPOSITION", KikiL10n.text("对宫"))]
         }
-        return (names + [("UNAVAILABLE", "暂无法展示关系")]).map { Self(code: $0.0, label: $0.1) }
+        return (names + [("UNAVAILABLE", KikiL10n.text("暂无法展示关系"))]).map { Self(code: $0.0, label: $0.1) }
     }
 
     static func isDisplayed(_ code: String, in mode: KikiRelationshipMode) -> Bool {
@@ -252,7 +256,7 @@ struct KikiStageRelationshipPair: Identifiable {
     let summary: KikiRelationshipSummary?
     var id: String { [a.id, b.id].sorted().joined(separator: "|") }
     var code: String { summary?.code ?? "UNAVAILABLE" }
-    var label: String { code == "UNAVAILABLE" ? "暂无法展示关系" : (summary?.label ?? "暂无法展示关系") }
+    var label: String { code == "UNAVAILABLE" ? KikiL10n.text("暂无法展示关系") : KikiL10n.text(summary?.label ?? "暂无法展示关系") }
 }
 
 private struct KikiRelationshipFetchScope: Equatable {
@@ -381,10 +385,10 @@ struct KikiRelationshipStage: View {
         }
         .overlay {
             if rtc.roomState == nil {
-                ProgressView("正在同步麦位").font(.caption)
+                ProgressView(KikiL10n.text("正在同步麦位")).font(.caption)
             } else if seats.isEmpty && retainedSeats.isEmpty {
                 Button(action: onRequestSeat) {
-                    Label("申请上麦", systemImage: "mic.badge.plus")
+                    Label(KikiL10n.text("申请上麦"), systemImage: "mic.badge.plus")
                         .font(.subheadline.weight(.medium)).padding(.horizontal, 16).padding(.vertical, 12)
                 }
                 .buttonStyle(.bordered)
@@ -397,7 +401,7 @@ struct KikiRelationshipStage: View {
                     .frame(width: 44, height: 44)
             }
             .tint(KikiPalette.secondary)
-            .accessibilityLabel("关系说明")
+            .accessibilityLabel(KikiL10n.text("关系说明"))
             .accessibilityIdentifier("livekit.room.relationship.details")
         }
         .overlay(alignment: .topLeading) {
@@ -406,7 +410,7 @@ struct KikiRelationshipStage: View {
             } else if loadFailed && seats.count > 1 {
                 Button { refreshID = UUID() } label: {
                     Image(systemName: "arrow.clockwise").frame(width: 44, height: 44)
-                }.accessibilityLabel("重新获取关系")
+                }.accessibilityLabel(KikiL10n.text("重新获取关系"))
             }
         }
         .frame(maxWidth: .infinity)
@@ -572,39 +576,59 @@ enum KikiRelationshipVisuals {
     }
 
     static func legendTitle(for category: KikiRelationshipCategory) -> String {
-        category.code == "NONE" ? "无直接合冲" : category.label
+        category.code == "NONE" ? KikiL10n.text("无直接合冲") : category.label
+    }
+
+    /// Short labels preserve the fixed footer and keep the full category name
+    /// in VoiceOver and the explanation sheet.
+    static func compactLegendTitle(for category: KikiRelationshipCategory) -> String {
+        guard KikiL10n.isEnglish else { return category.label }
+        switch category.code {
+        case "MIXED": return KikiL10n.text("合与冲")
+        case "GOLDEN": return KikiL10n.text("黄金")
+        case "SILVER": return KikiL10n.text("白银")
+        case "PEDAGOGUE": return KikiL10n.text("师生")
+        case "SAME_TYPE", "SAME_SIGN": return KikiL10n.text("相同")
+        case "ADJACENT": return KikiL10n.text("相邻")
+        case "OPPOSITION": return KikiL10n.text("对向")
+        default: return category.label
+        }
     }
 
     static func explanation(for code: String) -> String {
         switch code {
-        case "HARMONY_ONLY": return "默契合拍。聊天有种接得上话的感觉，共同兴趣很适合开场。偶尔分享一点不同想法，让熟悉的节奏也有新鲜感。"
-        case "CONFLICT_ONLY": return "火花碰撞。各有主见，聊天容易冒出火花，也可能忍不住较劲。不同意见先说清楚，把争输赢换成一起找有趣的答案。"
-        case "MIXED": return "欢喜冤家。聊得来，也容易斗嘴，互动里常有一点小较劲。享受彼此懂的部分，较劲时缓一拍，把真心话直接说出来。"
-        case "NONE": return "慢热探索。默契适合慢慢培养，先别急着判断合不合拍。从共同话题或小游戏开始，多聊几次，再发现你们独有的节奏。"
-        case "GOLDEN": return "互补来电。不同的思路能给聊天添些新鲜感，适合互相接住新点子。多问问对方为什么这样想，让差异成为有趣的话题。"
-        case "SILVER": return "同频共鸣。关注的话题有些相近，接话亲切，又能听到不同角度。先聊共同兴趣，也给对方的小习惯和独特想法留点空间。"
-        case "PEDAGOGUE": return "灵感搭子。适合交换思路，轮流当彼此的小老师。少一点说教，多一点好奇，问问对方的理由，让聊天多出有趣的新发现。"
-        case "SAME_TYPE": return "同款默契。偏好相近，聊天像遇到熟悉的脑回路，接话很有亲切感。也多聊聊各自不同的经历，让相似的组合有新故事。"
-        case "OTHER": return "自由搭配。你们没有固定的相处剧本，合不合拍可以边聊边发现。从共同兴趣开始，试试不同话题，找到自己的聊天节奏。"
-        case "SAME_SIGN": return "同频搭子。熟悉感是这组的聊天关键词，共同喜好很适合开场。别急着以为已经懂了对方，也听听那些不一样的小故事。"
-        case "ADJACENT": return "好奇搭子。既有一点亲近感，也有值得好奇的不同之处。交换喜欢的小事和日常习惯，节奏不同时慢一点，给新鲜感留些空间。"
-        case "SEXTILE": return "轻松接球。适合一来一回地接话，轻松互动就是这组的亮点。主动递个新话题或小游戏，也给对方接球的时间，聊天更有趣。"
-        case "SQUARE": return "火花搭子。聊天有来有往，也容易因为不同想法斗嘴较劲。把想法说清楚，少让对方猜，一起完成个小挑战，让火花变成乐趣。"
-        case "TRINE": return "舒服合拍。相处的关键词是自在，聊天不妨跟着舒服的节奏走。偶尔主动关心，或一起尝试点新鲜事，让轻松的互动多点温度。"
-        case "QUINCUNX": return "新奇磨合。想法和习惯可能不在同一频道，好奇心能打开新话题。把期待说具体，给彼此一点调整的时间，慢慢找到共同节奏。"
-        case "OPPOSITION": return "反差来电。不同的表达和习惯让互动有张力，也有互补的想象空间。先听懂另一边的想法，再一起找平衡，别急着把对话变成辩论。"
-        default: return "稍后揭晓。当前还不能展示这组关系的介绍，先把注意力留给聊天。稍后刷新再看看，你们的相处也可以从一个有趣的话题开始。"
+        case "HARMONY_ONLY": return KikiL10n.text("默契合拍。聊天有种接得上话的感觉，共同兴趣很适合开场。偶尔分享一点不同想法，让熟悉的节奏也有新鲜感。")
+        case "CONFLICT_ONLY": return KikiL10n.text("火花碰撞。各有主见，聊天容易冒出火花，也可能忍不住较劲。不同意见先说清楚，把争输赢换成一起找有趣的答案。")
+        case "MIXED": return KikiL10n.text("欢喜冤家。聊得来，也容易斗嘴，互动里常有一点小较劲。享受彼此懂的部分，较劲时缓一拍，把真心话直接说出来。")
+        case "NONE": return KikiL10n.text("慢热探索。默契适合慢慢培养，先别急着判断合不合拍。从共同话题或小游戏开始，多聊几次，再发现你们独有的节奏。")
+        case "GOLDEN": return KikiL10n.text("互补来电。不同的思路能给聊天添些新鲜感，适合互相接住新点子。多问问对方为什么这样想，让差异成为有趣的话题。")
+        case "SILVER": return KikiL10n.text("同频共鸣。关注的话题有些相近，接话亲切，又能听到不同角度。先聊共同兴趣，也给对方的小习惯和独特想法留点空间。")
+        case "PEDAGOGUE": return KikiL10n.text("灵感搭子。适合交换思路，轮流当彼此的小老师。少一点说教，多一点好奇，问问对方的理由，让聊天多出有趣的新发现。")
+        case "SAME_TYPE": return KikiL10n.text("同款默契。偏好相近，聊天像遇到熟悉的脑回路，接话很有亲切感。也多聊聊各自不同的经历，让相似的组合有新故事。")
+        case "OTHER": return KikiL10n.text("自由搭配。你们没有固定的相处剧本，合不合拍可以边聊边发现。从共同兴趣开始，试试不同话题，找到自己的聊天节奏。")
+        case "SAME_SIGN": return KikiL10n.text("同频搭子。熟悉感是这组的聊天关键词，共同喜好很适合开场。别急着以为已经懂了对方，也听听那些不一样的小故事。")
+        case "ADJACENT": return KikiL10n.text("好奇搭子。既有一点亲近感，也有值得好奇的不同之处。交换喜欢的小事和日常习惯，节奏不同时慢一点，给新鲜感留些空间。")
+        case "SEXTILE": return KikiL10n.text("轻松接球。适合一来一回地接话，轻松互动就是这组的亮点。主动递个新话题或小游戏，也给对方接球的时间，聊天更有趣。")
+        case "SQUARE": return KikiL10n.text("火花搭子。聊天有来有往，也容易因为不同想法斗嘴较劲。把想法说清楚，少让对方猜，一起完成个小挑战，让火花变成乐趣。")
+        case "TRINE": return KikiL10n.text("舒服合拍。相处的关键词是自在，聊天不妨跟着舒服的节奏走。偶尔主动关心，或一起尝试点新鲜事，让轻松的互动多点温度。")
+        case "QUINCUNX": return KikiL10n.text("新奇磨合。想法和习惯可能不在同一频道，好奇心能打开新话题。把期待说具体，给彼此一点调整的时间，慢慢找到共同节奏。")
+        case "OPPOSITION": return KikiL10n.text("反差来电。不同的表达和习惯让互动有张力，也有互补的想象空间。先听懂另一边的想法，再一起找平衡，别急着把对话变成辩论。")
+        default: return KikiL10n.text("稍后揭晓。当前还不能展示这组关系的介绍，先把注意力留给聊天。稍后刷新再看看，你们的相处也可以从一个有趣的话题开始。")
         }
     }
 
     static func friendlyTitle(for code: String) -> String {
-        String(explanation(for: code).prefix { $0 != "。" })
+        let text = explanation(for: code)
+        let separator = KikiL10n.isEnglish ? ". " : "。"
+        guard let end = text.range(of: separator) else { return text }
+        return String(text[..<end.lowerBound])
     }
 
     static func friendlyBody(for code: String) -> String {
         let text = explanation(for: code)
-        guard let end = text.firstIndex(of: "。") else { return text }
-        return String(text[text.index(after: end)...])
+        let separator = KikiL10n.isEnglish ? ". " : "。"
+        guard let end = text.range(of: separator) else { return text }
+        return String(text[end.upperBound...])
     }
 
 }
@@ -630,15 +654,16 @@ struct KikiRelationshipLineSample: View {
 struct KikiRelationshipLegend: View {
     let mode: KikiRelationshipMode
     var columns = 4
+    static var sampleWidth: CGFloat { KikiL10n.isEnglish ? 13 : 18 }
     var body: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 4, alignment: .leading), count: columns),
                   alignment: .leading, spacing: 4) {
             ForEach(KikiRelationshipCategory.categories(for: mode).filter { KikiRelationshipCategory.isDisplayed($0.code, in: mode) }) { category in
                 HStack(spacing: 3) {
-                    KikiRelationshipLineSample(code: category.code).frame(width: 18, height: 14)
-                    Text(category.label)
+                    KikiRelationshipLineSample(code: category.code).frame(width: Self.sampleWidth, height: 14)
+                    Text(KikiRelationshipVisuals.compactLegendTitle(for: category))
                         .font(.system(size: 10, weight: .medium)).foregroundStyle(KikiPalette.secondary)
-                        .lineLimit(1).minimumScaleFactor(0.85)
+                        .lineLimit(1)
                 }.frame(height: 14, alignment: .leading)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(category.label)
@@ -714,7 +739,7 @@ struct KikiRelationshipDetails: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     if !visiblePairs.isEmpty {
-                        Text("当前配对").font(.headline).padding(.top, 4)
+                        Text(KikiL10n.text("当前配对")).font(.headline).padding(.top, 4)
                         ForEach(visiblePairs) { pair in
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("\(pair.a.member.name) · \(pair.b.member.name)")
@@ -726,23 +751,23 @@ struct KikiRelationshipDetails: View {
                             .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 18))
                         }
                     }
-                    Text("全部关系图示").font(.headline).padding(.top, visiblePairs.isEmpty ? 4 : 8)
+                    Text(KikiL10n.text("全部关系图示")).font(.headline).padding(.top, visiblePairs.isEmpty ? 4 : 8)
                     ForEach(KikiRelationshipCategory.categories(for: mode).filter { KikiRelationshipCategory.isDisplayed($0.code, in: mode) }) { category in
                         explanation(code: category.code, label: KikiRelationshipVisuals.legendTitle(for: category))
                             .padding(16)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 18))
                     }
-                    Text("娱乐配对，开心参考")
+                    Text(KikiL10n.text("娱乐配对，开心参考"))
                         .font(.caption).foregroundStyle(KikiPalette.secondary)
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                 }
                 .padding(16)
             }
             .background(KikiPalette.background)
-            .navigationTitle("\(mode.title)关系说明").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(KikiL10n.format("%@关系说明", String(describing: mode.title))).navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("完成", action: onDismiss) }
+                ToolbarItem(placement: .confirmationAction) { Button(KikiL10n.text("完成"), action: onDismiss) }
             }
         }
     }
@@ -765,6 +790,23 @@ struct KikiRelationshipDetails: View {
 /// The avatar keeps a fixed anchor while the optional public label unfolds
 /// below its nickname. Bazi has no blank label or background placeholder.
 enum KikiRelationshipSeatLabelLayout {
+    /// Keep the readable full Zodiac name whenever it fits. Standard short
+    /// names serve narrow captions; VoiceOver still receives the full name.
+    static func displayTag(_ value: String, mode: KikiRelationshipMode, width: CGFloat, compact: Bool) -> String {
+        guard mode == .zodiac, KikiL10n.isEnglish else { return value }
+        let font = UIFont.systemFont(ofSize: compact ? 9 : 10, weight: .medium)
+        guard (value as NSString).size(withAttributes: [.font: font]).width > width else { return value }
+        let shortNames = [
+            KikiL10n.text("白羊座"): KikiL10n.text("白羊"), KikiL10n.text("金牛座"): KikiL10n.text("金牛"),
+            KikiL10n.text("双子座"): KikiL10n.text("双子"), KikiL10n.text("巨蟹座"): KikiL10n.text("巨蟹"),
+            KikiL10n.text("狮子座"): KikiL10n.text("狮子"), KikiL10n.text("处女座"): KikiL10n.text("处女"),
+            KikiL10n.text("天秤座"): KikiL10n.text("天秤"), KikiL10n.text("天蝎座"): KikiL10n.text("天蝎"),
+            KikiL10n.text("射手座"): KikiL10n.text("射手"), KikiL10n.text("摩羯座"): KikiL10n.text("摩羯"),
+            KikiL10n.text("水瓶座"): KikiL10n.text("水瓶"), KikiL10n.text("双鱼座"): KikiL10n.text("双鱼")
+        ]
+        return shortNames[value] ?? value
+    }
+
     static func tagHeight(mode: KikiRelationshipMode, value: String?, compact: Bool = false) -> CGFloat {
         mode != .bazi && value?.isEmpty == false ? (compact ? 13 : 17) : 0
     }
@@ -858,7 +900,8 @@ struct KikiRelationshipCircle: View {
                     }
                 ZStack(alignment: .top) {
                     if tagHeight > 0, let tag {
-                        Text(tag)
+                        Text(KikiRelationshipSeatLabelLayout.displayTag(tag, mode: mode,
+                            width: geometry.cellWidth, compact: geometry.isCompact))
                             .id("\(mode.rawValue):\(tag)")
                             .font(.system(size: geometry.isCompact ? 9 : 10, weight: .medium))
                             .foregroundStyle(KikiPalette.lavender).lineLimit(1)
@@ -893,13 +936,29 @@ struct KikiRelationshipCircle: View {
         .fixedSize(horizontal: false, vertical: true)
         .frame(width: geometry.cellWidth, height: geometry.avatarSize + 6, alignment: .top)
         .buttonStyle(.plain)
-        .accessibilityLabel("\(occupant.slot.index)号麦，查看\(occupant.member.name)的个人主页")
+        .accessibilityLabel(KikiL10n.format("%@号麦，查看%@的个人主页", String(describing: occupant.slot.index), String(describing: occupant.member.name)))
+        .accessibilityValue(accessibilityValue(for: occupant, tag: tag))
         .accessibilityIdentifier("livekit.room.relationship.seat.\(occupant.id)")
+    }
+
+    private func accessibilityValue(for occupant: KikiRelationshipSeat, tag: String?) -> String {
+        var values = [occupant.member.role.label]
+        if let tag { values.append(tag) }
+        if !occupant.member.online {
+            values.append(KikiL10n.text("连接中断，保留麦位等待重连"))
+        } else if participants.first(where: { $0.id == occupant.id })?.isSpeaking == true {
+            values.append(KikiL10n.text("正在发言"))
+        }
+        return values.joined(separator: KikiL10n.isEnglish ? ", " : "，")
     }
 
     private func publicTag(for userID: String) -> String? {
         guard let profile = profiles.first(where: { $0.userID == userID }) else { return nil }
-        switch mode { case .bazi: return nil; case .mbti: return profile.mbtiType; case .zodiac: return profile.zodiacSign }
+        switch mode {
+        case .bazi: return nil
+        case .mbti: return profile.mbtiType
+        case .zodiac: return profile.zodiacSign.map { KikiL10n.text($0) }
+        }
     }
 
     private func drawEdges(context: inout GraphicsContext) {

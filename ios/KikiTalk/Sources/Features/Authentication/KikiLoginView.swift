@@ -31,10 +31,10 @@ final class KikiAppleAuthorizationService: NSObject, KikiAppleAuthorizing,
     }
 
     func authorize(nonce: String, state: String) async throws -> KikiAppleCredential {
-        guard continuation == nil else { throw KikiAPIError.security("Apple 授权正在进行中，请稍候。") }
+        guard continuation == nil else { throw KikiAPIError.security(KikiL10n.text("Apple 授权正在进行中，请稍候。")) }
         guard UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
             .contains(where: { $0.activationState == .foregroundActive && $0.windows.contains(where: \.isKeyWindow) }) else {
-            throw KikiAPIError.security("请在应用前台重新发起 Apple 登录。")
+            throw KikiAPIError.security(KikiL10n.text("请在应用前台重新发起 Apple 登录。"))
         }
         let request = ASAuthorizationAppleIDProvider().createRequest()
         request.nonce = Self.hashedNonce(nonce)
@@ -95,7 +95,7 @@ final class KikiAppleAuthorizationService: NSObject, KikiAppleAuthorizing,
               let tokenData = credential.identityToken, let token = String(data: tokenData, encoding: .utf8), !token.isEmpty,
               let codeData = credential.authorizationCode, let code = String(data: codeData, encoding: .utf8), !code.isEmpty,
               !credential.user.isEmpty else {
-            finish(.failure(KikiAPIError.security("Apple 授权凭据不完整，请重新登录。"))); return
+            finish(.failure(KikiAPIError.security(KikiL10n.text("Apple 授权凭据不完整，请重新登录。")))); return
         }
         finish(.success(KikiAppleCredential(subject: credential.user, identityToken: token, authorizationCode: code)))
     }
@@ -103,7 +103,7 @@ final class KikiAppleAuthorizationService: NSObject, KikiAppleAuthorizing,
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
         guard self.controller === controller else { return }
         if let error = error as? ASAuthorizationError, error.code == .canceled { finish(.failure(CancellationError())) }
-        else { finish(.failure(KikiAPIError.security("Apple 登录未完成，请检查 Apple 账户和网络后重试。"))) }
+        else { finish(.failure(KikiAPIError.security(KikiL10n.text("Apple 登录未完成，请检查 Apple 账户和网络后重试。")))) }
     }
 
     private func finish(_ result: Result<KikiAppleCredential, Error>) {
@@ -156,7 +156,7 @@ struct KikiLoginView: View {
                         Image("KikiLaunchMark")
                             .resizable().scaledToFit().frame(width: 84, height: 84)
                             .accessibilityHidden(true)
-                        Text("听见同频的你")
+                        Text(KikiL10n.text("听见同频的你"))
                             .font(.title.weight(.semibold)).foregroundStyle(KikiPalette.text)
                             .accessibilityAddTraits(.isHeader)
                             .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
@@ -172,15 +172,15 @@ struct KikiLoginView: View {
                                              action: signIn)
                             .id(colorScheme).frame(height: 54)
                         if store.isSigningIn || store.isEndingSession {
-                            HStack(spacing: 8) { ProgressView(); Text("正在登录…") }
+                            HStack(spacing: 8) { ProgressView(); Text(KikiL10n.text("正在登录…")) }
                                 .font(.footnote).foregroundStyle(KikiPalette.secondary)
                         }
                     }
                     Spacer(minLength: 28)
                     ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 16) { documentLink("terms", title: "《用户协议》"); documentLink("privacy", title: "《隐私政策》") }
+                        HStack(spacing: 16) { documentLink("terms", title: KikiL10n.text("《用户协议》")); documentLink("privacy", title: KikiL10n.text("《隐私政策》")) }
                             .fixedSize(horizontal: true, vertical: false)
-                        VStack(spacing: 0) { documentLink("terms", title: "《用户协议》"); documentLink("privacy", title: "《隐私政策》") }
+                        VStack(spacing: 0) { documentLink("terms", title: KikiL10n.text("《用户协议》")); documentLink("privacy", title: KikiL10n.text("《隐私政策》")) }
                     }
                 }
                 .frame(maxWidth: 420)
@@ -225,26 +225,26 @@ struct KikiNicknameOnboardingView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
                 HStack {
-                    Text("欢迎来到 Kiki").font(.system(size: 13, weight: .medium)).foregroundStyle(KikiPalette.lavender)
+                    Text(KikiL10n.text("欢迎来到 kikitalk")).font(.system(size: 13, weight: .medium)).foregroundStyle(KikiPalette.lavender)
                     Spacer()
-                    Button("退出登录") { Task { await store.logout() } }
+                    Button(KikiL10n.text("退出登录")) { Task { await store.logout() } }
                         .font(.system(size: 12)).foregroundStyle(KikiPalette.secondary)
                         .disabled(isSaving || store.isSigningIn).accessibilityIdentifier("nicknameLogout")
                 }.padding(.top, 25)
                 KikiAvatar(index: store.avatarIndex, size: 84, customURL: store.customAvatarURL).padding(.top, 30)
                 VStack(alignment: .leading, spacing: 13) {
-                    Text("先认识一下你。").font(.system(size: 32, weight: .bold))
-                    Text("为自己取一个昵称，让房间里的朋友知道该怎么称呼你。")
+                    Text(KikiL10n.text("先认识一下你。")).font(.system(size: 32, weight: .bold))
+                    Text(KikiL10n.text("为自己取一个昵称，让房间里的朋友知道该怎么称呼你。"))
                         .font(.system(size: 14)).lineSpacing(6).foregroundStyle(KikiPalette.secondary)
-                    Text("账号 ID · \(store.userID)").font(.system(size: 11, design: .monospaced)).foregroundStyle(KikiPalette.muted)
+                    Text(KikiL10n.format("账号 ID · %@", store.userID)).font(.system(size: 11, design: .monospaced)).foregroundStyle(KikiPalette.muted)
                 }
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Text("你的昵称").foregroundStyle(KikiPalette.secondary)
+                        Text(KikiL10n.text("你的昵称")).foregroundStyle(KikiPalette.secondary)
                         Spacer()
                         Text("\(name.count)/16").foregroundStyle(KikiPalette.muted)
                     }.font(.system(size: 12))
-                    TextField("请输入昵称", text: $name)
+                    TextField(KikiL10n.text("请输入昵称"), text: $name)
                         .font(.system(size: 17, weight: .medium))
                         .autocorrectionDisabled().textInputAutocapitalization(.never)
                         .focused($focused).submitLabel(.go).onSubmit(save)
@@ -253,9 +253,9 @@ struct KikiNicknameOnboardingView: View {
                         .onChange(of: name) { value in
                             if value.count > 16 { name = String(value.prefix(16)) }
                         }
-                    Text("1–16 字，之后可以在「我」中修改昵称和头像。")
+                    Text(KikiL10n.text("1–16 字，之后可以在「我」中修改昵称和头像。"))
                         .font(.system(size: 11)).foregroundStyle(KikiPalette.muted)
-                    Text("昵称和头像会展示在大厅、房间、麦位和聊天等场景，房间成员可见，请勿填写敏感个人信息。")
+                    Text(KikiL10n.text("昵称和头像会展示在大厅、房间、麦位和聊天等场景，房间成员可见，请勿填写敏感个人信息。"))
                         .font(.system(size: 11)).lineSpacing(5).foregroundStyle(KikiPalette.secondary)
                 }.padding(.top, 5)
                 if let errorMessage {
@@ -265,7 +265,7 @@ struct KikiNicknameOnboardingView: View {
                 Button(action: save) {
                     HStack(spacing: 10) {
                         if isSaving { ProgressView().tint(.white) }
-                        Text(isSaving ? "正在保存…" : "保存昵称，进入 Kiki")
+                        Text(isSaving ? KikiL10n.text("正在保存…") : KikiL10n.text("保存昵称，进入 kikitalk"))
                         if !isSaving { Image(systemName: "arrow.right") }
                     }.font(.system(size: 16, weight: .semibold)).frame(maxWidth: .infinity).padding(19)
                         .background(KikiPalette.purple, in: RoundedRectangle(cornerRadius: 17))

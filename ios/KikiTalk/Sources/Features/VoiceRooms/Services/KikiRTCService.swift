@@ -24,15 +24,15 @@ enum KikiMicrophonePermission {
     static var description: String {
         if #available(iOS 17.0, *) {
             switch AVAudioApplication.shared.recordPermission {
-            case .granted: return "已允许"
-            case .denied: return "未允许"
-            default: return "未申请"
+            case .granted: return KikiL10n.text("已允许")
+            case .denied: return KikiL10n.text("未允许")
+            default: return KikiL10n.text("未申请")
             }
         }
         switch AVAudioSession.sharedInstance().recordPermission {
-        case .granted: return "已允许"
-        case .denied: return "未允许"
-        default: return "未申请"
+        case .granted: return KikiL10n.text("已允许")
+        case .denied: return KikiL10n.text("未允许")
+        default: return KikiL10n.text("未申请")
         }
     }
 
@@ -202,11 +202,11 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
     var canSendChat: Bool { canUseRoom && roomState?.me.canPublishData == true && room?.localParticipant.permissions.canPublishData == true }
     var microphoneStatus: String {
         if let notice = audioState.notice { return notice }
-        guard let state = roomState else { return "正在同步麦位权限" }
-        if state.me.seatIndex == nil { return state.me.isModerator ? "听众 · 上麦后可发言" : "听众 · 申请上麦后可发言" }
-        if state.me.audioMuted { return "已被管理者禁麦" }
-        if state.seats.first(where: { $0.index == state.me.seatIndex })?.audioLocked == true { return "此麦位已锁音频" }
-        return microphoneEnabled ? "麦克风已开启" : "已上麦 · 点击开麦后发言"
+        guard let state = roomState else { return KikiL10n.text("正在同步麦位权限") }
+        if state.me.seatIndex == nil { return state.me.isModerator ? KikiL10n.text("听众 · 上麦后可发言") : KikiL10n.text("听众 · 申请上麦后可发言") }
+        if state.me.audioMuted { return KikiL10n.text("已被管理者禁麦") }
+        if state.seats.first(where: { $0.index == state.me.seatIndex })?.audioLocked == true { return KikiL10n.text("此麦位已锁音频") }
+        return microphoneEnabled ? KikiL10n.text("麦克风已开启") : KikiL10n.text("已上麦 · 点击开麦后发言")
     }
 
     private override init() { super.init() }
@@ -250,14 +250,14 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
 
     func requireNoActiveRoom() throws {
         guard currentRoomID == nil, !isPresentingRoom, room == nil else {
-            throw KikiRTCError.unavailable("请先退出当前房间。")
+            throw KikiRTCError.unavailable(KikiL10n.text("请先退出当前房间。"))
         }
     }
 
     func login(credentials: KikiSDKCredentials, sessionToken: String) async throws {
         guard credentials.provider == "livekit", !credentials.userID.isEmpty,
               !sessionToken.isEmpty, Self.isLabServer(credentials.serverURL) else {
-            throw KikiRTCError.unavailable("语聊服务配置无效。")
+            throw KikiRTCError.unavailable(KikiL10n.text("语聊服务配置无效。"))
         }
         let generation = lifecycleGeneration
         loginAttemptGeneration += 1
@@ -267,7 +267,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
         try Task.checkCancellation()
         pendingPrivacyDisconnect = nil
         if self.credentials?.userID != credentials.userID, room != nil {
-            throw KikiRTCError.unavailable("请先退出当前语聊账号。")
+            throw KikiRTCError.unavailable(KikiL10n.text("请先退出当前语聊账号。"))
         }
         // Privacy shutdown is synchronous. Restore the audio device only after
         // any prior session has fully disconnected, so it cannot resume capture.
@@ -284,7 +284,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
 
     func updateProfile(userID: String, name: String, bio: String, avatarURL: String) async throws {
         try requireLogin()
-        guard credentials?.userID == userID else { throw KikiRTCError.unavailable("账号状态已变化，请重新登录。") }
+        guard credentials?.userID == userID else { throw KikiRTCError.unavailable(KikiL10n.text("账号状态已变化，请重新登录。")) }
         // The Store saves profile changes through HTTPS first. Participant names
         // inside an active room remain the server-authenticated LiveKit name.
     }
@@ -304,10 +304,10 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
 
     private func connectRoom(roomID: String, isLive: Bool, requiresOwnership: Bool) async throws {
         let token = try requireLogin()
-        guard !isLive else { throw KikiRTCError.unavailable("暂未开放视频直播，请使用语聊房。") }
+        guard !isLive else { throw KikiRTCError.unavailable(KikiL10n.text("暂未开放视频直播，请使用语聊房。")) }
         try requireNoActiveRoom()
         guard roomID.range(of: "^[A-Za-z0-9_-]{1,128}$", options: .regularExpression) != nil else {
-            throw KikiRTCError.unavailable("房间编号无效。")
+            throw KikiRTCError.unavailable(KikiL10n.text("房间编号无效。"))
         }
         let generation = lifecycleGeneration
         currentRoomID = roomID // Reserve the operation before the first network await.
@@ -323,10 +323,10 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
             try checkLifecycle(generation)
             guard connection.room.id == roomID, !connection.room.isLive,
                   Self.isLabServer(connection.serverURL), !connection.participantToken.isEmpty else {
-                throw KikiRTCError.unavailable("服务器返回的语聊房间信息无效。")
+                throw KikiRTCError.unavailable(KikiL10n.text("服务器返回的语聊房间信息无效。"))
             }
             let isHost = connection.room.hostID == credentials?.userID
-            guard !requiresOwnership || isHost else { throw KikiRTCError.unavailable("只有房主可以开启房间。") }
+            guard !requiresOwnership || isHost else { throw KikiRTCError.unavailable(KikiL10n.text("只有房主可以开启房间。")) }
             try checkLifecycle(generation)
             roomInfo = connection.room
             messages = []
@@ -345,7 +345,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
             hasConnected = false
             try await observed(.mediaConnect) { try await liveRoom.connect(url: connection.serverURL, token: connection.participantToken, connectOptions: ConnectOptions(autoSubscribe: false)) }
             try checkLifecycle(generation)
-            guard liveRoom.connectionState == .connected else { throw KikiRTCError.unavailable("语聊连接未完成，请重试。") }
+            guard liveRoom.connectionState == .connected else { throw KikiRTCError.unavailable(KikiL10n.text("语聊连接未完成，请重试。")) }
             await applyAudioBlocks(to: liveRoom)
             try checkLifecycle(generation)
             guard room === liveRoom else { throw CancellationError() }
@@ -397,11 +397,11 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
         defer { if generation == lifecycleGeneration, self.room === room { isChangingMicrophone = false } }
         do {
             if enabled {
-                guard !audioState.interrupted else { throw KikiRTCError.unavailable("系统音频中断尚未结束。") }
+                guard !audioState.interrupted else { throw KikiRTCError.unavailable(KikiL10n.text("系统音频中断尚未结束。")) }
                 guard canPublishAudio else { failureCode = .voiceMuted; throw KikiRTCError.unavailable(microphoneStatus) }
                 guard await KikiMicrophonePermission.request() else {
                     failureCode = .audioPermissionDenied
-                    throw KikiRTCError.unavailable("请在系统设置中允许麦克风权限。")
+                    throw KikiRTCError.unavailable(KikiL10n.text("请在系统设置中允许麦克风权限。"))
                 }
             }
             try checkLifecycle(generation)
@@ -417,14 +417,14 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
             if enabled, !canPublishAudio || policyGeneration != audioPolicyGeneration || safetyGeneration != audioRecoveryGeneration {
                 try? AudioManager.shared.setEngineAvailability(.init(isInputAvailable: false, isOutputAvailable: self.safetyLoaded && !self.privacySuspended))
                 _ = try? await room.localParticipant.setMicrophone(enabled: false)
-                throw KikiRTCError.unavailable("发言权限已变化，麦克风已关闭。请确认麦位后手动开麦。")
+                throw KikiRTCError.unavailable(KikiL10n.text("发言权限已变化，麦克风已关闭。请确认麦位后手动开麦。"))
             }
             if enabled { audioMonitor.clearNotice() }
             refreshParticipants(room)
         } catch {
             if generation == lifecycleGeneration, self.room === room {
                 runtimeIssue(error, stage: .audioPolicy, code: failureCode, key: "microphone_toggle_\(failureCode.rawValue)")
-                roomError = "麦克风切换失败：\(error.localizedDescription)"
+                roomError = KikiL10n.format("麦克风切换失败：%@", String(describing: error.localizedDescription))
             }
         }
     }
@@ -437,7 +437,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
         defer { if generation == lifecycleGeneration, self.room === room { isSendingMessage = false } }
         do {
             guard Date().timeIntervalSince(lastMessageTime) >= 0.4 else {
-                throw KikiRTCError.unavailable("消息发送太快，请稍后再试。")
+                throw KikiRTCError.unavailable(KikiL10n.text("消息发送太快，请稍后再试。"))
             }
             let text = try KikiChatMessage.validatedText(text)
             let candidate = pendingMessage?.text == text ? pendingMessage! : KikiPendingChatMessage(clientMessageID: UUID().uuidString.lowercased(), text: text)
@@ -464,7 +464,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
                 }
                 pendingMessage?.failure = error.localizedDescription
                 if (error as? KikiAPIError)?.isUnauthorized == true { expireSession() }
-                else { roomError = "消息发送遇到问题，草稿已保留，可重试：\(error.localizedDescription)" }
+                else { roomError = KikiL10n.format("消息发送遇到问题，草稿已保留，可重试：%@", String(describing: error.localizedDescription)) }
             }
             return false
         }
@@ -552,7 +552,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
     }
 
     func setBlocked(_ userID: String, enabled: Bool) async throws {
-        guard !isUpdatingBlock else { throw KikiRTCError.unavailable("正在更新黑名单，请稍候。") }
+        guard !isUpdatingBlock else { throw KikiRTCError.unavailable(KikiL10n.text("正在更新黑名单，请稍候。")) }
         // The production account route also removes both follow directions.
         // Refreshing safety inside that route never calls this mutation again.
         if let socialStore {
@@ -602,7 +602,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
                 catch {
                     guard room === liveRoom, !privacySuspended else { return }
                     runtimeIssue(error, stage: .audioPolicy, code: .stateSyncFailed, key: "audio_subscription")
-                    safetyError = "部分音频订阅未更新，正在重试。"
+                    safetyError = KikiL10n.text("部分音频订阅未更新，正在重试。")
                 }
                 guard room === liveRoom, !privacySuspended else { return }
                 // A block operation may complete while a subscription is in flight.
@@ -641,7 +641,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
     func updateRoomDetails(_ proposedTitle: String, theme: Int) async throws {
         guard canUseRoom, isRoomOwner, !isUpdatingRoomDetails,
               let roomID = currentRoomID, let liveRoom = room, let socialStore else {
-            throw KikiRTCError.unavailable("只有房主可以在当前房间编辑房间。")
+            throw KikiRTCError.unavailable(KikiL10n.text("只有房主可以在当前房间编辑房间。"))
         }
         let generation = lifecycleGeneration
         let title = try KikiRoomTitlePolicy.resolved(proposedTitle, nickname: socialStore.profileName)
@@ -687,7 +687,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
         } catch {
             if generation == lifecycleGeneration, currentRoomID == roomID, room === leavingRoom {
                 if (error as? KikiAPIError)?.isUnauthorized == true { expireSession() }
-                else { roomError = "退出失败，请重试：\(error.localizedDescription)" }
+                else { roomError = KikiL10n.format("退出失败，请重试：%@", String(describing: error.localizedDescription)) }
             }
         }
     }
@@ -893,18 +893,18 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
                     self.publishChatWindow()
                     self.chatFailureCount = 0
                     self.nextChatSyncAt = Date().addingTimeInterval(KikiRoomRefreshPolicy.compensationInterval)
-                    let notice = self.chatWindow.isTruncated ? "仅显示最近 200 条、2 小时内的可用消息" : nil
+                    let notice = self.chatWindow.isTruncated ? KikiL10n.text("仅显示最近 200 条、2 小时内的可用消息") : nil
                     if self.chatSyncNotice != notice { self.chatSyncNotice = notice }
                     if !page.hasMore { return }
                     guard page.nextAfterSeq > cursor else { throw KikiAPIError.invalidResponse }
                     cursor = page.nextAfterSeq
                 }
-                self.chatSyncNotice = "聊天记录正在继续同步…"
+                self.chatSyncNotice = KikiL10n.text("聊天记录正在继续同步…")
             } catch {
                 guard generation == self.lifecycleGeneration, self.room === liveRoom, !Task.isCancelled else { return }
                 self.chatFailureCount += 1
                 self.nextChatSyncAt = Date().addingTimeInterval(self.backoff(error, failures: self.chatFailureCount))
-                self.chatSyncNotice = "聊天同步暂缓，网络恢复后会补齐。"
+                self.chatSyncNotice = KikiL10n.text("聊天同步暂缓，网络恢复后会补齐。")
                 await self.handleRoomReadError(error, liveRoom: liveRoom, expectedToken: token)
             }
         }
@@ -974,7 +974,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
         } catch {
             if generation == lifecycleGeneration, room === liveRoom {
                 if (error as? KikiAPIError)?.isUnauthorized == true { expireSession() }
-                else { roomError = "公告保存失败：\(error.localizedDescription)" }
+                else { roomError = KikiL10n.format("公告保存失败：%@", String(describing: error.localizedDescription)) }
             }
             return false
         }
@@ -1049,7 +1049,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
 
     @discardableResult
     private func requireLogin() throws -> String {
-        guard isLoggedIn, let sessionToken else { throw KikiRTCError.unavailable("请先登录账号。") }
+        guard isLoggedIn, let sessionToken else { throw KikiRTCError.unavailable(KikiL10n.text("请先登录账号。")) }
         return sessionToken
     }
 
@@ -1078,7 +1078,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
         try checkLifecycle(generation)
         guard room === liveRoom, liveRoom.connectionState == .connected,
               let presenter = Self.topController(), presenter.viewIfLoaded?.window != nil else {
-            throw KikiRTCError.unavailable("当前页面尚未准备好，请稍后重试。")
+            throw KikiRTCError.unavailable(KikiL10n.text("当前页面尚未准备好，请稍后重试。"))
         }
         let child = KikiRoomHostingController(rootView: KikiLiveKitRoomView(rtc: self))
         child.modalPresentationStyle = .fullScreen
@@ -1099,7 +1099,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
         let generation = lifecycleGeneration
         isTransitioningRoom = true
         controller.view.endEditing(true)
-        floatingOverlay = KikiVoiceRoomFloatingOverlay(windowScene: scene, roomTitle: roomInfo?.title ?? "语聊房",
+        floatingOverlay = KikiVoiceRoomFloatingOverlay(windowScene: scene, roomTitle: roomInfo?.title ?? KikiL10n.text("语聊房"),
                                                       avatarURL: roomInfo?.hostAvatarURL,
                                                       avatarIndex: roomInfo?.hostAvatarIndex ?? 0,
                                                       hostName: roomInfo?.host ?? "") { [weak self] in
@@ -1134,8 +1134,8 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
     private func updateFloatingStatus() {
         let hostOnline = roomState?.members.first { $0.userID == roomInfo?.hostID }?.online ?? false
         let isOnline = hostOnline && connectionState == .connected && !isRecovering && disconnectionReason == nil
-        floatingOverlay?.update(roomTitle: roomInfo?.title ?? "语聊房",
-                                status: isOnline ? "语聊中" : "已离线",
+        floatingOverlay?.update(roomTitle: roomInfo?.title ?? KikiL10n.text("语聊房"),
+                                status: isOnline ? KikiL10n.text("语聊中") : KikiL10n.text("已离线"),
                                 avatarURL: roomInfo?.hostAvatarURL, avatarIndex: roomInfo?.hostAvatarIndex ?? 0,
                                 hostName: roomInfo?.host ?? "",
                                 isSpeaking: isOnline && participants.contains { $0.isSpeaking && !safetyState.blockedIDs.contains($0.id) },
@@ -1252,7 +1252,7 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
             catch {
                 guard generation == self.lifecycleGeneration, self.room === liveRoom,
                       !self.privacySuspended, !Task.isCancelled else { return }
-                self.safetyError = "黑名单暂未同步，音频暂停，稍后自动重试。"
+                self.safetyError = KikiL10n.text("黑名单暂未同步，音频暂停，稍后自动重试。")
                 self.nextSafetySyncAt = Date().addingTimeInterval(5)
                 return
             }
@@ -1377,9 +1377,9 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
             runtimeIssue(error, stage: wasReconnecting ? .reconnect : .mediaRuntime, code: wasReconnecting ? .reconnectFailed : .mediaDisconnected, key: "unexpected_disconnect", severity: .error)
         }
         switch error?.type {
-        case .roomDeleted: disconnectionReason = "本次语聊已结束。"
+        case .roomDeleted: disconnectionReason = KikiL10n.text("本次语聊已结束。")
         case .participantRemoved:
-            disconnectionReason = "当前连接已被移出房间，请返回大厅。"
+            disconnectionReason = KikiL10n.text("当前连接已被移出房间，请返回大厅。")
             // Removal also covers a revoked / expired session. Ask the business
             // service for the precise reason rather than presenting every removal as a ban.
             if let roomID = currentRoomID, let token = sessionToken {
@@ -1399,13 +1399,13 @@ final class KikiRTCService: NSObject, ObservableObject, KikiRTCServicing {
                     }
                 }
             }
-        case .serverShutdown: disconnectionReason = "语聊服务器已停止，请稍后重新进入。"
-        default: disconnectionReason = "语聊连接已断开，请返回后重新进入。"
+        case .serverShutdown: disconnectionReason = KikiL10n.text("语聊服务器已停止，请稍后重新进入。")
+        default: disconnectionReason = KikiL10n.text("语聊连接已断开，请返回后重新进入。")
         }
         UIApplication.shared.isIdleTimerDisabled = false
         updateFloatingStatus()
         if error?.type == .roomDeleted {
-            dismissTerminatedMinimizedRoom("本次语聊已结束。", expectedRoom: liveRoom, generation: lifecycleGeneration)
+            dismissTerminatedMinimizedRoom(KikiL10n.text("本次语聊已结束。"), expectedRoom: liveRoom, generation: lifecycleGeneration)
         }
     }
 

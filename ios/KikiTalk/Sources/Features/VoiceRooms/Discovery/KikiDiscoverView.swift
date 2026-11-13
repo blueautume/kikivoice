@@ -39,7 +39,7 @@ struct KikiDiscoverView: View {
         .sheet(isPresented: $showsPeople) { KikiPeopleDirectoryView(store: store) }
         .overlay {
             if store.isJoiningRoom {
-                VStack(spacing: 14) { ProgressView(); Text("正在连接房间…").font(.subheadline) }
+                VStack(spacing: 14) { ProgressView(); Text(KikiL10n.text("正在连接房间…")).font(.subheadline) }
                     .padding(28).background(KikiPalette.elevated, in: RoundedRectangle(cornerRadius: 20))
             }
         }
@@ -60,20 +60,20 @@ struct KikiDiscoverView: View {
                     .disabled(store.isJoiningRoom)
             }.padding(.horizontal, 20).padding(.top, 12)
             HStack(spacing: 20) {
-                filterButton("全部", selected: !followingOnly) { followingOnly = false }
-                filterButton("关注", selected: followingOnly) { followingOnly = true }
+                filterButton(KikiL10n.text("全部"), selected: !followingOnly) { followingOnly = false }
+                filterButton(KikiL10n.text("room.filter.following"), selected: followingOnly) { followingOnly = true }
                 Spacer()
                 if store.isRefreshing { ProgressView().controlSize(.small) }
                 Menu {
-                    Button("最近创建") { sortByHeat = false }
-                    Button("人数优先") { sortByHeat = true }
-                } label: { Label(sortByHeat ? "人数" : "最新", systemImage: "line.3.horizontal.decrease").font(.subheadline).foregroundStyle(KikiPalette.secondary) }
+                    Button(KikiL10n.text("最近创建")) { sortByHeat = false }
+                    Button(KikiL10n.text("人数优先")) { sortByHeat = true }
+                } label: { Label(sortByHeat ? KikiL10n.text("人数") : KikiL10n.text("最新"), systemImage: "line.3.horizontal.decrease").font(.subheadline).foregroundStyle(KikiPalette.secondary) }
             }.padding(.horizontal, 22).padding(.vertical, 16)
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 14) {
                     if let error = store.loadingError { KikiInlineError(message: error) { Task { await store.refreshRooms() } } }
                     if filteredRooms.isEmpty {
-                        KikiEmptyState(symbol: followingOnly ? "person.2.wave.2" : "waveform", title: followingOnly ? "关注的人还没有开房" : "此刻，等一个声音",
+                        KikiEmptyState(symbol: followingOnly ? "person.2.wave.2" : "waveform", title: followingOnly ? KikiL10n.text("关注的人还没有开房") : KikiL10n.text("此刻，等一个声音"),
                             message: "")
 
                     }
@@ -82,7 +82,7 @@ struct KikiDiscoverView: View {
                             Button { Task { await open(room) } } label: { KikiRoomCard(room: room) }
                                 .buttonStyle(KikiPressStyle()).disabled(store.isJoiningRoom).accessibilityIdentifier("room-\(room.id)")
                                 .contextMenu {
-                                    Button { store.toggleFavorite(room) } label: { Label(store.favoriteIDs.contains(room.id) ? "取消收藏" : "收藏房间", systemImage: store.favoriteIDs.contains(room.id) ? "bookmark.slash" : "bookmark") }
+                                    Button { store.toggleFavorite(room) } label: { Label(store.favoriteIDs.contains(room.id) ? KikiL10n.text("取消收藏") : KikiL10n.text("收藏房间"), systemImage: store.favoriteIDs.contains(room.id) ? "bookmark.slash" : "bookmark") }
                                 }
                         }
                     }
@@ -100,7 +100,7 @@ struct KikiDiscoverView: View {
     private func presentCreate() {
         guard !store.isJoiningRoom else { return }
         endSearch()
-        guard !KikiRTCService.shared.isVoiceRoomMinimized else { store.notify("你仍在语聊房中，请先返回并离开房间。"); return }
+        guard !KikiRTCService.shared.isVoiceRoomMinimized else { store.notify(KikiL10n.text("你仍在语聊房中，请先返回并离开房间。")); return }
         showsCreate = true
     }
     private func open(_ room: KikiRoom) async {
@@ -142,7 +142,7 @@ struct KikiDiscoverSearchField: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").font(.system(size: 17))
                 .foregroundStyle(KikiPalette.muted)
-            TextField("搜索房间或房主", text: $query).font(.body).autocorrectionDisabled().submitLabel(.search)
+            TextField(KikiL10n.text("搜索房间或房主"), text: $query).font(.body).autocorrectionDisabled().submitLabel(.search)
                 .focused(isSearching).onSubmit(onSubmit)
                 .accessibilityIdentifier("roomSearchField")
                 .frame(minWidth: 0, maxWidth: .infinity)
@@ -150,7 +150,7 @@ struct KikiDiscoverSearchField: View {
                 Button { query = "" } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 17))
                         .foregroundStyle(KikiPalette.muted).frame(width: 24, height: 28)
-                }.accessibilityLabel("清空搜索")
+                }.accessibilityLabel(KikiL10n.text("清空搜索"))
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
@@ -176,7 +176,7 @@ struct KikiRoomCard: View {
     private var usesCurrentProfile: Bool { room.isCreatedByMe && !store.userID.isEmpty }
     private var hostName: String { usesCurrentProfile ? store.profileName : room.host }
     private var statusText: String {
-        room.status == "live" ? "\(max(0, room.audience)) 人在线" : (room.status == "draft" ? "未开始" : "已结束")
+        room.status == "live" ? KikiL10n.format("%@ 人在线", String(describing: max(0, room.audience))) : (room.status == "draft" ? KikiL10n.text("未开始") : KikiL10n.text("已结束"))
     }
     private var members: [KikiRoomMemberPreview] {
         var seen = Set<String>()
@@ -196,7 +196,7 @@ struct KikiRoomCard: View {
             if room.isCreatedByMe || store.favoriteIDs.contains(room.id) {
                 HStack(spacing: 8) {
                     if room.isCreatedByMe {
-                        Text("我的房间").font(.caption).foregroundStyle(KikiPalette.secondary)
+                        Text(KikiL10n.text("我的房间")).font(.caption).foregroundStyle(KikiPalette.secondary)
                     }
                     Spacer(minLength: 4)
                     if store.favoriteIDs.contains(room.id) {
@@ -249,7 +249,7 @@ struct KikiRoomCard: View {
         .background(cardBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(KikiPalette.purple.opacity(0.10), lineWidth: 0.7))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(room.title)，房主\(hostName)，\(statusText)")
+        .accessibilityLabel(KikiL10n.format("%@，房主%@，%@", String(describing: room.title), String(describing: hostName), String(describing: statusText)))
         .accessibilityIdentifier("roomCard-\(room.id)")
     }
 }

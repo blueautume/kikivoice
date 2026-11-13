@@ -18,7 +18,7 @@ struct KikiChatMessage: Codable, Equatable, Identifiable {
     static func validatedText(_ value: String) throws -> String {
         let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.utf8.count <= 2_000 else {
-            throw KikiRTCError.unavailable("消息不能为空，且不能超过 2000 字节。")
+            throw KikiRTCError.unavailable(KikiL10n.text("消息不能为空，且不能超过 2000 字节。"))
         }
         return text
     }
@@ -246,17 +246,17 @@ enum KikiRoomTitlePolicy {
     static let maximumBytes = 100
 
     static func defaultTitle(nickname: String) -> String {
-        let suffix = "的房间"
         let clean = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
             .filter { !$0.unicodeScalars.contains { $0.value < 32 || $0.value == 127 } }
+        guard !clean.isEmpty else { return KikiL10n.text("我的房间") }
         var prefix = ""
-        for character in clean.isEmpty ? "我" : clean {
-            let candidate = prefix + String(character) + suffix
+        for character in clean {
+            let candidate = KikiL10n.format("%@的房间", prefix + String(character))
             guard candidate.count <= maximumCharacters, candidate.utf8.count <= maximumBytes,
                   candidate.unicodeScalars.count <= 40 else { break }
             prefix.append(character)
         }
-        return (prefix.isEmpty ? "我" : prefix) + suffix
+        return prefix.isEmpty ? KikiL10n.text("我的房间") : KikiL10n.format("%@的房间", prefix)
     }
 
     static func resolved(_ proposed: String, nickname: String) throws -> String {
@@ -269,7 +269,7 @@ enum KikiRoomTitlePolicy {
         guard !title.isEmpty, title.count <= maximumCharacters, title.utf8.count <= maximumBytes,
               title.unicodeScalars.count <= 40,
               !title.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }) else {
-            throw KikiAPIError.server(422, "房间名称须为 1–36 个字，且不超过 100 字节，请减少文字或表情。")
+            throw KikiAPIError.server(422, KikiL10n.text("房间名称须为 1–36 个字，且不超过 100 字节，请减少文字或表情。"))
         }
         return title
     }
@@ -363,18 +363,18 @@ enum KikiAudioSafetyEvent {
     var mustStopCapture: Bool { self != .interruptionEnded }
     var message: String {
         switch self {
-        case .interruptionBegan: return "音频被系统中断，麦克风已关闭。结束后请手动开麦。"
-        case .interruptionEnded: return "音频中断已结束，请确认设备后手动开麦。"
-        case .oldDeviceUnavailable: return "耳机或音频设备已断开，麦克风已关闭，请确认后手动开麦。"
-        case .mediaServicesLost: return "系统音频服务暂不可用，麦克风已关闭。"
-        case .mediaServicesReset: return "系统音频服务已恢复，请确认设备后手动开麦。"
+        case .interruptionBegan: return KikiL10n.text("音频被系统中断，麦克风已关闭。结束后请手动开麦。")
+        case .interruptionEnded: return KikiL10n.text("音频中断已结束，请确认设备后手动开麦。")
+        case .oldDeviceUnavailable: return KikiL10n.text("耳机或音频设备已断开，麦克风已关闭，请确认后手动开麦。")
+        case .mediaServicesLost: return KikiL10n.text("系统音频服务暂不可用，麦克风已关闭。")
+        case .mediaServicesReset: return KikiL10n.text("系统音频服务已恢复，请确认设备后手动开麦。")
         }
     }
 }
 
 struct KikiAudioRuntimeState: Equatable {
-    var output = "尚未启用"
-    var input = "尚未启用"
+    var output = KikiL10n.text("尚未启用")
+    var input = KikiL10n.text("尚未启用")
     var interrupted = false
     var notice: String?
 }
@@ -411,10 +411,10 @@ final class KikiRoomAudioMonitor {
 
     func refresh(event: KikiAudioSafetyEvent? = nil) {
         let route = AVAudioSession.sharedInstance().currentRoute
-        state.output = route.outputs.map(\.portName).joined(separator: "、")
-        state.input = route.inputs.map(\.portName).joined(separator: "、")
-        if state.output.isEmpty { state.output = "尚未启用" }
-        if state.input.isEmpty { state.input = "未采集" }
+        state.output = route.outputs.map(\.portName).joined(separator: KikiL10n.isEnglish ? ", " : "、")
+        state.input = route.inputs.map(\.portName).joined(separator: KikiL10n.isEnglish ? ", " : "、")
+        if state.output.isEmpty { state.output = KikiL10n.text("尚未启用") }
+        if state.input.isEmpty { state.input = KikiL10n.text("未采集") }
         if let event {
             state.notice = event.message
             if event == .interruptionBegan || event == .mediaServicesLost { state.interrupted = true }
@@ -436,7 +436,7 @@ struct KikiAudioRoutePicker: UIViewRepresentable {
         view.tintColor = .white
         view.activeTintColor = UIColor(red: 0.73, green: 0.63, blue: 1, alpha: 1)
         view.prioritizesVideoDevices = false
-        view.accessibilityLabel = "选择耳机或音频输出设备"
+        view.accessibilityLabel = KikiL10n.text("选择耳机或音频输出设备")
         return view
     }
     func updateUIView(_ view: AVRoutePickerView, context: Context) { }
@@ -445,11 +445,11 @@ struct KikiAudioRoutePicker: UIViewRepresentable {
 extension ConnectionQuality {
     var kikiLabel: String {
         switch self {
-        case .excellent: return "优秀"
-        case .good: return "良好"
-        case .poor: return "较差"
-        case .lost: return "连接丢失"
-        default: return "等待采样"
+        case .excellent: return KikiL10n.text("优秀")
+        case .good: return KikiL10n.text("良好")
+        case .poor: return KikiL10n.text("较差")
+        case .lost: return KikiL10n.text("连接丢失")
+        default: return KikiL10n.text("等待采样")
         }
     }
     var kikiValue: String {

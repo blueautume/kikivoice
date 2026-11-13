@@ -4,6 +4,84 @@ import XCTest
 @testable import KikiTalk
 
 final class KikiRelationshipStageTests: XCTestCase {
+    @MainActor
+    func testEnglishLegendAndSelectorLabelsFitTheirProductionFramesWithoutScaling() {
+        let previous = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .english
+        defer { KikiLanguageSettings.shared.selection = previous }
+        XCTAssertEqual(KikiRelationshipMode.allCases.map(\.title), ["BaZi", "Zodiac", "MBTI"])
+        let selectorFont = UIFont.systemFont(ofSize: 11, weight: .semibold)
+        for mode in KikiRelationshipMode.allCases {
+            let measured = (mode.title as NSString).size(withAttributes: [.font: selectorFont])
+            XCTAssertLessThanOrEqual(ceil(measured.width), 42, mode.title)
+        }
+        let legendFont = UIFont.systemFont(ofSize: 10, weight: .medium)
+        for width: CGFloat in [284, 339, 354, 366, 394, 440] {
+            let layout = KikiRelationshipStageLayout(width: width, maxHeight: 300)
+            let columnWidth = (layout.legendWidth - CGFloat(layout.legendColumns - 1) * 4) / CGFloat(layout.legendColumns)
+            let textWidth = columnWidth - KikiRelationshipLegend.sampleWidth - 3
+            for mode in KikiRelationshipMode.allCases {
+                for category in KikiRelationshipCategory.categories(for: mode) where KikiRelationshipCategory.isDisplayed(category.code, in: mode) {
+                    let text = KikiRelationshipVisuals.compactLegendTitle(for: category)
+                    let measured = (text as NSString).size(withAttributes: [.font: legendFont])
+                    XCTAssertLessThanOrEqual(measured.width, textWidth, "\(width)pt: \(mode) / \(text)")
+                    XCTAssertLessThanOrEqual(ceil(measured.height), 14)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func testEnglishZodiacTagsAndAllCaptionBoundsFitOneThroughEightOccupants() {
+        let previous = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .english
+        defer { KikiLanguageSettings.shared.selection = previous }
+        let signs = ["白羊座", "金牛座", "双子座", "巨蟹座", "狮子座", "处女座", "天秤座", "天蝎座", "射手座", "摩羯座", "水瓶座", "双鱼座"]
+        XCTAssertEqual(KikiL10n.text("射手座"), "Sagittarius")
+        for (width, budget): (CGFloat, CGFloat) in [(284, 244), (284, 250), (339, 300), (354, 350), (394, 430), (440, 600)] {
+            let geometry = KikiRelationshipStageLayout(width: width, maxHeight: budget).geometry
+            let font = UIFont.systemFont(ofSize: geometry.isCompact ? 9 : 10, weight: .medium)
+            for sign in signs {
+                let full = KikiL10n.text(sign)
+                let shown = KikiRelationshipSeatLabelLayout.displayTag(full, mode: .zodiac, width: geometry.cellWidth, compact: geometry.isCompact)
+                XCTAssertLessThanOrEqual((shown as NSString).size(withAttributes: [.font: font]).width, geometry.cellWidth, "\(width)pt: \(shown)")
+            }
+            for mode in KikiRelationshipMode.allCases {
+                for count in 1...8 {
+                    let ids = (0..<count).map { "english-seat-\($0)" }
+                    var motion = KikiRelationshipMotion()
+                    motion.retarget(orderedIDs: ids, at: .now, animated: false)
+                    let frame = motion.frame(at: .now)
+                    let tags = Dictionary(uniqueKeysWithValues: ids.enumerated().map { index, id in
+                        (id, mode == .mbti ? "ENFP" : KikiL10n.text(signs[index]))
+                    })
+                    let result = KikiRelationshipLabelPlacement.resolve(geometry: geometry, frame: frame, mode: mode, tags: tags)
+                    XCTAssertTrue(result.unresolvedIDs.isEmpty, "\(width)x\(budget): \(mode), \(count) occupants")
+                    assertClearCaptions(result, geometry: geometry, frame: frame)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func testEnglishRelationshipExplanationsSeparateTheFriendlyTitleAndBody() {
+        let previous = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .english
+        defer { KikiLanguageSettings.shared.selection = previous }
+        XCTAssertEqual(KikiRelationshipVisuals.friendlyTitle(for: "MIXED"), "Playful rivals")
+        XCTAssertEqual(KikiRelationshipVisuals.friendlyTitle(for: "NONE"), "A slow-burn connection")
+        for mode in KikiRelationshipMode.allCases {
+            for category in KikiRelationshipCategory.categories(for: mode) {
+                let title = KikiRelationshipVisuals.friendlyTitle(for: category.code)
+                let body = KikiRelationshipVisuals.friendlyBody(for: category.code)
+                XCTAssertFalse(title.contains(". "), title)
+                XCTAssertFalse(body.isEmpty)
+                XCTAssertFalse(body.hasPrefix(title + ". "))
+                XCTAssertFalse(body.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) })
+            }
+        }
+    }
+
     func testLegendsAlwaysExposeEveryModeCategoryAndEveryKnownCategoryHasACurve() {
         XCTAssertEqual(KikiRelationshipCategory.categories(for: .bazi).map(\.code),
                        ["HARMONY_ONLY", "CONFLICT_ONLY", "MIXED", "UNAVAILABLE"])
@@ -312,6 +390,9 @@ final class KikiRelationshipStageTests: XCTestCase {
     }
 
     func testFriendlyCopyKeepsOriginalCategoriesAndDoesNotRepeatTheTitleInBody() {
+        let previous = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .simplifiedChinese
+        defer { KikiLanguageSettings.shared.selection = previous }
         XCTAssertEqual(KikiRelationshipVisuals.friendlyTitle(for: "MIXED"), "欢喜冤家")
         XCTAssertEqual(KikiRelationshipVisuals.friendlyTitle(for: "NONE"), "慢热探索")
         for mode in KikiRelationshipMode.allCases {
@@ -327,6 +408,8 @@ final class KikiRelationshipStageTests: XCTestCase {
 
     @MainActor
     func testProductionCirclePresentationInThreeModesAndEmptySingleEightOccupantStates() async throws {
+        let previousLanguage = KikiLanguageSettings.shared.selection
+        defer { KikiLanguageSettings.shared.selection = previousLanguage }
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first(where: {
             $0.activationState == .foregroundActive
         }) else { throw XCTSkip("A foreground native scene is required for the circle presentation fixture") }
@@ -357,17 +440,33 @@ final class KikiRelationshipStageTests: XCTestCase {
             ("large-eight-zodiac-dark", 430, 932, 430, 8, .zodiac, .dark),
             ("large-eight-long-zodiac-dark", 430, 932, 430, 8, .zodiac, .dark),
             ("large-eight-long-mbti-dark", 430, 932, 430, 8, .mbti, .dark),
-            ("ipad-eight-bazi-dark", 744, 1133, 600, 8, .bazi, .dark)
+            ("ipad-eight-bazi-dark", 744, 1133, 600, 8, .bazi, .dark),
+            ("english-small-eight-long-zodiac-dark", 320, 568, 250, 8, .zodiac, .dark),
+            ("english-small-eight-long-mbti-dark", 320, 568, 250, 8, .mbti, .dark),
+            ("english-supported-small-eight-long-zodiac-dark", 375, 667, 300, 8, .zodiac, .dark),
+            ("english-phone-eight-long-bazi-dark", 390, 844, 350, 8, .bazi, .dark),
+            ("english-phone-eight-long-zodiac-light", 390, 844, 350, 8, .zodiac, .light),
+            ("english-phone-eight-long-mbti-dark", 390, 844, 350, 8, .mbti, .dark),
+            ("english-phone-empty-bazi-light", 390, 844, 350, 0, .bazi, .light),
+            ("english-phone-one-zodiac-dark", 390, 844, 350, 1, .zodiac, .dark),
+            ("english-large-eight-long-zodiac-accessibility-dark", 430, 932, 430, 8, .zodiac, .dark),
+            ("english-large-eight-long-mbti-dark", 430, 932, 430, 8, .mbti, .dark)
         ]
         let names = ["青禾", "知夏", "晚晴", "南风", "星野", "听雨", "望舒", "阿岚"]
         let longNames = ["今天也想好好听你说话", "北方有个爱看星星的人", "夜里的小岛总有温柔晚风", "周末一起去很远的地方散步",
                          "夏日限定的橘子汽水", "清晨第一缕阳光和你", "云端收藏了很多有趣故事", "山海之间慢慢寻找新朋友"]
+        let englishNames = ["Summer", "Alex", "Violet", "Sky", "Rowan", "Riley", "Morgan", "Taylor"]
+        let englishLongNames = ["Someone Who Loves Long Conversations", "Looking at the Stars Tonight", "A Quiet Island in the Evening",
+                                "Let’s Take a Long Walk This Weekend", "Summer Orange Soda", "The First Light of Morning",
+                                "Collecting Interesting Stories", "Finding Friends Along the Way"]
         let mbti = ["INFJ", "ENFP", "ISFJ", "ENTP", "ISTP", "INTJ", "ENFJ", "ESTP"]
         let zodiac = ["处女座", "狮子座", "双鱼座", "双子座", "金牛座", "射手座", "白羊座", "双鱼座"]
         let output = URL(fileURLWithPath: "/tmp/kiki-relationship-stage-screenshots", isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         for (name, viewport, viewportHeight, stageBudget, count, mode, scheme) in scenarios {
-            let displayNames = name.contains("long") ? longNames : names
+            let english = name.hasPrefix("english-")
+            KikiLanguageSettings.shared.selection = english ? .english : .simplifiedChinese
+            let displayNames = english ? (name.contains("long") ? englishLongNames : englishNames) : (name.contains("long") ? longNames : names)
             let occupants = (0..<count).map { index in
                 let id = "fixture-\(index)"
                 let person = KikiRoomMember(userID: id, name: displayNames[index], avatarIndex: index, avatarURL: nil,
@@ -399,7 +498,7 @@ final class KikiRelationshipStageTests: XCTestCase {
                 participants: [], localUserID: occupants.first?.id, mode: mode,
                 edgeOpacity: 1, onOpenPerson: { _ in })
             let content = VStack(spacing: 12) {
-                Text("圆形麦位").font(.headline).padding(.top, 18)
+                Text(english ? "Room relationships" : "圆形麦位").font(.headline).padding(.top, 18)
                 VStack(spacing: KikiRelationshipStageLayout.footerSpacing) {
                     circle
                     KikiRelationshipStageFooter(layout: layout, selection: .constant(mode))
@@ -410,6 +509,7 @@ final class KikiRelationshipStageTests: XCTestCase {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(KikiPalette.background)
             .preferredColorScheme(scheme)
+            .dynamicTypeSize(name.contains("accessibility") ? .accessibility3 : .large)
             let host = UIHostingController(rootView: content)
             host.safeAreaRegions = SafeAreaRegions.container
             window.rootViewController = host

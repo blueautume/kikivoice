@@ -1,0 +1,4 @@
+"CFBundleDisplayName" = "kikitalk";
+"NSMicrophoneUsageDescription" = "Let people in your room hear you when you turn on your microphone. Voice chat runs on our own servers.";
+"NSPhotoLibraryUsageDescription" = "Choose a photo for your profile. Only the photo you confirm is uploaded and shown publicly.";
+"NSCameraUsageDescription" = "kikitalk does not use your camera. Voice chat is audio only, and profile photos come from photos you choose.";

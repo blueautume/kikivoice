@@ -48,10 +48,10 @@ struct KikiDirectConversationView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 16) {
-                        if nextCursor != nil { Button("更早的消息") { Task { await loadMore() } }.disabled(isLoading) }
+                        if nextCursor != nil { Button(KikiL10n.text("更早的消息")) { Task { await loadMore() } }.disabled(isLoading) }
                         if isLoading && visibleMessages.isEmpty && pending == nil { ProgressView().padding(30) }
                         if hasLoadedCurrentConversation && !isLoading && visibleMessages.isEmpty && pending == nil && error == nil {
-                            KikiEmptyState(symbol: "bubble.left.and.bubble.right", title: "这里什么都没有", message: "")
+                            KikiEmptyState(symbol: "bubble.left.and.bubble.right", title: KikiL10n.text("这里什么都没有"), message: "")
                                 .accessibilityIdentifier("social.direct.empty")
                         }
                         ForEach(visibleMessages) { message in
@@ -68,8 +68,8 @@ struct KikiDirectConversationView: View {
                             senderRow(mine: true, id: "pending") {
                                 VStack(alignment: .trailing, spacing: 7) {
                                     messageBubble(pending.text, mine: true, id: "pending")
-                                    if pending.isSending { Label("正在发送", systemImage: "clock").font(.caption).foregroundStyle(KikiPalette.muted) }
-                                    else { Button("发送未确认，点击重试") { Task { await send() } }.font(.caption).foregroundStyle(KikiPalette.lavender) }
+                                    if pending.isSending { Label(KikiL10n.text("正在发送"), systemImage: "clock").font(.caption).foregroundStyle(KikiPalette.muted) }
+                                    else { Button(KikiL10n.text("发送未确认，点击重试")) { Task { await send() } }.font(.caption).foregroundStyle(KikiPalette.lavender) }
                                 }
                             }.id("pending")
                         }
@@ -147,7 +147,7 @@ struct KikiDirectConversationView: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("查看\(person.name)的个人主页")
+        .accessibilityLabel(KikiL10n.format("查看%@的个人主页", person.name))
         .accessibilityIdentifier("social.direct.profile")
     }
     private var composer: some View {
@@ -157,7 +157,7 @@ struct KikiDirectConversationView: View {
                     .accessibilityIdentifier("social.direct.access")
             }
             HStack(alignment: .bottom, spacing: 10) {
-                TextField("写一条消息…", text: draft, axis: .vertical).lineLimit(1...5).font(.body)
+                TextField(KikiL10n.text("写一条消息…"), text: draft, axis: .vertical).lineLimit(1...5).font(.body)
                     .padding(12).background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 14))
                     .focused($isComposing).disabled(!canSend || pending != nil).accessibilityIdentifier("social.direct.draft")
                 Button { Task { await send() } } label: {
@@ -165,7 +165,7 @@ struct KikiDirectConversationView: View {
                         .font(.body.weight(.semibold)).foregroundStyle(canSubmit ? .white : KikiPalette.muted).frame(width: 44, height: 44)
                         .background(canSubmit ? KikiPalette.action : KikiPalette.elevated, in: Circle())
                 }.disabled(!canSubmit)
-                    .accessibilityLabel(pending == nil ? "发送消息" : "重试发送").accessibilityIdentifier("social.direct.send")
+                    .accessibilityLabel(pending == nil ? KikiL10n.text("发送消息") : KikiL10n.text("重试发送")).accessibilityIdentifier("social.direct.send")
             }
         }
         .padding(16)
@@ -178,7 +178,7 @@ struct KikiDirectConversationView: View {
         return senderRow(mine: mine, id: message.id) {
             messageBubble(message.text, mine: mine, id: message.id)
                 .contextMenu {
-                    if !mine { Button("举报消息", systemImage: "exclamationmark.bubble") { report = .init(kind: .directMessage, targetID: message.id, name: person.name + "的消息") } }
+                    if !mine { Button(KikiL10n.text("举报消息"), systemImage: "exclamationmark.bubble") { report = .init(kind: .directMessage, targetID: message.id, name: KikiL10n.format("%@的消息", person.name)) } }
                 }
         }
     }
@@ -187,7 +187,7 @@ struct KikiDirectConversationView: View {
             if mine { Spacer(minLength: 45) }
             else { senderAvatar(mine: false, id: id) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
-                Text(mine ? (store.profileName.isEmpty ? "我" : store.profileName) : person.name)
+                Text(mine ? (store.profileName.isEmpty ? KikiL10n.text("我") : store.profileName) : person.name)
                     .font(.caption).foregroundStyle(KikiPalette.secondary)
                     .lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
@@ -206,7 +206,7 @@ struct KikiDirectConversationView: View {
                 .frame(width: 44, height: 44).contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(mine ? "查看我的个人主页" : "查看\(person.name)的个人主页")
+        .accessibilityLabel(mine ? KikiL10n.text("查看我的个人主页") : KikiL10n.format("查看%@的个人主页", person.name))
         .accessibilityIdentifier("social.direct.sender.avatar." + id)
     }
     private func messageBubble(_ text: String, mine: Bool, id: String) -> some View {

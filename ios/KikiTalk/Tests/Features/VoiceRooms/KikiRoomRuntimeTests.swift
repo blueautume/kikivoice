@@ -2,7 +2,27 @@ import XCTest
 @testable import KikiTalk
 
 final class KikiRoomRuntimeTests: XCTestCase {
+    func testEnglishDefaultRoomNamesPreserveNicknameAndAllServerLimits() throws {
+        let previous = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .english
+        defer { KikiLanguageSettings.shared.selection = previous }
+        XCTAssertEqual(KikiRoomTitlePolicy.defaultTitle(nickname: ""), "My room")
+        XCTAssertEqual(KikiRoomTitlePolicy.defaultTitle(nickname: "  Summer  "), "Summer’s room")
+        for nickname in [String(repeating: "中", count: 100), String(repeating: "a", count: 100),
+                         String(repeating: "👩🏽‍💻", count: 100), "\u{0}\n"] {
+            let title = KikiRoomTitlePolicy.defaultTitle(nickname: nickname)
+            XCTAssertTrue(title.hasSuffix("’s room") || title == "My room")
+            XCTAssertLessThanOrEqual(title.count, KikiRoomTitlePolicy.maximumCharacters)
+            XCTAssertLessThanOrEqual(title.utf8.count, KikiRoomTitlePolicy.maximumBytes)
+            XCTAssertLessThanOrEqual(title.unicodeScalars.count, 40)
+            XCTAssertEqual(try KikiRoomTitlePolicy.validated(title), title)
+        }
+    }
+
     func testRoomTitlePolicyUsesNicknameDefaultAndTrimsExplicitNames() throws {
+        let previous = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .simplifiedChinese
+        defer { KikiLanguageSettings.shared.selection = previous }
         XCTAssertEqual(try KikiRoomTitlePolicy.resolved(" \n ", nickname: "小岛"), "小岛的房间")
         XCTAssertEqual(try KikiRoomTitlePolicy.resolved("  今天聊电影 😀  ", nickname: "小岛"), "今天聊电影 😀")
         XCTAssertEqual(KikiRoomTitlePolicy.defaultTitle(nickname: ""), "我的房间")
@@ -10,6 +30,9 @@ final class KikiRoomRuntimeTests: XCTestCase {
     }
 
     func testRoomTitleDefaultPreservesSuffixAndUnicodeBoundariesWhenNicknameIsLong() throws {
+        let previous = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .simplifiedChinese
+        defer { KikiLanguageSettings.shared.selection = previous }
         for nickname in [String(repeating: "中", count: 100), String(repeating: "a", count: 100),
                          String(repeating: "👩🏽‍💻", count: 100), "\u{0}\n"] {
             let title = KikiRoomTitlePolicy.defaultTitle(nickname: nickname)

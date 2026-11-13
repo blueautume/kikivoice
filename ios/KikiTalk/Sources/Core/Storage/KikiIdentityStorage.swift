@@ -33,10 +33,10 @@ enum KikiKeychain {
             var insert = query
             attributes.forEach { insert[$0.key] = $0.value }
             guard SecItemAdd(insert as CFDictionary, nil) == errSecSuccess else {
-                throw KikiAPIError.security("无法安全保存登录凭据，请重新启动 App 后重试。")
+                throw KikiAPIError.security(KikiL10n.text("无法安全保存登录凭据，请重新启动 App 后重试。"))
             }
         } else if status != errSecSuccess {
-            throw KikiAPIError.security("无法安全保存登录凭据，请重新启动 App 后重试。")
+            throw KikiAPIError.security(KikiL10n.text("无法安全保存登录凭据，请重新启动 App 后重试。"))
         }
     }
 

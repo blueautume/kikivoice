@@ -44,8 +44,8 @@ struct KikiCreateRoomButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("创建语聊房")
-        .accessibilityHint("设置房间名称并开始语聊")
+        .accessibilityLabel(KikiL10n.text("创建语聊房"))
+        .accessibilityHint(KikiL10n.text("设置房间名称并开始语聊"))
         .accessibilityIdentifier("createRoom")
         .task(id: animatesHighlight) {
             resetHighlight()
@@ -85,7 +85,7 @@ struct KikiFindPeopleButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("找朋友")
+        .accessibilityLabel(KikiL10n.text("找朋友"))
         .accessibilityIdentifier("social.people")
     }
 }

@@ -54,6 +54,7 @@ final class KikiAccountAPIClient: @unchecked Sendable {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         request.httpShouldHandleCookies = false
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(KikiL10n.languageCode, forHTTPHeaderField: "Accept-Language")
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse, http.statusCode == 200,
@@ -61,10 +62,26 @@ final class KikiAccountAPIClient: @unchecked Sendable {
         return try KikiLegalBundle.decodeValidated(data)
     }
 
+    /// Separate, hash-bound English rendering; carries no account or device context.
+    func legalDocumentsEnglish() async throws -> Data {
+        let url = baseURL.appendingPathComponent("v1/legal/documents/en")
+        guard url.scheme == "https", url.host == baseURL.host, url.port == baseURL.port,
+              url.user == nil, url.password == nil else { throw KikiAPIError.invalidResponse }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+        request.httpShouldHandleCookies = false
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("en", forHTTPHeaderField: "Accept-Language")
+        let (data, response) = try await session.data(for: request)
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+              http.mimeType == "application/json" else { throw KikiAPIError.invalidResponse }
+        return data
+    }
+
     func loginWithApple(challengeID: String, identityToken: String, authorizationCode: String,
                         legalConsent: KikiLegalAcceptance) async throws -> KikiAccountLoginResponse {
         guard legalConsent.accepted, legalConsent.adultConfirmed else {
-            throw KikiAPIError.security("请同意协议并确认已满 18 周岁后登录。")
+            throw KikiAPIError.security(KikiL10n.text("请同意协议并确认已满 18 周岁后登录。"))
         }
         struct Body: Encodable {
             let challengeID: String; let identityToken: String; let authorizationCode: String
@@ -126,7 +143,7 @@ final class KikiAccountAPIClient: @unchecked Sendable {
 
     func roomRelationships(roomID: String, token: String) async throws -> KikiRoomRelationships {
         guard roomID.range(of: "^lk_[A-Za-z0-9_-]{1,125}$", options: .regularExpression) != nil else {
-            throw KikiAPIError.security("房间编号无效。")
+            throw KikiAPIError.security(KikiL10n.text("房间编号无效。"))
         }
         return try await request("/v1/voice/rooms/\(roomID)/relations", token: token)
     }
@@ -141,7 +158,7 @@ final class KikiAccountAPIClient: @unchecked Sendable {
 
     func uploadAvatar(jpegData: Data, token: String) async throws -> KikiUser {
         guard !jpegData.isEmpty, jpegData.count <= 2 * 1024 * 1024 else {
-            throw KikiAPIError.server(422, "头像文件过大，请换一张照片。")
+            throw KikiAPIError.server(422, KikiL10n.text("头像文件过大，请换一张照片。"))
         }
         return try await request("/v1/me/avatar", method: "POST", data: jpegData, token: token, contentType: "image/jpeg")
     }
@@ -154,7 +171,7 @@ final class KikiAccountAPIClient: @unchecked Sendable {
     /// Uses system HTTPS validation, just like authenticated requests. The
     /// public avatar route never receives an account token or permits redirects.
     func loadAvatar(_ value: String) async throws -> UIImage {
-        guard let url = trustedAvatarURL(value) else { throw KikiAPIError.security("头像地址无法验证。") }
+        guard let url = trustedAvatarURL(value) else { throw KikiAPIError.security(KikiL10n.text("头像地址无法验证。")) }
         if let cached = avatarCache.object(forKey: url as NSURL) { return cached }
         var request = URLRequest(url: url)
         request.setValue("image/jpeg", forHTTPHeaderField: "Accept")
@@ -196,8 +213,8 @@ final class KikiAccountAPIClient: @unchecked Sendable {
               ["sandbox", "production"].contains(environment), ["authorized", "provisional"].contains(permission),
               !deviceToken.isEmpty, deviceToken.utf8.count <= 512,
               deviceToken.range(of: "^[a-f0-9]+$", options: .regularExpression) != nil else { throw KikiAPIError.invalidResponse }
-        struct Body: Encodable { let token: String; let environment: String; let revision: Int64; let permission: String }
-        return try await send("/v1/push/devices/\(installationID)", method: "PUT", body: Body(token: deviceToken, environment: environment, revision: revision, permission: permission), token: token)
+        struct Body: Encodable { let token: String; let environment: String; let revision: Int64; let permission: String; let language: String }
+        return try await send("/v1/push/devices/\(installationID)", method: "PUT", body: Body(token: deviceToken, environment: environment, revision: revision, permission: permission, language: KikiL10n.languageCode), token: token)
     }
     func unregisterPushDevice(installationID: String, revision: Int64, token: String) async throws {
         guard UUID(uuidString: installationID) != nil, revision > 0 else { throw KikiAPIError.invalidResponse }
@@ -249,7 +266,7 @@ final class KikiAccountAPIClient: @unchecked Sendable {
         guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else { throw KikiAPIError.invalidResponse }
         guard url.scheme == "https", url.host == baseURL.host, url.port == baseURL.port,
               url.user == nil, url.password == nil else {
-            throw KikiAPIError.security("业务接口必须使用指定服务器的安全连接。")
+            throw KikiAPIError.security(KikiL10n.text("业务接口必须使用指定服务器的安全连接。"))
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -260,6 +277,7 @@ final class KikiAccountAPIClient: @unchecked Sendable {
         request.httpBody = data
         KikiIncidentContext.prepare(&request)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(KikiL10n.languageCode, forHTTPHeaderField: "Accept-Language")
         if data != nil { request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         let responseData: Data
@@ -285,12 +303,12 @@ final class KikiAccountAPIClient: @unchecked Sendable {
             let message = error?.detail
             if http.statusCode == 429 {
                 let delay = max(1, min(120, Int(http.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 5))
-                throw KikiAPIError.rateLimited(delay, message ?? "请求较多，请稍后重试。")
+                throw KikiAPIError.rateLimited(delay, message ?? KikiL10n.text("请求较多，请稍后重试。"))
             }
             if http.statusCode == 428 {
-                throw KikiAPIError.legalUpdateRequired(message ?? "协议已更新，请获取并重新确认当前协议。", error?.requiredVersions)
+                throw KikiAPIError.legalUpdateRequired(message ?? KikiL10n.text("协议已更新，请获取并重新确认当前协议。"), error?.requiredVersions)
             }
-            throw KikiAPIError.server(http.statusCode, message ?? (http.statusCode == 401 ? "登录已过期，请重新登录。" : "请求未完成，请检查输入后重试。"))
+            throw KikiAPIError.server(http.statusCode, message ?? (http.statusCode == 401 ? KikiL10n.text("登录已过期，请重新登录。") : KikiL10n.text("请求未完成，请检查输入后重试。")))
         }
         do { return try JSONDecoder().decode(Response.self, from: responseData) }
         catch {
@@ -304,7 +322,7 @@ final class KikiAccountAPIClient: @unchecked Sendable {
 extension KikiAccountAPIClient {
     private func validateSocialID(_ userID: String) throws {
         guard userID.range(of: "^kiki_[A-Za-z0-9_]{8,64}$", options: .regularExpression) != nil else {
-            throw KikiAPIError.security("账号编号无法验证。")
+            throw KikiAPIError.security(KikiL10n.text("账号编号无法验证。"))
         }
     }
 
@@ -365,7 +383,7 @@ extension KikiAccountAPIClient {
 
 extension KikiAccountAPIClient {
     private func validateSocialUUID(_ id: String) throws {
-        guard UUID(uuidString: id) != nil else { throw KikiAPIError.security("内容编号无法验证。") }
+        guard UUID(uuidString: id) != nil else { throw KikiAPIError.security(KikiL10n.text("内容编号无法验证。")) }
     }
     func socialConversations(cursor: String?, token: String) async throws -> KikiConversationsPage {
         try await request(socialPath("conversations", cursor: cursor), token: token)

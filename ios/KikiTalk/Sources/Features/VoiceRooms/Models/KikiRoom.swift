@@ -25,7 +25,7 @@ struct KikiRoom: Identifiable, Codable, Equatable {
     var hostAvatarURL: String?
     var memberPreview: [KikiRoomMemberPreview]
     var hostDisplayID: String?
-    var language: String { "中文" }
+    var language: String { KikiL10n.text("中文") }
 
     init(id: String, title: String, host: String, hostID: String, category: String, audience: Int,
          isLive: Bool, theme: Int, isCreatedByMe: Bool, status: String, createdAt: Int = 0, hostAvatarIndex: Int = 0, hostAvatarURL: String? = nil,

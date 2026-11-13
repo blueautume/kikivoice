@@ -217,7 +217,7 @@ import Combine
             self.leaseTask?.cancel(); self.leaseTask = nil
             self.renewalTask?.cancel()
             self.isEndingSession = true
-            self.loadingError = "语音连接已失效，请重新连接或登录。"
+            self.loadingError = KikiL10n.text("语音连接已失效，请重新连接或登录。")
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 _ = await self.renewalTask?.result
@@ -316,7 +316,7 @@ import Combine
     func appleCredentialRevoked() async {
         guard permitsBusiness else { return }
         await logout(appleRevoked: true)
-        loadingError = "Apple 授权已失效，请使用 Apple 重新登录。"
+        loadingError = KikiL10n.text("Apple 授权已失效，请使用 Apple 重新登录。")
     }
 
     func checkAppleCredentialState() async {
@@ -329,7 +329,7 @@ import Combine
         } catch {
             // Apple lookup/network errors do not delete a valid account or credential.
             if sessionGeneration == generation, !(error is CancellationError) {
-                loadingError = "暂时无法检查 Apple 授权，请检查网络后重试。"
+                loadingError = KikiL10n.text("暂时无法检查 Apple 授权，请检查网络后重试。")
             }
         }
     }
@@ -376,14 +376,14 @@ import Combine
     func reconnect() async throws {
         try requireAccess()
         let generation = sessionGeneration
-        guard let token, let subject = identity.read("appleSubject") else { throw KikiAPIError.server(401, "请先使用 Apple 登录。") }
+        guard let token, let subject = identity.read("appleSubject") else { throw KikiAPIError.server(401, KikiL10n.text("请先使用 Apple 登录。")) }
         isSigningIn = true
         defer { isSigningIn = false }
         let state = try await apple.credentialState(subject: subject)
         try requireAccess(generation: generation, token: token)
         guard state == .authorized else {
             await appleCredentialRevoked()
-            throw KikiAPIError.security("Apple 授权已失效，请重新登录。")
+            throw KikiAPIError.security(KikiL10n.text("Apple 授权已失效，请重新登录。"))
         }
         try await renewSDKSession()
         try requireAccess(generation: generation)
@@ -627,7 +627,7 @@ import Combine
 
     func removeHistory(roomID: String?) async throws {
         try requireAccess()
-        guard let token else { throw KikiAPIError.server(401, "请先登录。") }
+        guard let token else { throw KikiAPIError.server(401, KikiL10n.text("请先登录。")) }
         try await ensureSDKSession()
         let session = try currentVoiceToken()
         try await performAPI { try await voiceAPI.removeHistory(roomID: roomID, token: session) }
@@ -640,8 +640,8 @@ import Combine
         return try await KikiIncidentContext.$attempt.withValue(attempt) {
             do {
                 try requireAccess()
-                guard let token, isAuthenticated, !needsNickname else { throw KikiAPIError.server(401, "请先登录并设置昵称。") }
-                guard !isLive else { throw KikiAPIError.server(422, "暂未开放视频直播，请创建语聊房。") }
+                guard let token, isAuthenticated, !needsNickname else { throw KikiAPIError.server(401, KikiL10n.text("请先登录并设置昵称。")) }
+                guard !isLive else { throw KikiAPIError.server(422, KikiL10n.text("暂未开放视频直播，请创建语聊房。")) }
                 let title = try KikiRoomTitlePolicy.resolved(title, nickname: profileName)
                 try rtc.requireNoActiveRoom()
                 attempt.enter(.accountAuthorization)
@@ -665,7 +665,7 @@ import Combine
 
     func updateRoomTitle(roomID: String, title: String, theme: Int? = nil) async throws -> KikiRoomState {
         try requireAccess()
-        guard isAuthenticated, !needsNickname, let token else { throw KikiAPIError.server(401, "请先登录。") }
+        guard isAuthenticated, !needsNickname, let token else { throw KikiAPIError.server(401, KikiL10n.text("请先登录。")) }
         let generation = sessionGeneration
         let title = try KikiRoomTitlePolicy.resolved(title, nickname: profileName)
         do {
@@ -675,7 +675,7 @@ import Combine
             try requireAccess(generation: generation, token: token)
             guard state.room.hostID == voiceUserID, state.room.isCreatedByMe, state.me.role == .owner,
                   state.me.userID == voiceUserID else {
-                throw KikiAPIError.security("服务器返回的房主身份不匹配，请重新进入房间。")
+                throw KikiAPIError.security(KikiL10n.text("服务器返回的房主身份不匹配，请重新进入房间。"))
             }
             // Reads that started before this committed write cannot restore
             // an older room title. New reads capture the new revision normally.
@@ -781,7 +781,7 @@ import Combine
             }
         } catch {
             incidents.record(error, trace: trace, severity: .warning, dedupeKey: "history_sync")
-            notify(created ? "已创建房间，浏览记录暂未同步。" : "已加入房间，浏览记录暂未同步。")
+            notify(created ? KikiL10n.text("已创建房间，浏览记录暂未同步。") : KikiL10n.text("已加入房间，浏览记录暂未同步。"))
         }
     }
 
@@ -790,7 +790,7 @@ import Combine
         let eventID = incidents.record(error, trace: attempt)
         let message: String
         if error is KikiTransportFailure || error is KikiAPIError { message = error.localizedDescription }
-        else { message = attempt.operation == .createRoom ? "创建房间未完成，请稍后重试。" : "进入房间未完成，请稍后重试。" }
+        else { message = attempt.operation == .createRoom ? KikiL10n.text("创建房间未完成，请稍后重试。") : KikiL10n.text("进入房间未完成，请稍后重试。") }
         return KikiRoomOperationFailure(message: message, eventID: eventID)
     }
 
@@ -806,7 +806,7 @@ import Combine
                 try await performAPI { try await voiceAPI.favorite(room.id, enabled: enabled, token: session) }
                 guard self.permitsBusiness, self.token == token else { return }
                 await refreshLibrary()
-                notify(enabled ? "已收藏房间" : "已取消收藏")
+                notify(enabled ? KikiL10n.text("已收藏房间") : KikiL10n.text("已取消收藏"))
             } catch {
                 guard self.token == token else { return }
                 notify(error.localizedDescription); handle(error, expectedToken: token)
@@ -817,7 +817,7 @@ import Combine
     func completeNickname(_ name: String) async throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 16 else {
-            throw KikiAPIError.server(422, "请输入 1–16 字的昵称。")
+            throw KikiAPIError.server(422, KikiL10n.text("请输入 1–16 字的昵称。"))
         }
         try await updateProfile(name: trimmed, bio: bio)
         await refreshRooms()
@@ -825,7 +825,7 @@ import Combine
 
     func updateProfile(name: String, bio: String, jpegData: Data? = nil) async throws {
         try requireAccess()
-        guard let token else { throw KikiAPIError.server(401, "请先登录。") }
+        guard let token else { throw KikiAPIError.server(401, KikiL10n.text("请先登录。")) }
         let contentRevision = notificationContentRevision
         let updated = try await performAPI { try await api.updateProfile(name: name, bio: bio, token: token) }
         try requireAccess(token: token)
@@ -841,15 +841,15 @@ import Combine
         // at next login if its transient request fails rather than losing edits.
         var profileSynced = false
         do { try await syncRTCProfile(); profileSynced = true }
-        catch { try requireAccess(token: token); notify("资料已保存，音视频名片将在下次进房或重新连接时同步。") }
+        catch { try requireAccess(token: token); notify(KikiL10n.text("资料已保存，音视频名片将在下次进房或重新连接时同步。")) }
         await refreshLibrary()
         try requireAccess(token: token)
-        if profileSynced { notify("个人资料已更新") }
+        if profileSynced { notify(KikiL10n.text("个人资料已更新")) }
     }
 
     func setNotificationsEnabled(_ value: Bool) async throws {
         try requireAccess()
-        guard let token else { throw KikiAPIError.server(401, "请先登录。") }
+        guard let token else { throw KikiAPIError.server(401, KikiL10n.text("请先登录。")) }
         let contentRevision = notificationContentRevision
         let updated = try await performAPI { try await api.updateNotifications(value, token: token) }
         try requireAccess(token: token)
@@ -858,7 +858,7 @@ import Combine
 
     func setHideNotificationContent(_ value: Bool) async throws {
         try requireAccess()
-        guard let token else { throw KikiAPIError.server(401, "请先登录。") }
+        guard let token else { throw KikiAPIError.server(401, KikiL10n.text("请先登录。")) }
         guard !isUpdatingNotificationContent else { throw CancellationError() }
         let generation = sessionGeneration, request = UUID()
         notificationContentRevision &+= 1
@@ -977,7 +977,7 @@ import Combine
         let records = try await performAPI { try await voiceAPI.rtcRooms(token: session) }
         try requireRoomNotificationRequest(id)
         guard let room = records.first(where: { $0.id == request.roomID }), room.status == "live", !room.isLive else {
-            throw KikiAPIError.server(404, "语聊已结束，或暂时无法进入这个房间。")
+            throw KikiAPIError.server(404, KikiL10n.text("语聊已结束，或暂时无法进入这个房间。"))
         }
         resolvedRoomNotification = (id, room)
         return room
@@ -1051,7 +1051,7 @@ import Combine
 
     func deleteAccount() async throws {
         try requireAccess()
-        guard let token else { throw KikiAPIError.server(401, "请先登录。") }
+        guard let token else { throw KikiAPIError.server(401, KikiL10n.text("请先登录。")) }
         let roomTitleKey = roomTitleStorageKey(for: userID)
         pushController?.endSession()
         isSigningIn = true
@@ -1079,7 +1079,7 @@ import Combine
 
     func legalStatus() async throws -> KikiLegalStatus {
         try requireAccess()
-        guard let token else { throw KikiAPIError.server(401, "请先登录。") }
+        guard let token else { throw KikiAPIError.server(401, KikiL10n.text("请先登录。")) }
         let status = try await performAPI { try await api.legalStatus(token: token) }
         try requireAccess(token: token)
         do { try consent.verify(status) }
@@ -1170,7 +1170,7 @@ import Combine
             do { return try await task.value }
             catch { renewalAttempt?.copyFailure(to: KikiIncidentContext.attempt); throw error }
         }
-        guard let token else { throw KikiAPIError.server(401, "登录已过期，请重新登录。") }
+        guard let token else { throw KikiAPIError.server(401, KikiL10n.text("登录已过期，请重新登录。")) }
         let generation = sessionGeneration
         let task = Task { @MainActor in
             let contentRevision = notificationContentRevision
@@ -1183,7 +1183,7 @@ import Combine
             guard session.user.id == refreshed.user.id, !session.token.isEmpty,
                   session.expiresAt > Int(Date().timeIntervalSince1970),
                   session.sdk.expiresAt > Int(Date().timeIntervalSince1970) else {
-                throw KikiAPIError.security("语聊授权与当前账号不一致，请重新登录。")
+                throw KikiAPIError.security(KikiL10n.text("语聊授权与当前账号不一致，请重新登录。"))
             }
             try await connectSDK(session.sdk, voiceSession: session.token,
                                  expiresAt: session.expiresAt, generation: generation, expectedToken: token)
@@ -1216,7 +1216,7 @@ import Combine
                 trace.enter(.accountAuthorization)
                 do {
                     guard self.credentialsExpiry > Int(Date().timeIntervalSince1970) else {
-                        throw KikiAPIError.server(401, "语聊授权已过期，请重新连接。")
+                        throw KikiAPIError.server(401, KikiL10n.text("语聊授权已过期，请重新连接。"))
                     }
                     try await KikiIncidentContext.$attempt.withValue(trace) { try await self.renewSDKSession() }
                     trace.complete()
@@ -1234,7 +1234,7 @@ import Combine
 
                     self.rtcStorage?.stopMediaForPrivacy()
                     self.voiceToken = nil; self.voiceUserID = nil; self.credentialsExpiry = 0
-                    self.loadingError = "语聊授权暂时无法续期，请检查网络后重新连接。"
+                    self.loadingError = KikiL10n.text("语聊授权暂时无法续期，请检查网络后重新连接。")
                     await self.rtcStorage?.logout()
                     self.isEndingSession = false
                     self.leaseTask = nil
@@ -1245,7 +1245,7 @@ import Combine
     }
 
     private func currentVoiceToken() throws -> String {
-        guard let voiceToken, !voiceToken.isEmpty else { throw KikiAPIError.server(401, "语聊授权已失效，请重新连接。") }
+        guard let voiceToken, !voiceToken.isEmpty else { throw KikiAPIError.server(401, KikiL10n.text("语聊授权已失效，请重新连接。")) }
         return voiceToken
     }
 
@@ -1304,7 +1304,7 @@ import Combine
             sessionGeneration += 1
             rtcStorage?.stopMediaForPrivacy()
             clearSession()
-            loadingError = "登录已过期，请重新登录。"
+            loadingError = KikiL10n.text("登录已过期，请重新登录。")
             isEndingSession = true
             Task {
                 leaseTask?.cancel(); leaseTask = nil
@@ -1414,7 +1414,7 @@ import Combine
                            KikiRoomNotificationRequest.isValidRoomID(roomID) { kind = .room(roomID: roomID) }
                         else { kind = .notifications }
                         return KikiForegroundNotificationCandidate(id: notice.id, kind: kind,
-                            preview: .init(title: notice.actor?.name ?? notice.title, message: notice.text))
+                            preview: .init(title: notice.actor?.name ?? notice.title, message: notice.displayText))
                     }
                 push.receiveForegroundCandidates(candidates, scope: scope, baseline: baseline)
             }
@@ -1670,10 +1670,10 @@ import Combine
             pending = .init(requestID: current.requestID, text: current.text, isSending: true, error: nil)
         } else {
             if let access = directMessageAccess[id], !access.canSend {
-                throw KikiAPIError.server(403, access.explanation ?? "暂时无法发送消息。")
+                throw KikiAPIError.server(403, access.explanation ?? KikiL10n.text("暂时无法发送消息。"))
             }
             let text = (directDrafts[id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { throw KikiAPIError.server(422, "请先输入消息。") }
+            guard !text.isEmpty else { throw KikiAPIError.server(422, KikiL10n.text("请先输入消息。")) }
             pending = .init(requestID: UUID(), text: text, isSending: true, error: nil)
         }
         directAccessRevision[id, default: 0] += 1
@@ -1752,7 +1752,7 @@ import Combine
 
     private func socialRequest<Value>(_ operation: (String) async throws -> Value) async throws -> Value {
         try requireAccess()
-        guard isAuthenticated, !needsNickname, let token else { throw KikiAPIError.server(401, "请先登录。") }
+        guard isAuthenticated, !needsNickname, let token else { throw KikiAPIError.server(401, KikiL10n.text("请先登录。")) }
         let generation = sessionGeneration
         let privacyRevision = socialPrivacyRevision
         do {

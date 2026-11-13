@@ -1,0 +1,14 @@
+{
+  "zh-Hans": {
+    "CFBundleDisplayName": "Kiki",
+    "NSMicrophoneUsageDescription": "用于语聊发言，通过自建语音服务向房间成员传送声音。",
+    "NSPhotoLibraryUsageDescription": "用于从系统照片选择器读取你选中的头像照片，确认保存后上传并公开展示。",
+    "NSCameraUsageDescription": "Kiki 当前不使用摄像头；语音聊天不会开启相机，头像仅从你选中的相册照片上传。"
+  },
+  "en": {
+    "CFBundleDisplayName": "kikitalk",
+    "NSMicrophoneUsageDescription": "Let people in your room hear you when you turn on your microphone. Voice chat runs on our own servers.",
+    "NSPhotoLibraryUsageDescription": "Choose a photo for your profile. Only the photo you confirm is uploaded and shown publicly.",
+    "NSCameraUsageDescription": "kikitalk does not use your camera. Voice chat is audio only, and profile photos come from photos you choose."
+  }
+}

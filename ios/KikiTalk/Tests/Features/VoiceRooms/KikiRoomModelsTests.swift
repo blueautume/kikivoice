@@ -9,7 +9,7 @@ final class KikiRoomModelsTests: XCTestCase {
         XCTAssertEqual(room.hostAvatarIndex, 4)
         XCTAssertEqual(room.status, "live")
         XCTAssertEqual(room.audience, 2)
-        XCTAssertEqual(room.language, "中文")
+        XCTAssertEqual(room.language, KikiL10n.text("中文"))
     }
 
     func testClosedRoomRemainsARecordWithoutOnlineViewers() throws {

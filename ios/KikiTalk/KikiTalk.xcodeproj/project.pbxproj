@@ -79,6 +79,12 @@
 		E37D25968CFFBF1E5DB43EC8 /* KikiRelationshipProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76F6D9886056A761B6EDD16B /* KikiRelationshipProfileView.swift */; };
 		6A08634B34913DC7784A679E /* KikiRelationshipStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 878774DB4011B08E924900EF /* KikiRelationshipStage.swift */; };
 		C7A8207B3CB94C634BCCE10A /* KikiRelationshipStageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2797C875DB3C71507C05BEA6 /* KikiRelationshipStageTests.swift */; };
+		5D339FD16B16ABC56CA1142A /* KikiLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BA5B14B933325F3B5A87DFC /* KikiLocalization.swift */; };
+		7530355B3E76A50143A1057E /* KikiLocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EFB1105FD29E95511B6156E /* KikiLocalizationTests.swift */; };
+		26E456EE46E7DEFAAD822D7B /* KikiLegalDocuments.en.json in Resources */ = {isa = PBXBuildFile; fileRef = FB4865938FF73D4E325BC824 /* KikiLegalDocuments.en.json */; };
+		2DB570D8FBE6755F1E0CB2C0 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 9DFCF1EB505985746AD944C9 /* Localizable.strings */; };
+		941CD48B2ED2704B527B18EE /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 758324CBB813F640C8C60B48 /* InfoPlist.strings */; };
+		B6D8C835E12F5FD97F61AFE8 /* KikiLaunchScreen.strings in Resources */ = {isa = PBXBuildFile; fileRef = D352C85677B3376B2FCB85BF /* KikiLaunchScreen.strings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -166,6 +172,15 @@
 		76F6D9886056A761B6EDD16B /* KikiRelationshipProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiRelationshipProfileView.swift; sourceTree = "<group>"; };
 		878774DB4011B08E924900EF /* KikiRelationshipStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiRelationshipStage.swift; sourceTree = "<group>"; };
 		2797C875DB3C71507C05BEA6 /* KikiRelationshipStageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiRelationshipStageTests.swift; sourceTree = "<group>"; };
+		1BA5B14B933325F3B5A87DFC /* KikiLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiLocalization.swift; sourceTree = "<group>"; };
+		2EFB1105FD29E95511B6156E /* KikiLocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KikiLocalizationTests.swift; sourceTree = "<group>"; };
+		FB4865938FF73D4E325BC824 /* KikiLegalDocuments.en.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = KikiLegalDocuments.en.json; sourceTree = "<group>"; };
+		8ED8EC939684542CDB7A659C /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		7D424D934AFFB668DB476D4D /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		C7C2B14436C35EB604A37877 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		820857CDEAA48B9D57C916E4 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		73726D757603C4B89408F308 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/KikiLaunchScreen.strings"; sourceTree = "<group>"; };
+		3B91E70BAAEEEEB66AD1A89B /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/KikiLaunchScreen.strings"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -312,6 +327,10 @@
 		4930C714AF14AE4C90EB2DA0 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				D352C85677B3376B2FCB85BF /* KikiLaunchScreen.strings */,
+				758324CBB813F640C8C60B48 /* InfoPlist.strings */,
+				9DFCF1EB505985746AD944C9 /* Localizable.strings */,
+				FB4865938FF73D4E325BC824 /* KikiLegalDocuments.en.json */,
 				2231184EB1D346815C4601A6 /* Assets.xcassets */,
 				2EA976C6751A3BE0CB8AD5AD /* KikiLaunchScreen.storyboard */,
 				C01717000000000000000003 /* KikiLegalDocuments.json */,
@@ -324,6 +343,7 @@
 		502F8CCD285329C2C9743C4E /* App */ = {
 			isa = PBXGroup;
 			children = (
+				2EFB1105FD29E95511B6156E /* KikiLocalizationTests.swift */,
 				C01717000000000000000005 /* KikiConsentTests.swift */,
 			);
 			name = App;
@@ -520,6 +540,7 @@
 		CAB63E4C004C82B631F03D4A /* DesignSystem */ = {
 			isa = PBXGroup;
 			children = (
+				1BA5B14B933325F3B5A87DFC /* KikiLocalization.swift */,
 				96B3A50E43BE6A80F35142B0 /* KikiAvatar.swift */,
 				89B7C352DB86E2E3CDF00BAF /* KikiPalette.swift */,
 			);
@@ -635,6 +656,36 @@
 		};
 /* End PBXNativeTarget section */
 
+/* Begin PBXVariantGroup section */
+		9DFCF1EB505985746AD944C9 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				8ED8EC939684542CDB7A659C /* en */,
+				7D424D934AFFB668DB476D4D /* zh-Hans */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+		758324CBB813F640C8C60B48 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				C7C2B14436C35EB604A37877 /* en */,
+				820857CDEAA48B9D57C916E4 /* zh-Hans */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+		D352C85677B3376B2FCB85BF /* KikiLaunchScreen.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				73726D757603C4B89408F308 /* en */,
+				3B91E70BAAEEEEB66AD1A89B /* zh-Hans */,
+			);
+			name = KikiLaunchScreen.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
 /* Begin PBXProject section */
 		A8000001 /* Project object */ = {
 			isa = PBXProject;
@@ -688,6 +739,10 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B6D8C835E12F5FD97F61AFE8 /* KikiLaunchScreen.strings in Resources */,
+				941CD48B2ED2704B527B18EE /* InfoPlist.strings in Resources */,
+				2DB570D8FBE6755F1E0CB2C0 /* Localizable.strings in Resources */,
+				26E456EE46E7DEFAAD822D7B /* KikiLegalDocuments.en.json in Resources */,
 				EEE3B91D8CF54397B18132BD /* Assets.xcassets in Resources */,
 				ADF16338E8461FCD89632C98 /* KikiLaunchScreen.storyboard in Resources */,
 				C01717000000000000000013 /* KikiLegalDocuments.json in Resources */,
@@ -709,6 +764,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5D339FD16B16ABC56CA1142A /* KikiLocalization.swift in Sources */,
 				6A08634B34913DC7784A679E /* KikiRelationshipStage.swift in Sources */,
 				E37D25968CFFBF1E5DB43EC8 /* KikiRelationshipProfileView.swift in Sources */,
 				3F25CD16DEEA9129678E3DC2 /* KikiRelationshipModels.swift in Sources */,
@@ -760,6 +816,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7530355B3E76A50143A1057E /* KikiLocalizationTests.swift in Sources */,
 				C7A8207B3CB94C634BCCE10A /* KikiRelationshipStageTests.swift in Sources */,
 				A02210000000000000000021 /* KikiInboxRefreshTests.swift in Sources */,
 				A02210000000000000000011 /* KikiForegroundNotificationTests.swift in Sources */,
@@ -804,7 +861,7 @@
 				CODE_SIGN_ENTITLEMENTS = Configuration/KikiTalk.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 49;
+				CURRENT_PROJECT_VERSION = 50;
 				DEVELOPMENT_LANGUAGE = "zh-Hans";
 				DEVELOPMENT_TEAM = A82X46N3WS;
 				ENABLE_PREVIEWS = YES;
@@ -1013,7 +1070,7 @@
 				CODE_SIGN_ENTITLEMENTS = Configuration/KikiTalk.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 49;
+				CURRENT_PROJECT_VERSION = 50;
 				DEVELOPMENT_LANGUAGE = "zh-Hans";
 				DEVELOPMENT_TEAM = A82X46N3WS;
 				ENABLE_PREVIEWS = YES;

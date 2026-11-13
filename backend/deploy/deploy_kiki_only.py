@@ -41,6 +41,7 @@ def deploy(service, check=False):
         payload.update({"website/" + name: p for name, p in files(ROOT / "website/dist").items()})
     else:
         payload["voice-legal.json"] = ROOT / "experiments/livekit/shared/legal_documents.json"
+        payload["voice-legal-en.json"] = ROOT / "experiments/livekit/shared/legal_documents.en.json"
     expected = {name: digest(p) for name, p in payload.items()}
     baseline = {}
     for name, p in payload.items():
@@ -62,6 +63,7 @@ def deploy(service, check=False):
     script = f'''
 import hashlib,json,os,pathlib,shutil,sqlite3,subprocess,tarfile,time,urllib.request
 service={service!r};app=pathlib.Path({app!r});stage=pathlib.Path({stage!r});unit={unit!r};user={config['user']!r}
+voice_english=pathlib.Path('/opt/kiki-livekit-lab/shared/legal_documents.en.json')
 os.umask(0o077)
 def props(name):
  raw=subprocess.run(['systemctl','show',name,'-p','ActiveState','-p','SubState','-p','MainPID','-p','ExecMainStartTimestamp','-p','User'],check=True,capture_output=True,text=True).stdout
@@ -96,7 +98,9 @@ current={{'app/'+name:value for name,value in tree(app/'app').items()}}
 if service=='account':
  web=pathlib.Path('/var/www/kikitalk/current')
  current.update({{'website/'+str(p.relative_to(web)):sha(p) for p in web.rglob('*') if p.is_file()}})
-else:current['voice-legal.json']=sha(pathlib.Path('/opt/kiki-livekit-lab/shared/legal_documents.json'))
+else:
+ current['voice-legal.json']=sha(pathlib.Path('/opt/kiki-livekit-lab/shared/legal_documents.json'))
+ if voice_english.is_file():current['voice-legal-en.json']=sha(voice_english)
 unexpected=[name for name,value in current.items() if value not in (manifest['baseline'].get(name),manifest['expected'].get(name))]
 if unexpected:raise RuntimeError('Unexpected online Kiki changes: '+','.join(unexpected))
 changed=sorted(name for name,value in manifest['expected'].items() if current.get(name)!=value)
@@ -104,11 +108,19 @@ changed=sorted(name for name,value in manifest['expected'].items() if current.ge
 previous=stage/'previous';previous.mkdir(mode=0o700)
 next_root=app/('.kiki-release-next-'+{stamp!r})
 old_web=None;stopped=False;published=False
+def restore_voice_english():
+ state=json.loads((previous/'voice-legal-en-state.json').read_text())
+ if state['existed']:shutil.copy2(previous/'voice-legal-en.json',voice_english)
+ else:voice_english.unlink(missing_ok=True)
 if changed:
  shutil.copytree(app/'app',previous/'app')
  if service=='account':
   old_web=os.readlink('/var/www/kikitalk/current');(previous/'website-target').write_text(old_web)
- else:shutil.copy2('/opt/kiki-livekit-lab/shared/legal_documents.json',previous/'voice-legal.json')
+ else:
+  shutil.copy2('/opt/kiki-livekit-lab/shared/legal_documents.json',previous/'voice-legal.json')
+  existed=voice_english.is_file()
+  (previous/'voice-legal-en-state.json').write_text(json.dumps({{'existed':existed}}))
+  if existed:shutil.copy2(voice_english,previous/'voice-legal-en.json')
  # Consistent private Kiki database snapshots; no business DB is replaced on rollback.
  data=pathlib.Path({config['data']!r})
  for database in data.rglob('*'):
@@ -125,10 +137,11 @@ if changed:
  env={{**os.environ,'PYTHONDONTWRITEBYTECODE':'1'}}
  if service=='voice':
   shutil.copyfile(payload/'voice-legal.json',next_root/'legal.json');(next_root/'legal.json').chmod(0o644)
+  shutil.copyfile(payload/'voice-legal-en.json',next_root/'legal_documents.en.json');(next_root/'legal_documents.en.json').chmod(0o644)
   env['LEGAL_DOCUMENTS_PATH']=str(next_root/'legal.json')
- preflight='import app.main'
- if service=='voice':preflight+=';import os;app.main.load_legal_manifest(os.environ["LEGAL_DOCUMENTS_PATH"])'
- else:preflight+=';app.main.load_legal_manifest()'
+ preflight='import app.main;from app.legal_translation import load_english'
+ if service=='voice':preflight+=';import os,pathlib;canonical=app.main.load_legal_manifest(os.environ["LEGAL_DOCUMENTS_PATH"]);load_english(pathlib.Path(os.environ["LEGAL_DOCUMENTS_PATH"]).with_name("legal_documents.en.json"),canonical)'
+ else:preflight+=';canonical=app.main.load_legal_manifest();load_english(app.main.LEGAL_ENGLISH_PATH,canonical)'
  subprocess.run(['runuser','-u',user,'--',interpreter,'-c',preflight],cwd=next_root,env=env,check=True,capture_output=True)
  try:
   subprocess.run(['systemctl','stop',unit],check=True);stopped=True
@@ -143,6 +156,7 @@ if changed:
    link=pathlib.Path('/var/www/kikitalk/current.kiki-only-next');link.symlink_to(release);os.replace(link,'/var/www/kikitalk/current')
   else:
    shutil.copyfile(payload/'voice-legal.json','/opt/kiki-livekit-lab/shared/legal_documents.json');pathlib.Path('/opt/kiki-livekit-lab/shared/legal_documents.json').chmod(0o644)
+   shutil.copyfile(payload/'voice-legal-en.json',voice_english);voice_english.chmod(0o644)
   subprocess.run(['systemctl','start',unit],check=True);published=True
  except Exception:
   subprocess.run(['systemctl','stop',unit],check=False)
@@ -150,7 +164,9 @@ if changed:
   shutil.copytree(previous/'app',app/'app')
   if service=='account':
    link=pathlib.Path('/var/www/kikitalk/current.kiki-only-rollback');link.symlink_to(old_web);os.replace(link,'/var/www/kikitalk/current')
-  else:shutil.copy2(previous/'voice-legal.json','/opt/kiki-livekit-lab/shared/legal_documents.json')
+  else:
+   shutil.copy2(previous/'voice-legal.json','/opt/kiki-livekit-lab/shared/legal_documents.json')
+   restore_voice_english()
   subprocess.run(['systemctl','start',unit],check=True)
   raise
 try:
@@ -165,7 +181,9 @@ try:
  actual={{'app/'+name:value for name,value in tree(app/'app').items()}}
  if service=='account':
   web=pathlib.Path('/var/www/kikitalk/current');actual.update({{'website/'+str(p.relative_to(web)):sha(p) for p in web.rglob('*') if p.is_file()}})
- else:actual['voice-legal.json']=sha(pathlib.Path('/opt/kiki-livekit-lab/shared/legal_documents.json'))
+ else:
+  actual['voice-legal.json']=sha(pathlib.Path('/opt/kiki-livekit-lab/shared/legal_documents.json'))
+  if voice_english.is_file():actual['voice-legal-en.json']=sha(voice_english)
  if actual!=manifest['expected']:raise RuntimeError('Deployed Kiki content differs')
  after=protected();(stage/'protected-after.json').write_text(json.dumps(after,indent=2))
  if before!=after:raise RuntimeError('Protected service/config changed during release')
@@ -180,7 +198,9 @@ except Exception:
   shutil.copytree(previous/'app',app/'app')
   if service=='account':
    link=pathlib.Path('/var/www/kikitalk/current.kiki-only-rollback');link.symlink_to(old_web);os.replace(link,'/var/www/kikitalk/current')
-  else:shutil.copy2(previous/'voice-legal.json','/opt/kiki-livekit-lab/shared/legal_documents.json')
+  else:
+   shutil.copy2(previous/'voice-legal.json','/opt/kiki-livekit-lab/shared/legal_documents.json')
+   restore_voice_english()
   subprocess.run(['systemctl','start',unit],check=True)
  raise
 finally:

@@ -49,7 +49,7 @@ struct KikiRoomConnection: Decodable {
 
 enum KikiRoomRole: String, Codable {
     case owner, admin, member
-    var label: String { self == .owner ? "房主" : (self == .admin ? "管理员" : "成员") }
+    var label: String { self == .owner ? KikiL10n.text("房主") : (self == .admin ? KikiL10n.text("管理员") : KikiL10n.text("成员")) }
 }
 
 struct KikiRoomMember: Codable, Equatable, Identifiable {
@@ -266,11 +266,11 @@ enum KikiReportReason: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .harassment: return "骚扰、辱骂或侵犯隐私"
-        case .spam: return "垃圾广告或刷屏"
-        case .sexual: return "色情或不适宜内容"
-        case .fraud: return "诈骗或冒充"
-        case .other: return "其他违规"
+        case .harassment: return KikiL10n.text("骚扰、辱骂或侵犯隐私")
+        case .spam: return KikiL10n.text("垃圾广告或刷屏")
+        case .sexual: return KikiL10n.text("色情或不适宜内容")
+        case .fraud: return KikiL10n.text("诈骗或冒充")
+        case .other: return KikiL10n.text("其他违规")
         }
     }
 }
@@ -306,7 +306,7 @@ struct KikiSafetyReport: Decodable, Identifiable, Equatable {
     let createdAt: Double
     let resolvedAt: Double?
     var statusLabel: String {
-        switch status { case "pending": return "待处理"; case "resolved": return "已处理"; case "dismissed": return "已核查结案"; default: return "处理中" }
+        switch status { case "pending": return KikiL10n.text("待处理"); case "resolved": return KikiL10n.text("已处理"); case "dismissed": return KikiL10n.text("已核查结案"); default: return KikiL10n.text("处理中") }
     }
 }
 
@@ -321,9 +321,9 @@ enum KikiAPIError: Foundation.LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .server(_, let message), .rateLimited(_, let message), .security(let message): return message
-        case .legalUpdateRequired(let message, _): return message
-        case .invalidResponse: return "服务器返回的数据无法读取，请稍后重试。"
+        case .server(_, let message), .rateLimited(_, let message), .security(let message): return KikiL10n.text(message)
+        case .legalUpdateRequired(let message, _): return KikiL10n.text(message)
+        case .invalidResponse: return KikiL10n.text("服务器返回的数据无法读取，请稍后重试。")
         }
     }
     var isUnauthorized: Bool {
@@ -368,7 +368,7 @@ final class KikiAPIClient: @unchecked Sendable {
 
     func rtcRoomCatalogChanges(after: Int?, waitSeconds: Int = 15, token: String) async throws -> KikiRoomCatalogChange {
         guard after == nil || after! >= 0, (0...15).contains(waitSeconds) else {
-            throw KikiAPIError.security("房间目录订阅参数无效。")
+            throw KikiAPIError.security(KikiL10n.text("房间目录订阅参数无效。"))
         }
         var query = "waitSeconds=\(waitSeconds)"
         if let after { query += "&after=\(after)" }
@@ -390,7 +390,7 @@ final class KikiAPIClient: @unchecked Sendable {
     func roomAction(_ action: KikiRoomAction, roomID: String, targetUserID: String? = nil,
                     seatIndex: Int? = nil, enabled: Bool? = nil, token: String) async throws -> KikiRoomState {
         try validateRoomID(roomID)
-        if let seatIndex, !(1...8).contains(seatIndex) { throw KikiAPIError.security("麦位编号无效。") }
+        if let seatIndex, !(1...8).contains(seatIndex) { throw KikiAPIError.security(KikiL10n.text("麦位编号无效。")) }
         struct Body: Encodable { let action: KikiRoomAction; let targetUserID: String?; let seatIndex: Int?; let enabled: Bool? }
         return try await send("/v1/rooms/\(roomID)/actions", method: "POST",
                               body: Body(action: action, targetUserID: targetUserID, seatIndex: seatIndex, enabled: enabled), token: token)
@@ -403,14 +403,14 @@ final class KikiAPIClient: @unchecked Sendable {
 
     func roomMessages(roomID: String, afterSeq: Int, limit: Int = 200, token: String) async throws -> KikiChatPage {
         try validateRoomID(roomID)
-        guard afterSeq >= 0, (1...200).contains(limit) else { throw KikiAPIError.security("聊天游标无效。") }
+        guard afterSeq >= 0, (1...200).contains(limit) else { throw KikiAPIError.security(KikiL10n.text("聊天游标无效。")) }
         return try await request("/v1/rooms/\(roomID)/messages?afterSeq=\(afterSeq)&limit=\(limit)", token: token)
     }
 
     func sendRoomMessage(roomID: String, clientMessageID: String, text: String, token: String) async throws -> KikiChatMessage {
         try validateRoomID(roomID)
         let text = try KikiChatMessage.validatedText(text)
-        guard let nonce = UUID(uuidString: clientMessageID) else { throw KikiAPIError.security("消息编号无效。") }
+        guard let nonce = UUID(uuidString: clientMessageID) else { throw KikiAPIError.security(KikiL10n.text("消息编号无效。")) }
         struct Body: Encodable { let clientMessageID: String; let text: String }
         return try await send("/v1/rooms/\(roomID)/messages", method: "POST",
                               body: Body(clientMessageID: nonce.uuidString.lowercased(), text: text), token: token)
@@ -419,7 +419,7 @@ final class KikiAPIClient: @unchecked Sendable {
     func setRoomAnnouncement(roomID: String, text: String, token: String) async throws -> KikiRoomAnnouncement {
         try validateRoomID(roomID)
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.utf8.count <= 2_000 else { throw KikiAPIError.security("公告不能超过 2000 字节。") }
+        guard text.utf8.count <= 2_000 else { throw KikiAPIError.security(KikiL10n.text("公告不能超过 2000 字节。")) }
         struct Body: Encodable { let text: String }
         return try await send("/v1/rooms/\(roomID)/announcement", method: "PUT", body: Body(text: text), token: token)
     }
@@ -442,7 +442,7 @@ final class KikiAPIClient: @unchecked Sendable {
 
     func blockUser(_ userID: String, enabled: Bool, token: String) async throws -> KikiSafetyState {
         guard userID.range(of: "^[A-Za-z0-9_-]{1,128}$", options: .regularExpression) != nil else {
-            throw KikiAPIError.security("用户编号无效。")
+            throw KikiAPIError.security(KikiL10n.text("用户编号无效。"))
         }
         let state: KikiSafetyState = try await request("/v1/safety/blocks/\(userID)", method: enabled ? "PUT" : "DELETE", token: token)
         guard state.schemaVersion == 1 else { throw KikiAPIError.invalidResponse }
@@ -452,11 +452,11 @@ final class KikiAPIClient: @unchecked Sendable {
     func submitReport(_ report: KikiSafetyReportRequest, token: String) async throws -> KikiSafetyReport {
         try validateRoomID(report.roomID)
         guard UUID(uuidString: report.clientRequestID) != nil, report.details.unicodeScalars.count <= 500 else {
-            throw KikiAPIError.security("举报编号无效，或补充说明超过 500 字。")
+            throw KikiAPIError.security(KikiL10n.text("举报编号无效，或补充说明超过 500 字。"))
         }
         guard report.targetType == .room || report.targetUserID?.isEmpty == false,
               report.targetType != .message || report.messageID?.isEmpty == false else {
-            throw KikiAPIError.security("请选择需要举报的对象。")
+            throw KikiAPIError.security(KikiL10n.text("请选择需要举报的对象。"))
         }
         return try await send("/v1/safety/reports", method: "POST", body: report, token: token)
     }
@@ -467,7 +467,7 @@ final class KikiAPIClient: @unchecked Sendable {
 
     private func validateRoomID(_ roomID: String) throws {
         guard roomID.range(of: "^[A-Za-z0-9_-]{1,128}$", options: .regularExpression) != nil else {
-            throw KikiAPIError.security("房间标识无效。")
+            throw KikiAPIError.security(KikiL10n.text("房间标识无效。"))
         }
     }
 
@@ -479,8 +479,8 @@ final class KikiAPIClient: @unchecked Sendable {
     func library(token: String) async throws -> KikiLibrary { try await request("/v1/library", token: token) }
 
     func reserveRoom(title: String, category: String, isLive: Bool, theme: Int, token: String) async throws -> KikiRoom {
-        guard !isLive else { throw KikiAPIError.server(422, "暂未开放视频直播，请创建语聊房。") }
-        guard (0..<5).contains(theme) else { throw KikiAPIError.security("请选择有效的房间背景。") }
+        guard !isLive else { throw KikiAPIError.server(422, KikiL10n.text("暂未开放视频直播，请创建语聊房。")) }
+        guard (0..<5).contains(theme) else { throw KikiAPIError.security(KikiL10n.text("请选择有效的房间背景。")) }
         struct Body: Encodable { let title: String; let category: String; let isLive: Bool; let theme: Int }
         return try await send("/v1/rooms", method: "POST", body: Body(title: title, category: category, isLive: isLive, theme: theme), token: token)
     }
@@ -494,7 +494,7 @@ final class KikiAPIClient: @unchecked Sendable {
     func updateRoomTitle(_ roomID: String, title: String, theme: Int? = nil, token: String) async throws -> KikiRoomState {
         try validateRoomID(roomID)
         let title = try KikiRoomTitlePolicy.validated(title)
-        if let theme, !(0..<5).contains(theme) { throw KikiAPIError.security("请选择有效的房间背景。") }
+        if let theme, !(0..<5).contains(theme) { throw KikiAPIError.security(KikiL10n.text("请选择有效的房间背景。")) }
         struct Body: Encodable { let title: String; let theme: Int? }
         let state: KikiRoomState = try await send("/v1/rooms/\(roomID)", method: "PATCH", body: Body(title: title, theme: theme), token: token)
         guard state.room.id == roomID, state.room.title == title, theme == nil || state.room.theme == theme, state.revision >= 0 else { throw KikiAPIError.invalidResponse }
@@ -528,13 +528,14 @@ final class KikiAPIClient: @unchecked Sendable {
         guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else { throw KikiAPIError.invalidResponse }
         guard url.scheme == "https", url.host == baseURL.host, url.port == baseURL.port,
               url.user == nil, url.password == nil else {
-            throw KikiAPIError.security("业务接口必须使用指定服务器的安全连接。")
+            throw KikiAPIError.security(KikiL10n.text("业务接口必须使用指定服务器的安全连接。"))
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpBody = data
         KikiIncidentContext.prepare(&request)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(KikiL10n.languageCode, forHTTPHeaderField: "Accept-Language")
         if data != nil { request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         let responseData: Data
@@ -554,12 +555,12 @@ final class KikiAPIClient: @unchecked Sendable {
             let message = error?.detail
             if http.statusCode == 429 {
                 let delay = max(1, min(120, Int(http.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 5))
-                throw KikiAPIError.rateLimited(delay, message ?? "请求较多，请稍后重试。")
+                throw KikiAPIError.rateLimited(delay, message ?? KikiL10n.text("请求较多，请稍后重试。"))
             }
             if http.statusCode == 428 {
-                throw KikiAPIError.legalUpdateRequired(message ?? "协议已更新，请获取并重新确认当前协议。", error?.requiredVersions)
+                throw KikiAPIError.legalUpdateRequired(message ?? KikiL10n.text("协议已更新，请获取并重新确认当前协议。"), error?.requiredVersions)
             }
-            throw KikiAPIError.server(http.statusCode, message ?? (http.statusCode == 401 ? "登录已过期，请重新登录。" : "请求未完成，请检查输入后重试。"))
+            throw KikiAPIError.server(http.statusCode, message ?? (http.statusCode == 401 ? KikiL10n.text("登录已过期，请重新登录。") : KikiL10n.text("请求未完成，请检查输入后重试。")))
         }
         do { return try JSONDecoder().decode(Response.self, from: responseData) }
         catch {

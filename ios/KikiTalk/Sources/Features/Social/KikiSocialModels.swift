@@ -17,7 +17,7 @@ struct KikiPerson: Codable, Equatable, Identifiable {
     var zodiacSign: String? = nil
 
     var publicID: String { displayID ?? id }
-    var relationshipLabel: String { mutual ? "互相关注" : (following ? "已关注" : "关注") }
+    var relationshipLabel: String { mutual ? KikiL10n.text("互相关注") : (following ? KikiL10n.text("已关注") : KikiL10n.text("关注")) }
 }
 
 struct KikiDirectConversationRoute: Hashable {
@@ -79,13 +79,39 @@ struct KikiSocialNotification: Decodable, Identifiable, Equatable {
         seq = try c.decodeIfPresent(Int.self, forKey: .seq) ?? 0
     }
     var isUnread: Bool { readAt == nil }
+    /// The wire text stays intact. System events use templates so an actor’s
+    /// name is never translated as part of an embedded notification sentence.
+    var displayText: String {
+        guard KikiL10n.isEnglish else { return text }
+        switch kind {
+        case "follow":
+            return actor.map { KikiL10n.format("%@关注了你", $0.name) } ?? KikiL10n.text("你有一位新关注者。")
+        case "mutual_follow":
+            return actor.map { KikiL10n.format("你和%@互相关注了，可以开始聊天。", $0.name) }
+                ?? KikiL10n.text("你们互相关注了，可以开始聊天。")
+        case "room_started":
+            return actor.map { KikiL10n.format("%@开始语聊了，点击进入房间。", $0.name) }
+                ?? KikiL10n.text("开始语聊了，点击进入房间")
+        case "room_invite":
+            return actor.map { KikiL10n.format("%@邀请你加入语聊房。", $0.name) }
+                ?? KikiL10n.text("你收到了一条房间邀请。")
+        case "safety", "security", "admin", "reminder", "system":
+            // Fixed moderation notices are catalogued. Freeform operator notes
+            // retain their exact wording when no translation is available.
+            return KikiL10n.text(text)
+        default:
+            return text
+        }
+    }
     var title: String {
         switch kind {
-        case "follow": return "新的关注"
-        case "mutual_follow": return "你们互相关注了"
-        case "room_invite": return "房间邀请"
-        case "room_started": return "开播提醒"
-        default: return "社区通知"
+        case "follow": return KikiL10n.text("新的关注")
+        case "mutual_follow": return KikiL10n.text("你们互相关注了")
+        case "room_invite": return KikiL10n.text("房间邀请")
+        case "room_started": return KikiL10n.text("开播提醒")
+        case "safety", "security": return KikiL10n.text("社区安全通知")
+        case "admin", "reminder", "system": return KikiL10n.text("运营通知")
+        default: return KikiL10n.text("社区通知")
         }
     }
 }
@@ -100,7 +126,14 @@ enum KikiRelationshipKind: String, CaseIterable, Identifiable {
     case mutual, following, followers
     var id: String { rawValue }
     var title: String {
-        switch self { case .mutual: return "互相关注"; case .following: return "正在关注"; case .followers: return "粉丝" }
+        switch self { case .mutual: return KikiL10n.text("互相关注"); case .following: return KikiL10n.text("正在关注"); case .followers: return KikiL10n.text("粉丝") }
+    }
+    var emptyTitle: String {
+        switch self {
+        case .mutual: return KikiL10n.text("还没有互相关注的人")
+        case .following: return KikiL10n.text("还没有关注任何人")
+        case .followers: return KikiL10n.text("还没有粉丝")
+        }
     }
 }
 
@@ -133,11 +166,11 @@ struct KikiDirectMessageAccess: Decodable, Equatable {
     }
     var explanation: String? {
         if !canSend {
-            return requiresReply == true ? "已发送 5 条消息，等待对方回复后可继续聊天。" : "暂时无法发送消息，请稍后刷新或重试。"
+            return requiresReply == true ? KikiL10n.text("已发送 5 条消息，等待对方回复后可继续聊天。") : KikiL10n.text("暂时无法发送消息，请稍后刷新或重试。")
         }
         if replyEstablished == true { return nil }
         if let remainingBeforeReply, initialMessageLimit == 5 {
-            return "对方回复前，还可发送 \(max(0, remainingBeforeReply)) 条消息。"
+            return KikiL10n.format("对方回复前，还可发送 %@ 条消息。", String(max(0, remainingBeforeReply)))
         }
         return nil
     }
@@ -147,7 +180,7 @@ struct KikiDirectMessageAdmissionError: LocalizedError, Decodable {
     let code: String
     let message: String
     let access: KikiDirectMessageAccess
-    var errorDescription: String? { message }
+    var errorDescription: String? { KikiL10n.text(message) }
     private enum CodingKeys: String, CodingKey { case code, message }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -206,6 +239,15 @@ struct KikiInboxEntry: Decodable, Identifiable, Equatable {
         switch content { case .notification(let value): return value.actor?.name ?? value.title; case .direct(let value): return value.person.name }
     }
     var unreadLabel: String? { unreadCount > 0 ? (unreadCount > 99 ? "99+" : String(unreadCount)) : nil }
+    var localizedPreview: String {
+        if case .notification(let notification) = content {
+            return Self.compact(notification.displayText)
+        }
+        if case .direct(let conversation) = content, conversation.lastMessage == nil {
+            return KikiL10n.text("开始聊天")
+        }
+        return preview
+    }
 
     init(content: Content, activityAt: Double?, preview: String, unreadCount: Int, isPinned: Bool = false) {
         self.content = content; self.activityAt = activityAt; self.preview = preview
@@ -217,7 +259,7 @@ struct KikiInboxEntry: Decodable, Identifiable, Equatable {
     }
     init(conversation: KikiConversation) {
         self.init(content: .direct(conversation), activityAt: conversation.lastMessage?.createdAt,
-                  preview: Self.compact(conversation.lastMessage?.text ?? "开始聊天"), unreadCount: conversation.unreadCount,
+                  preview: Self.compact(conversation.lastMessage?.text ?? KikiL10n.text("开始聊天")), unreadCount: conversation.unreadCount,
                   isPinned: conversation.isPinned)
     }
     private enum CodingKeys: String, CodingKey { case kind, notification, conversation }
@@ -230,6 +272,29 @@ struct KikiInboxEntry: Decodable, Identifiable, Equatable {
         }
     }
     private static func compact(_ value: String) -> String { value.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+}
+
+extension KikiSafetyNotice {
+    /// Action prefixes are system copy; the operator’s explanation is retained.
+    var displayMessage: String {
+        guard KikiL10n.isEnglish else { return message }
+        let prefix: String
+        switch action {
+        case "warn": prefix = "社区提醒"
+        case "mute_chat": prefix = "临时文字禁言"
+        case "mute_audio": prefix = "临时禁麦"
+        case "ban_user": prefix = "暂停语聊权限"
+        case "restore_user": prefix = "语聊限制已解除"
+        default: return KikiL10n.text(message)
+        }
+        for separator in ["：", ":"] where message.hasPrefix(prefix + separator) {
+            let detail = String(message.dropFirst(prefix.count + separator.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let label = KikiL10n.text(prefix)
+            return detail.isEmpty ? label : KikiL10n.format("%@：%@", label, KikiL10n.text(detail))
+        }
+        return KikiL10n.text(message)
+    }
 }
 
 struct KikiInboxPage: Decodable {
@@ -247,12 +312,21 @@ enum KikiInboxTime {
     static func label(_ timestamp: Double?, now: Date = Date(), calendar: Calendar = .current) -> String? {
         guard let timestamp, timestamp.isFinite, timestamp > 0 else { return nil }
         let date = Date(timeIntervalSince1970: timestamp)
-        let format = DateFormatter(); format.locale = Locale(identifier: "zh_Hans_CN"); format.calendar = calendar; format.timeZone = calendar.timeZone
-        if calendar.isDate(date, inSameDayAs: now) { format.dateFormat = "HH:mm" }
-        else if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) { return "昨天" }
+        let format = DateFormatter(); format.locale = KikiL10n.locale; format.calendar = calendar; format.timeZone = calendar.timeZone
+        if calendar.isDate(date, inSameDayAs: now) {
+            if KikiL10n.isEnglish { format.setLocalizedDateFormatFromTemplate("jm") }
+            else { format.dateFormat = "HH:mm" }
+        }
+        else if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) { return KikiL10n.text("昨天") }
         else if let week = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now)), date >= week && date < now { format.dateFormat = "EEEE" }
-        else if calendar.component(.year, from: date) == calendar.component(.year, from: now) { format.dateFormat = "M/d" }
-        else { format.dateFormat = "yy/M/d" }
+        else if calendar.component(.year, from: date) == calendar.component(.year, from: now) {
+            if KikiL10n.isEnglish { format.setLocalizedDateFormatFromTemplate("MMMd") }
+            else { format.dateFormat = "M/d" }
+        }
+        else {
+            if KikiL10n.isEnglish { format.setLocalizedDateFormatFromTemplate("yMMMd") }
+            else { format.dateFormat = "yy/M/d" }
+        }
         return format.string(from: date)
     }
 }
@@ -327,7 +401,7 @@ enum KikiSocialReportReason: String, CaseIterable, Identifiable {
     case harassment, spam, sexual, fraud, other
     var id: String { rawValue }
     var title: String {
-        switch self { case .harassment: return "骚扰或攻击"; case .spam: return "垃圾信息"; case .sexual: return "不适当内容"; case .fraud: return "欺诈或诱导"; case .other: return "其他问题" }
+        switch self { case .harassment: return KikiL10n.text("骚扰或攻击"); case .spam: return KikiL10n.text("垃圾信息"); case .sexual: return KikiL10n.text("不适当内容"); case .fraud: return KikiL10n.text("欺诈或诱导"); case .other: return KikiL10n.text("其他问题") }
     }
 }
 

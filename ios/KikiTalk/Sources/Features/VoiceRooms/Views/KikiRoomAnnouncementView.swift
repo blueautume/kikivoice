@@ -34,12 +34,12 @@ struct KikiRoomAnnouncementContent: View {
                         .foregroundStyle(KikiPalette.text)
                         .padding(10).background(KikiPalette.surface, in: RoundedRectangle(cornerRadius: 14))
                         .accessibilityIdentifier("livekit.room.announcement.editor")
-                    Text("最多 2000 字节；清空并保存可移除公告。").font(.caption).foregroundStyle(.secondary)
+                    Text(KikiL10n.text("最多 2000 字节；清空并保存可移除公告。")).font(.caption).foregroundStyle(.secondary)
                     Button(action: onSave) {
                         HStack {
                             Spacer()
                             if isSaving { ProgressView().tint(.white) }
-                            Text(isSaving ? "正在保存…" : "保存公告")
+                            Text(isSaving ? KikiL10n.text("正在保存…") : KikiL10n.text("保存公告"))
                             Spacer()
                         }
                         .foregroundStyle(canSave || isSaving ? Color.white : KikiPalette.muted)
@@ -48,12 +48,12 @@ struct KikiRoomAnnouncementContent: View {
                     }.buttonStyle(.plain).disabled(!canSave)
                         .accessibilityIdentifier("livekit.room.announcement.save")
                 } else {
-                    ScrollView { Text(announcement.isEmpty ? "暂无公告" : announcement).frame(maxWidth: .infinity, alignment: .leading) }
+                    ScrollView { Text(announcement.isEmpty ? KikiL10n.text("暂无公告") : announcement).frame(maxWidth: .infinity, alignment: .leading) }
                 }
             }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
                 .foregroundStyle(KikiPalette.text).background(KikiPalette.background)
-                .navigationTitle("房间公告").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭", action: onClose) } }
+                .navigationTitle(KikiL10n.text("房间公告")).navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button(KikiL10n.text("关闭"), action: onClose) } }
         }.tint(KikiPalette.purple)
     }
 }

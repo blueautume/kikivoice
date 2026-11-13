@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key>
-    <string>zh-Hans</string>
+    <string>en</string>
     <!-- The linked audio/video SDK contains camera APIs; this voice-only app does not request camera access. -->
     <key>NSCameraUsageDescription</key>
     <string>Kiki 当前不使用摄像头；语音聊天不会开启相机，头像仅从你选中的相册照片上传。</string>
@@ -12,6 +12,7 @@
     <key>CFBundleLocalizations</key>
     <array>
         <string>zh-Hans</string>
+        <string>en</string>
     </array>
     <key>UIBackgroundModes</key>
     <array>

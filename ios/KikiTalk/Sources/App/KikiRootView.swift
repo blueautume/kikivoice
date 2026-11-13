@@ -27,6 +27,7 @@ struct KikiRootView: View {
             }
         }
         .environmentObject(consent)
+        .environment(\.locale, KikiL10n.locale)
         .foregroundStyle(KikiPalette.text).tint(KikiPalette.lavender)
         .task(id: consent.hasCurrentConsent) {
             if consent.hasCurrentConsent { await startupPermissions.begin(consent: consent) }
@@ -117,6 +118,9 @@ private struct KikiAuthorizedRootView: View {
             await push.refresh()
         }
         .task(id: store.pushSessionKey) { if store.pushSessionKey != nil { await push.refresh() } }
+        .onReceive(NotificationCenter.default.publisher(for: .kikiLanguageDidChange)) { _ in
+            Task { await push.refresh() }
+        }
         .onChange(of: store.isPresentingRoom) { _ in push.foregroundContextDidChange() }
         .onChange(of: store.notificationsEnabled) { _ in push.foregroundContextDidChange() }
         .onChange(of: push.inboxRequest) { _ in
@@ -412,22 +416,22 @@ struct KikiMainTabs<Rooms: View, Messages: View, Profile: View>: View {
     private var tabs: some View {
         TabView(selection: $selection) {
             nativePage(rooms())
-                .tabItem { Label("语聊", systemImage: "waveform").accessibilityIdentifier("discoverTab") }
+                .tabItem { Label(KikiL10n.text("tab.rooms"), systemImage: "waveform").accessibilityIdentifier("discoverTab") }
                 .tag(0)
             nativePage(messages())
                 .tabItem {
                     Label {
-                        Text("消息")
+                        Text(KikiL10n.text("消息"))
                     } icon: {
                         Image(uiImage: messageTabImage).renderingMode(.original)
                     }
                         .accessibilityIdentifier("messagesTab")
-                        .accessibilityValue(unreadCount > 0 ? "\(unreadCount) 条未读消息" : "")
+                        .accessibilityValue(unreadCount > 0 ? KikiL10n.format("%@ 条未读消息", String(unreadCount)) : "")
                 }
                 .badge(textOnlyMessageBadge)
                 .tag(2)
             nativePage(profile())
-                .tabItem { Label("我", systemImage: "person.crop.circle").accessibilityIdentifier("profileTab") }
+                .tabItem { Label(KikiL10n.text("tab.profile"), systemImage: "person.crop.circle").accessibilityIdentifier("profileTab") }
                 .tag(3)
         }
         .tint(KikiPalette.purple)
@@ -535,15 +539,15 @@ struct KikiStartupView: View {
                             VStack(spacing: 16) {
                                 Text(errorMessage).font(.footnote).lineSpacing(4)
                                     .foregroundStyle(KikiPalette.secondary).multilineTextAlignment(.center)
-                                Button("重试连接") { retryAction?() }
+                                Button(KikiL10n.text("重试连接")) { retryAction?() }
                                     .font(.body.weight(.semibold)).foregroundStyle(.white)
                                     .frame(maxWidth: .infinity).padding(.vertical, 16)
                                     .background(KikiPalette.action, in: RoundedRectangle(cornerRadius: 16))
                                     .accessibilityIdentifier(retryIdentifier)
-                                Link("打开系统设置", destination: URL(string: UIApplication.openSettingsURLString)!)
+                                Link(KikiL10n.text("打开系统设置"), destination: URL(string: UIApplication.openSettingsURLString)!)
                                     .font(.footnote).foregroundStyle(KikiPalette.lavender)
                                 if showsOfflineDocuments {
-                                    Button("离线阅读已保存的协议") { isReadingOfflineDocuments = true }
+                                    Button(KikiL10n.text("离线阅读已保存的协议")) { isReadingOfflineDocuments = true }
                                         .font(.footnote).foregroundStyle(KikiPalette.lavender)
                                 }
                             }.frame(maxWidth: 380)
@@ -560,8 +564,8 @@ struct KikiStartupView: View {
             NavigationStack {
                 ScrollView { KikiLocalLegalLinks().padding(24) }
                     .background(KikiPalette.background.ignoresSafeArea())
-                    .navigationTitle("已保存的协议").navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { isReadingOfflineDocuments = false } } }
+                    .navigationTitle(KikiL10n.text("已保存的协议")).navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button(KikiL10n.text("完成")) { isReadingOfflineDocuments = false } } }
             }
         }
     }
@@ -571,7 +575,7 @@ struct KikiStartupView: View {
             Image("KikiLaunchMark")
                 .resizable().scaledToFit().frame(width: 128, height: 128)
                 .accessibilityHidden(true)
-            Text("Kiki")
+            Text(KikiL10n.text("Kiki"))
                 .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(Color("KikiLaunchText")).frame(height: 34)
                 .padding(.top, 24)

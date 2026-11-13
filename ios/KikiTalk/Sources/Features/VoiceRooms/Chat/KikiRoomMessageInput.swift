@@ -80,7 +80,7 @@ struct KikiRoomMessageInput: UIViewRepresentable {
             emojiButton.accessibilityIdentifier = "livekit.room.emoji"
             emojiButton.tintColor = UIColor(KikiPalette.secondary)
             emojiButton.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 19), forImageIn: .normal)
-            emojiButton.accessibilityHint = "切换系统文字和表情键盘"
+            emojiButton.accessibilityHint = KikiL10n.text("切换系统文字和表情键盘")
             updateEmojiButton(isEmoji: false)
 
             [textView, emojiButton].forEach {
@@ -154,8 +154,8 @@ struct KikiRoomMessageInput: UIViewRepresentable {
 
         func updateEmojiButton(isEmoji: Bool) {
             emojiButton.setImage(UIImage(systemName: isEmoji ? "keyboard" : "face.smiling"), for: .normal)
-            emojiButton.accessibilityLabel = isEmoji ? "切回文字键盘" : "使用系统表情键盘"
-            emojiButton.accessibilityValue = isEmoji ? "系统 Emoji" : "文字输入"
+            emojiButton.accessibilityLabel = isEmoji ? KikiL10n.text("切回文字键盘") : KikiL10n.text("使用系统表情键盘")
+            emojiButton.accessibilityValue = isEmoji ? KikiL10n.text("系统 Emoji") : KikiL10n.text("文字输入")
         }
     }
 
@@ -346,7 +346,7 @@ struct KikiRoomMessageInput: UIViewRepresentable {
             let modes = inputModes()
             let emojiMode = modes.first { $0.primaryLanguage == "emoji" }
             guard let emojiMode else {
-                onNotice("请在系统“设置 → 通用 → 键盘 → 键盘”中添加“表情符号”键盘。")
+                onNotice(KikiL10n.text("请在系统“设置 → 通用 → 键盘 → 键盘”中添加“表情符号”键盘。"))
                 // No input-mode request or reload: a missing Emoji keyboard is
                 // not permission to change the person's current text language.
                 if !field.isFirstResponder { requestFocus() }

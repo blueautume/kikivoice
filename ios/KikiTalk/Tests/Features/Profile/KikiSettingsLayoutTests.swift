@@ -9,10 +9,13 @@ import XCTest
 final class KikiSettingsLayoutTests: XCTestCase {
     private let longUserID = "kiki_ef3b60cec28c16ac_完整账号展示_" + String(repeating: "0123456789abcdef", count: 4)
 
-    func testSettingsContainExactlySixDestinationsAndRatingDoesNotActivate() async throws {
+    func testSettingsContainLanguageDestinationAndRatingDoesNotActivate() async throws {
+        let previousLanguage = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .simplifiedChinese
+        defer { KikiLanguageSettings.shared.selection = previousLanguage }
         XCTAssertEqual(KikiSettingsDestination.allCases.map(\.rawValue),
-                       ["account", "notifications", "privacy", "rating", "about", "help"])
-        XCTAssertEqual(Set(KikiSettingsDestination.allCases.map(\.id)).count, 6)
+                       ["account", "notifications", "language", "privacy", "rating", "about", "help"])
+        XCTAssertEqual(Set(KikiSettingsDestination.allCases.map(\.id)).count, 7)
         var selections: [KikiSettingsDestination] = []
         try await withWindow { window in
             let host = await render(AnyView(KikiSettingsMenuContent { selections.append($0) }),
@@ -35,11 +38,14 @@ final class KikiSettingsLayoutTests: XCTestCase {
                 }
                 XCTAssertEqual(selections.last, destination)
             }
-            XCTAssertEqual(selections, [.account, .notifications, .privacy, .about, .help])
+            XCTAssertEqual(selections, [.account, .notifications, .language, .privacy, .about, .help])
         }
     }
 
     func testAccountShowsCompleteIdentityAndBindingAndOnlyInvokesLocalCallbacks() async throws {
+        let previousLanguage = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .simplifiedChinese
+        defer { KikiLanguageSettings.shared.selection = previousLanguage }
         var logoutCalls = 0, deleteCalls = 0
         try await withWindow { window in
             let content = KikiAccountSettingsContent(userID: longUserID, appleIDBound: true, isLoggingOut: false,
@@ -64,6 +70,9 @@ final class KikiSettingsLayoutTests: XCTestCase {
     }
 
     func testLogoutInProgressDisablesBothActionsAndUnconfirmedBindingIsExplicit() async throws {
+        let previousLanguage = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .simplifiedChinese
+        defer { KikiLanguageSettings.shared.selection = previousLanguage }
         var logoutCalls = 0, deleteCalls = 0
         try await withWindow { window in
             let content = KikiAccountSettingsContent(userID: longUserID, appleIDBound: false, isLoggingOut: true,
@@ -85,6 +94,9 @@ final class KikiSettingsLayoutTests: XCTestCase {
     }
 
     func testSettingsAndAccountFixtureScreenshotsFitPhoneIPadAndLargeText() async throws {
+        let previousLanguage = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .simplifiedChinese
+        defer { KikiLanguageSettings.shared.selection = previousLanguage }
         let folder = URL(fileURLWithPath: "/tmp/kiki-settings-previews", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
@@ -141,6 +153,9 @@ final class KikiSettingsLayoutTests: XCTestCase {
     }
 
     func testProfileIdentityRowsFitSmallScreensAndKeepReadableAccessibilityLayout() async throws {
+        let previousLanguage = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .simplifiedChinese
+        defer { KikiLanguageSettings.shared.selection = previousLanguage }
         let folder = URL(fileURLWithPath: "/tmp/kiki-settings-previews", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let cases: [(String, CGSize, ColorScheme, DynamicTypeSize)] = [
@@ -210,6 +225,48 @@ final class KikiSettingsLayoutTests: XCTestCase {
         }
     }
 
+    func testEnglishSettingsAccountAndLanguageFixturesFitSmallPhoneAndLargeText() async throws {
+        let previousLanguage = KikiLanguageSettings.shared.selection
+        KikiLanguageSettings.shared.selection = .english
+        defer { KikiLanguageSettings.shared.selection = previousLanguage }
+        XCTAssertEqual(KikiL10n.text("设置"), "Settings")
+        XCTAssertEqual(KikiL10n.text("退出登录"), "Sign out")
+        XCTAssertEqual(KikiAppLanguage.allCases.count, 3)
+        let folder = URL(fileURLWithPath: "/tmp/kiki-settings-previews", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let cases: [(String, DynamicTypeSize)] = [("320-english", .large), ("320-english-accessibility3", .accessibility3)]
+        try await withWindow { window in
+            for (label, textSize) in cases {
+                let fixtures: [(String, AnyView)] = [
+                    ("settings", AnyView(KikiSettingsMenuContent { _ in XCTFail("Rendering cannot navigate") })),
+                    ("account", AnyView(KikiAccountSettingsContent(userID: longUserID, appleIDBound: true,
+                        isLoggingOut: false, onLogout: { XCTFail("Rendering cannot sign out") },
+                        onDelete: { XCTFail("Rendering cannot delete") }))),
+                    ("language", AnyView(KikiLanguageSettingsContent())),
+                    ("profile", AnyView(ProfileIdentityFixture(geometry: ProfileIdentityGeometry())))
+                ]
+                for (kind, content) in fixtures {
+                    let host = await render(content, title: KikiL10n.text(kind == "account" ? "账户" : (kind == "language" ? "语言" : (kind == "profile" ? "我" : "设置"))),
+                        in: window, size: CGSize(width: 320, height: 568), typeSize: textSize)
+                    let scroll = try XCTUnwrap(scrollViews(in: host.view).max { $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height })
+                    XCTAssertLessThanOrEqual(scroll.contentSize.width, scroll.bounds.width + 2,
+                        "English labels and large text must not overflow a small phone")
+                    if kind == "language" {
+                        let languageIDs = KikiAppLanguage.allCases.map { "settings.language." + $0.rawValue }
+                        let exposed = accessibilityNodes(in: host.view).filter { languageIDs.contains(identifier($0) ?? "") }
+                        if exposed.count == languageIDs.count {
+                            XCTAssertEqual(exposed.filter { $0.accessibilityTraits.contains(.selected) }.count, 1,
+                                "Only the active language can be selected")
+                        }
+                    }
+                    try capture(window: window, name: kind + "-" + label, folder: folder)
+                }
+            }
+        }
+        XCTAssertEqual(KikiLanguageSettings.shared.selection, .english,
+            "Rendering settings must not change the chosen language")
+    }
+
     private final class ProfileIdentityGeometry {
         var probes: [String: [UIView]] = [:]
         var selections: [KikiRelationshipKind] = []
@@ -240,7 +297,7 @@ final class KikiSettingsLayoutTests: XCTestCase {
         @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
         var body: some View {
-            let details = KikiProfileIdentityDetails(name: "Kiki 的朋友", displayID: "kiki_000001", followingCount: 39,
+            let details = KikiProfileIdentityDetails(name: KikiL10n.isEnglish ? "Alex Chen" : "Kiki 的朋友", displayID: "kiki_000001", followingCount: 39,
                                                     followerCount: 36) { geometry.selections.append($0) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
@@ -257,7 +314,7 @@ final class KikiSettingsLayoutTests: XCTestCase {
                         }
                         .background(ProfileIdentityProbe(key: "details", geometry: geometry))
                     }
-                    Text("Kiki 让世界听见你").font(.footnote).foregroundStyle(KikiPalette.muted)
+                    Text(KikiL10n.text("kikitalk 让世界听见你")).font(.footnote).foregroundStyle(KikiPalette.muted)
                 }
                 .padding(.horizontal, 22).padding(.top, 18).padding(.bottom, 30)
                 .frame(maxWidth: 720).frame(maxWidth: .infinity)

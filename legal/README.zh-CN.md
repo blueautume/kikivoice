@@ -1,5 +1,13 @@
 # 协议内容与发布
 
+## 2026-11-13 中英文渲染
+
+`documents.json` 仍是已发布 r18 的 canonical 正文，现有 `documentHash`、用户同意记录及 `/v1/legal/documents` 保持不变。`documents.en.json` 是四份文档的完整英文渲染，按文档、章节及段落与中文一一对应，通过 `sourceDocumentHash` 绑定同一组中文正文；独立 `renderingHash` 校验英文渲染内容，不能用作同意记录的 `documentHash`。
+
+生成器现在输出 22 份资源：原 11 份中文资源，加 iOS、账号服务、语聊 shared 的英文 JSON 与八份英文网页。英文公开接口为 `/v1/legal/documents/en`；当前英文网页为 `/en/privacy/`、`/en/terms/`、`/en/privacy/sdk/` 和 `/en/privacy/permissions/`，留存文本位于 `/legal/<版本>/en/<文档>/`。中文历史留存页不变。iOS 先验证线上 canonical 正文；已有同 hash 的本地英文渲染时直接显示，缺少匹配英文时才从独立接口获取，不能在没有完整匹配英文的情况下允许英文用户确认。
+
+当前 r18 canonical SHA-256：`8c5a9e483ac385d555d53f1a83a273b6d3c238cd0df281342e88691eb8607743`。英文版本不增加义务或授权，不改变出生资料只在账号服务器计算、本人私密查看及其他客户端只能获得关系结果的边界。
+
 > **资源路径更新（2026-10-22）：** iOS 正文副本已迁至 `ios/KikiTalk/Resources/KikiLegalDocuments.json`，生成器输出定位同步更新。正式源、协议版本、正文、hash与后端/官网内容不因目录移动改变；下文2026-10-17的Pods/腾讯事实与官方参考保留为归档，当前工程见[接手指南](../docs/PROJECT_HANDOVER.zh-CN.md)。
 
 `documents.json` 是应用、后端与官网共用的唯一协议内容源。运营者为李浩（个人开发者），公开邮箱为 2114581274@qq.com，仅向 18 周岁及以上人士开放；这些信息来自本次用户确认。
