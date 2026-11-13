@@ -195,6 +195,7 @@
 		};
 		"25FC3D33176B6F4167EDA0F0" = {
 			"children" = (
+				"BE8DBD7E9B6C067FB8672931",
 				"E72685212AF966A85FF3F9E9",
 				"38C6FBFCA30BBAFBF4E3C760",
 			);
@@ -624,6 +625,12 @@
 		"BE2AC13E19315B4289A899B4" = {
 			"fileRef" = "31F4F158EFC3BEF9541783F8";
 			"isa" = "PBXBuildFile";
+		};
+		"BE8DBD7E9B6C067FB8672931" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.xml";
+			"path" = "ExportOptions-TestFlight.plist";
+			"sourceTree" = "<group>";
 		};
 		"BF53325E6D7E21688D1AD2BC" = {
 			"isa" = "PBXFileReference";

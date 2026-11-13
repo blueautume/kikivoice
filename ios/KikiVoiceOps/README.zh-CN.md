@@ -101,3 +101,19 @@ xcodebuild test \
 2026-10-23 动态模块下线：账号看板不再展示动态、评论及私有图片统计；社交举报仅处理个人资料与私聊文字，动态素材读取接口、图片证据界面和缓存均已清理。关注关系、私聊举报、社交禁言及独立语聊治理保留。完整签名模拟器回归 65 项：64 通过、1 项既有公网测试跳过、0 失败（`/tmp/kiki-remove-moments-ops-final-tests.xcresult`）。签名 Release 已打包为 `output/remove-moments-2026-10-23/kiki-ops-1.0-1.ipa`，实际版本仍为 `1.0 (1)`。
 
 2026-11-13 管理端更新为 **1.0（2）**，实际包版本改为读取工程配置，避免 Info.plist 固定旧构建号。修复社交举报页前后台恢复，并保持后台/撤权隔离与待确认处置回执；问题记录支持公开账号编号搜索，列表优先显示公开号码，详情区分公开与内部编号，旧服务器缺少新字段时仍可读取。具体测试、安装与服务器发布结果见 [本轮更新记录](../../docs/OPS_REFRESH_2026-11-13.zh-CN.md)。
+
+## TestFlight 发布
+
+用户选择管理端通过 TestFlight 分发。独立 App Store Connect 记录为 **Kiki运维**，App ID `6834521403`，Bundle ID 仍为 `com.kikitalk.voiceops`。2026-11-14 将同一轮已验证的 **1.0（2）** 上传，不因改换分发渠道再次增加构建号。内部群组为“Kiki运维”，已启用后续构建自动分发；测试资格不授予管理服务权限，仍需原有 Passkey 和三项独立 ACL。
+
+仅使用 Apple 系统网络、Keychain 与 Passkey，`Info.plist` 显式配置布尔值 `ITSAppUsesNonExemptEncryption = NO`；若新增加密依赖，应重新审核声明。iPad 声明四种方向，保留多任务支持。上传前运行：
+
+```sh
+python3 tools/check_kiki_export_compliance.py --target KikiVoiceOps
+python3 tools/check_kiki_export_compliance.py --target KikiVoiceOps --app <最终归档内的KikiVoiceOps.app>
+xcodebuild -exportArchive -archivePath <最终归档> -exportPath <输出目录> \
+  -exportOptionsPlist ios/KikiVoiceOps/Configuration/ExportOptions-TestFlight.plist \
+  -allowProvisioningUpdates
+```
+
+命令从仓库根目录执行；导出配置自动重签分发证书，并禁止 Xcode 擅自修改版本/构建号。上传回执与账号侧处理/测试状态应分别核实，具体结果见 [本次 TestFlight 记录](../../docs/OPS_TESTFLIGHT_2026-11-14.zh-CN.md)。
