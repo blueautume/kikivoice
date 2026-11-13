@@ -94,6 +94,73 @@ final class SocialOpsTests: XCTestCase {
         XCTAssertNil(store.page); XCTAssertFalse(parent.canAccessSelectedService)
         parent.setActive(false)
     }
+    @MainActor func testVisibleSocialPageRestoresAfterForegroundAndRecoversPendingReceipt() async throws {
+        let api = SocialOpsFixtureAPI(allowed: true)
+        let vault = SocialMemoryVault()
+        let original = OpsSocialPendingAction(accountID: "ops_fixture_social", request: socialAction(), createdAt: Date())
+        try vault.saveSocialPending(original)
+        let parent = OpsStore(api: api, vault: MemoryVault(session: testSession()), authorizer: FixturePasskeyAuthorizer())
+        parent.selectService(.community); parent.setActive(true)
+        await waitFor { parent.authenticated && !parent.isRefreshing }
+        let store = OpsSocialModerationStore(parent: parent, api: api, vault: vault)
+        store.setVisible(true)
+        await store.refreshForPresentation()
+        XCTAssertNotNil(store.page); XCTAssertEqual(store.pending, original)
+        let initialQueries = await api.queries; XCTAssertEqual(initialQueries, 1)
+
+        parent.setActive(false)
+        await store.refreshForPresentation()
+        XCTAssertNil(store.page); XCTAssertNil(store.pending); XCTAssertFalse(parent.canReadCommunity)
+        let backgroundQueries = await api.queries; XCTAssertEqual(backgroundQueries, 1)
+        parent.setActive(true)
+        await waitFor { parent.canReadCommunity && !parent.isRefreshing }
+        await store.refreshForPresentation()
+        XCTAssertNotNil(store.page); XCTAssertEqual(store.pending, original)
+        let restoredQueries = await api.queries; XCTAssertEqual(restoredQueries, 2)
+
+        parent.selectService(.account)
+        await store.refreshForPresentation()
+        XCTAssertNil(store.page)
+        let otherServiceQueries = await api.queries; XCTAssertEqual(otherServiceQueries, 2)
+        store.setVisible(false); parent.setActive(false)
+    }
+    @MainActor func testVisibleSocialPageRechecksRevokedPermissionBeforeForegroundRead() async throws {
+        let api = SocialOpsFixtureAPI(allowed: true)
+        let parent = OpsStore(api: api, vault: MemoryVault(session: testSession()), authorizer: FixturePasskeyAuthorizer())
+        parent.selectService(.community); parent.setActive(true)
+        await waitFor { parent.authenticated && !parent.isRefreshing }
+        let store = OpsSocialModerationStore(parent: parent, api: api, vault: SocialMemoryVault())
+        store.setVisible(true); await store.refreshForPresentation()
+        XCTAssertNotNil(store.page)
+        parent.setActive(false); await store.refreshForPresentation()
+        await api.revoke()
+        parent.setActive(true)
+        await waitFor { !parent.canAccessSelectedService && !parent.isRefreshing }
+        await store.refreshForPresentation()
+        XCTAssertNil(store.page); XCTAssertFalse(parent.canReadCommunity)
+        let queries = await api.queries; XCTAssertEqual(queries, 1)
+        store.setVisible(false); parent.setActive(false)
+    }
+    @MainActor func testSocialPresentationDoesNotLoopAfterEndpointRejectsGrantedIdentity() async throws {
+        let api = SocialOpsFixtureAPI(allowed: true)
+        let parent = OpsStore(api: api, vault: MemoryVault(session: testSession()), authorizer: FixturePasskeyAuthorizer())
+        parent.selectService(.community); parent.setActive(true)
+        await waitFor { parent.authenticated && !parent.isRefreshing }
+        let store = OpsSocialModerationStore(parent: parent, api: api, vault: SocialMemoryVault())
+        await api.rejectNextQuery(.forbidden)
+        store.setVisible(true); await store.refreshForPresentation()
+        XCTAssertNil(store.page); XCTAssertTrue(parent.canReadCommunity)
+        await store.refreshForPresentation()
+        let rejectedQueries = await api.queries; XCTAssertEqual(rejectedQueries, 1)
+        await store.load()
+        XCTAssertNotNil(store.page)
+        let manualQueries = await api.queries; XCTAssertEqual(manualQueries, 2)
+        store.setVisible(false); store.setVisible(true)
+        await store.refreshForPresentation()
+        XCTAssertNotNil(store.page)
+        let reopenedQueries = await api.queries; XCTAssertEqual(reopenedQueries, 3)
+        store.setVisible(false); parent.setActive(false)
+    }
     @MainActor func testUnknownOutcomeSurvivesStoreRestartAndRetriesOriginalActionExactly() async throws {
         let api = SocialOpsFixtureAPI(allowed: true)
         let vault = SocialMemoryVault()
@@ -219,12 +286,14 @@ private actor SocialOpsFixtureAPI: OpsAPI {
     private var continuation: CheckedContinuation<Void, Never>?
     private var throwAfterCommit = false
     private var actionRejection: OpsError?
+    private var queryRejection: OpsError?
     init(allowed: Bool) { self.allowed = allowed }
     func revoke() { allowed = false }
     func deferQuery() { holdQuery = true }
     func releaseQuery() { continuation?.resume(); continuation = nil }
     func failAfterCommit() { throwAfterCommit = true }
     func rejectNextAction(_ value: OpsError) { actionRejection = value }
+    func rejectNextQuery(_ value: OpsError) { queryRejection = value }
     func registrationOptions() async throws -> OpsRegistrationOptions { try KikiVoiceOpsTestsRegistration() }
     func authenticationOptions() async throws -> OpsAuthenticationOptions { try KikiVoiceOpsTestsAuthentication() }
     func finishRegistration(transactionID: String, credential: OpsPasskeyCredential) async throws -> OpsLoginResult { throw OpsError.forbidden }
@@ -240,6 +309,7 @@ private actor SocialOpsFixtureAPI: OpsAPI {
     func socialModeration(session: OpsSession, filter: OpsReportFilter, cursor: String?) async throws -> OpsSocialModerationPage {
         queries += 1
         guard allowed else { throw OpsError.forbidden }
+        if let failure = queryRejection { queryRejection = nil; throw failure }
         if holdQuery { holdQuery = false; queryStarted = true; await withCheckedContinuation { continuation = $0 } }
         return try JSONDecoder().decode(OpsSocialModerationPage.self, from: socialOpsFixture())
     }

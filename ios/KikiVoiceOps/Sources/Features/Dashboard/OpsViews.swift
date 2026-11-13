@@ -49,8 +49,17 @@ struct OpsRootView: View {
                     }
                 }
             }
-        }.onChange(of: store.socialContextRevision) { _, _ in social.invalidate() }
+        }.task(id: OpsSocialPresentationContext(revision: store.socialContextRevision,
+                                               foreground: store.foregroundRevision,
+                                               visible: social.isVisible)) {
+            await social.refreshForPresentation()
+        }
     }
+}
+
+private struct OpsSocialPresentationContext: Hashable {
+    let revision, foreground: UUID
+    let visible: Bool
 }
 
 private struct OpsPrivacyLink: View {
@@ -472,7 +481,7 @@ private struct ServicesView: View {
                         DataRow("数据来源", value: store.service.hostLabel)
                         DataRow("权限", value: store.service == .community ? "举报查看与处置" : "只读查看")
                         DataRow("会话到期", value: store.sessionExpiresAt.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "未知")
-                        Text("统一运维身份通过 kiki.group 验证。账号看板、语聊看板、社区管理分别授权；社区处置仅针对语聊服务。")
+                        Text("统一运维身份通过 kiki.group 验证。账号看板、语聊看板、社区管理分别授权；社区管理分别处理语聊举报，以及个人资料和私聊举报。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }

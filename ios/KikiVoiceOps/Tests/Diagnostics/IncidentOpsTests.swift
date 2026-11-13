@@ -34,6 +34,23 @@ final class IncidentOpsTests: XCTestCase {
         try page.validate()
         XCTAssertEqual(page.events.first?.platformTitle, "iPad / iPadOS")
         XCTAssertEqual(page.events.first?.stageTitle, "媒体连接")
+        XCTAssertNil(page.events.first?.userDisplayID)
+        XCTAssertEqual(page.events.first?.accountLabel, "kiki_0123456789abcdef")
+    }
+
+    func testIncidentPublicNumberIsPresentationOnlyAndMustBeValid() throws {
+        var event = incidentDictionary()
+        event["userDisplayID"] = "kiki_000001"
+        let page = try JSONDecoder().decode(OpsIncidentPage.self, from: incidentPageData(events: [event]))
+        try page.validate()
+        let incident = try XCTUnwrap(page.events.first)
+        XCTAssertEqual(incident.accountLabel, "kiki_000001")
+        XCTAssertEqual(incident.userID, "kiki_0123456789abcdef")
+        for invalid in ["kiki_000000", "kiki_12345", "kiki_1234567", "https://private.invalid"] {
+            event["userDisplayID"] = invalid
+            let invalidPage = try JSONDecoder().decode(OpsIncidentPage.self, from: incidentPageData(events: [event]))
+            XCTAssertThrowsError(try invalidPage.validate())
+        }
     }
 
     func testModelsRejectUnsafeUnexpectedDiagnosticMetadataAndInvalidPagination() throws {
@@ -188,6 +205,7 @@ final class IncidentOpsTests: XCTestCase {
 
     @MainActor func testReadOnlyFixtureScreenshotsListDetailAndCorrelation() async throws {
         let api = IncidentFixtureAPI(); let store = await prepared(api)
+        await api.usePublicNumber("kiki_000001")
         await store.loadIncidents()
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })
         let window = UIWindow(windowScene: scene)
@@ -253,6 +271,7 @@ private func incidentDashboardData() throws -> Data {
 }
 private actor IncidentFixtureAPI: OpsAPI {
     var voice: Bool
+    var publicNumber: String?
     var calls = [String](), queries = [OpsIncidentQuery]()
     var holding = false, queryHeld = false, pagination = false, expiredCursor = false, revokeDuringQuery = false
     var continuation: CheckedContinuation<OpsIncidentPage, Error>?
@@ -263,6 +282,7 @@ private actor IncidentFixtureAPI: OpsAPI {
     var identityContinuation: CheckedContinuation<OpsAccount, Never>?
     var heldIdentity: OpsAccount?
     init(voice: Bool = true) { self.voice = voice }
+    func usePublicNumber(_ number: String) { publicNumber = number }
     func revoke() { voice = false }
     func revokeOnNextQuery() { revokeDuringQuery = true }
     func holdNextQuery() { holding = true; queryHeld = false }
@@ -305,7 +325,10 @@ private actor IncidentFixtureAPI: OpsAPI {
         if revokeDuringQuery { voice = false; revokeDuringQuery = false }
         if query.cursor != nil && expiredCursor { throw OpsError.invalidIncidentQuery }
         let operation = query.operation == .createRoom ? "create_room" : "join_room"
-        let records = query.cursor == nil ? [incidentDictionary(operation: operation)] : [incidentDictionary(),incidentDictionary(id:secondIncidentID)]
+        var records = query.cursor == nil ? [incidentDictionary(operation: operation)] : [incidentDictionary(),incidentDictionary(id:secondIncidentID)]
+        if let publicNumber {
+            records = records.map { var value = $0; value["userDisplayID"] = publicNumber; return value }
+        }
         let page = try JSONDecoder().decode(OpsIncidentPage.self,
             from: incidentPageData(events:records,next:pagination && query.cursor == nil ? firstIncidentID : nil))
         if holding {

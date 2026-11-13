@@ -211,7 +211,8 @@ class IncidentStore:
     @staticmethod
     def event_json(row):
         event=json.loads(row["payload"])
-        event.update(userID=row["user_id"],userName=row["user_name"],source=row["source"],receivedAt=row["received_at"],message=CODES[row["code"]])
+        event.update(userID=row["user_id"],userDisplayID=row["user_display_id"],userName=row["user_name"],
+            source=row["source"],receivedAt=row["received_at"],message=CODES[row["code"]])
         return event
 
     def query(self,payload):
@@ -220,20 +221,27 @@ class IncidentStore:
         clauses,values=[],[]
         for column,value in (("severity",payload.severity),("operation",payload.operation)):
             if value!="all":
-                clauses.append(column+"=?")
+                clauses.append("i."+column+"=?")
                 values.append(value)
         if payload.userQuery:
             escaped=payload.userQuery.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")
-            clauses.append("(user_id LIKE ? ESCAPE '\\' OR user_name LIKE ? ESCAPE '\\')")
-            values.extend(["%"+escaped+"%"]*2)
+            clauses.append("(i.user_id LIKE ? ESCAPE '\\' OR i.user_name LIKE ? ESCAPE '\\' OR u.display_id LIKE ? ESCAPE '\\')")
+            values.extend(["%"+escaped+"%"]*3)
         if payload.cursor:
             previous=self.db.execute("SELECT received_at,event_id FROM room_incidents WHERE event_id=?",(payload.cursor,)).fetchone()
             if previous is None:
                 raise HTTPException(422,"问题记录游标已过期，请刷新")
-            clauses.append("(received_at<? OR (received_at=? AND event_id<?))")
+            clauses.append("(i.received_at<? OR (i.received_at=? AND i.event_id<?))")
             values.extend([previous[0],previous[0],previous[1]])
         where=" WHERE "+" AND ".join(clauses) if clauses else ""
-        rows=self.db.execute("SELECT * FROM room_incidents"+where+" ORDER BY received_at DESC,event_id DESC LIMIT ?",(*values,payload.limit+1)).fetchall()
+        # Public numbers are a current presentation alias, not an incident's
+        # identity. Joining at read time also maps retained events predating the
+        # number cache, without changing payloads, deduplication or fallback
+        # events received before a voice-side user exists.
+        rows=self.db.execute("SELECT i.*,u.display_id AS user_display_id FROM room_incidents i "
+            "LEFT JOIN users u ON u.id=i.user_id AND u.deleted=0 "
+            "AND u.display_id GLOB 'kiki_[0-9][0-9][0-9][0-9][0-9][0-9]' AND u.display_id<>'kiki_000000'"+where+
+            " ORDER BY i.received_at DESC,i.event_id DESC LIMIT ?",(*values,payload.limit+1)).fetchall()
         return {"schemaVersion":1,"retentionDays":RETENTION_DAYS,
             "events":[self.event_json(r) for r in rows[:payload.limit]],
             "nextCursor":rows[payload.limit-1]["event_id"] if len(rows)>payload.limit else None}

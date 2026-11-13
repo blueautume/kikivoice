@@ -157,7 +157,7 @@ private struct OpsIncidentRow: View {
                 }
                 Text(incident.safeMessage).font(.headline).foregroundStyle(.primary)
                 Text("\(incident.userName) · \(incident.stageTitle)").font(.subheadline).foregroundStyle(.secondary)
-                Text(incident.userID).font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
+                Text(incident.accountLabel).font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
                 HStack {
                     Text(incident.sourceTitle)
                     Spacer()
@@ -196,7 +196,8 @@ struct OpsIncidentDetailView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("用户与设备").font(.headline)
                             DataRow("昵称", value: incident.userName)
-                            identifier("公开账号编号", incident.userID)
+                            if let publicNumber = incident.userDisplayID { identifier("公开账号编号", publicNumber) }
+                            identifier("内部账号编号", incident.userID)
                             DataRow("平台", value: incident.platformTitle)
                             DataRow("App 版本", value: incident.appVersion)
                             DataRow("系统版本", value: incident.osVersion)

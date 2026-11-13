@@ -69,11 +69,16 @@ struct OpsSocialModerationView: View {
                     Text("举报及按需证据最多保留 30 天；操作审计和幂等回执最多 90 天。这里只显示与举报关联的内容，不提供任意私聊浏览。")
                         .font(.caption).foregroundStyle(.secondary)
                 } else if store.isLoading { ProgressView("正在获取举报…").frame(maxWidth: .infinity) }
+                else {
+                    ContentUnavailableView("等待举报数据", systemImage: "shield",
+                                           description: Text("下拉或点击刷新重试。"))
+                }
             }.padding(16)
         }.background(Color(.systemGroupedBackground)).navigationTitle("社交举报")
             .toolbar { Button { Task { await store.load() } } label: { Label("刷新", systemImage: "arrow.clockwise") }.disabled(store.isLoading || store.isActing) }
             .refreshable { await store.load() }
-            .task { if store.page == nil { await store.load() } }
+            .onAppear { store.setVisible(true) }
+            .onDisappear { store.setVisible(false) }
             .sheet(item: $selected) { report in NavigationStack { OpsSocialReportDetail(parent: parent, store: store, report: report) } }
             .sheet(item: $restriction) { value in NavigationStack { OpsSocialRestoreView(parent: parent, store: store, restriction: value) } }
     }

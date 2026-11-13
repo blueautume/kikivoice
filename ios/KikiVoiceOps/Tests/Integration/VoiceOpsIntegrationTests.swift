@@ -21,6 +21,7 @@ final class VoiceOpsIntegrationTests: XCTestCase {
         do {
             let identity = try await api.me(session: pending)
             XCTAssertFalse(identity.permissions.voice); XCTAssertFalse(identity.permissions.account)
+            XCTAssertFalse(identity.permissions.community)
             guard !identity.needsName else { XCTFail("待授权验收身份需预先完成命名。"); return }
             let pendingStore = OpsStore(api: api, vault: MemoryVault(session: pending), authorizer: FixturePasskeyAuthorizer())
             pendingStore.setActive(true)
@@ -28,16 +29,27 @@ final class VoiceOpsIntegrationTests: XCTestCase {
             XCTAssertFalse(pendingStore.canAccessSelectedService)
             XCTAssertNil(pendingStore.dashboard); XCTAssertNil(pendingStore.accountDashboard)
             try await attach(view: OpsRootView(store: pendingStore), name: "通行密钥运维-双服务待授权")
-            for service in OpsService.allCases {
+            for service in [OpsService.voice, .account] {
                 do {
                     if service == .voice { _ = try await api.dashboard(session: pending) }
                     else { _ = try await api.accountDashboard(session: pending) }
                     XCTFail("未授权身份不可读取服务数据。")
                 } catch { XCTAssertEqual(error as? OpsError, .forbidden) }
             }
+            await expectForbidden { _ = try await api.moderation(session: pending, filter: .pending) }
+            await expectForbidden { _ = try await api.socialModeration(session: pending, filter: .pending, cursor: nil) }
+            await expectForbidden { _ = try await api.incidents(OpsIncidentQuery(), session: pending) }
             pendingStore.setActive(false)
             let identityWithGrants = try await api.me(session: authorized)
             XCTAssertTrue(identityWithGrants.permissions.voice); XCTAssertTrue(identityWithGrants.permissions.account)
+            XCTAssertTrue(identityWithGrants.permissions.community)
+            // Only read production lists; all moderation mutations use isolated offline fixtures.
+            let voiceReports = try await api.moderation(session: authorized, filter: .pending)
+            try voiceReports.validate()
+            let socialReports = try await api.socialModeration(session: authorized, filter: .pending, cursor: nil)
+            try socialReports.validate()
+            let incidents = try await api.incidents(OpsIncidentQuery(), session: authorized)
+            try incidents.validate()
             let store = OpsStore(api: api, vault: MemoryVault(session: authorized), authorizer: FixturePasskeyAuthorizer())
             store.setActive(true)
             try await waitFor { store.dashboard != nil && !store.isRefreshing }
@@ -63,6 +75,10 @@ final class VoiceOpsIntegrationTests: XCTestCase {
             XCTFail("统一运维公网验收未完成，底层错误及凭据原文已隐藏。")
             throw NSError(domain: "OpsPasskeyIntegration", code: 1)
         }
+    }
+    @MainActor private func expectForbidden(_ read: () async throws -> Void) async {
+        do { try await read(); XCTFail("未授权身份不可读取服务数据。") }
+        catch { XCTAssertEqual(error as? OpsError, .forbidden) }
     }
     @MainActor private func waitFor(_ predicate: () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(30)

@@ -106,14 +106,33 @@ struct OpsCommunityAuthorization {
     @Published private(set) var error: String?
     @Published private(set) var notice: String?
     @Published private(set) var pending: OpsSocialPendingAction?
+    @Published private(set) var isVisible = false
     private let parent: OpsStore
     private let api: any OpsAPI
     private let vault: any OpsSocialPendingVault
     private var serial = UUID()
     private var queryTask: Task<Void, Never>?
     private var actionTask: Task<Bool, Never>?
+    private var presentedForeground: UUID?
     init(parent: OpsStore, api: any OpsAPI = OpsIdentityAPI(), vault: any OpsSocialPendingVault = KeychainSessionVault()) {
         self.parent = parent; self.api = api; self.vault = vault
+    }
+    deinit {
+        queryTask?.cancel(); actionTask?.cancel()
+    }
+    func setVisible(_ value: Bool) {
+        guard isVisible != value else { return }
+        isVisible = value
+        if !value { presentedForeground = nil; invalidate() }
+    }
+    /// One root-owned task clears the old security context before restoring a
+    /// visible page. A rejection must not create a context/retry loop.
+    func refreshForPresentation() async {
+        invalidate()
+        guard isVisible, parent.canReadCommunity,
+              presentedForeground != parent.foregroundRevision else { return }
+        presentedForeground = parent.foregroundRevision
+        await load()
     }
     func invalidate() {
         serial = UUID(); queryTask?.cancel(); actionTask?.cancel(); queryTask = nil; actionTask = nil

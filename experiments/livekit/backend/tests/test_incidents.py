@@ -21,6 +21,13 @@ def report(s,user,data):
     return s.client.post("/v1/telemetry/incidents",headers=headers(user),json=data)
 
 
+def query_incidents(service, **parameters):
+    body=json.dumps(parameters).encode()
+    response=service.client.post(INCIDENT_QUERY_PATH,content=body,headers=ops_signed(body=body,path=INCIDENT_QUERY_PATH))
+    assert response.status_code==200,response.text
+    return response.json()
+
+
 def internal_event(**changes):
     return {"accountID":"kiki_0123456789abcdef","name":"可信账号","consentEpoch":10,"lastWithdrawalEpoch":0,"source":"client","event":event(),**changes}
 
@@ -35,7 +42,7 @@ def test_identity_injected_and_no_public_read(lab):
     assert lab.client.post("/v1/telemetry/incidents",json=data).status_code==401
 
 
-@pytest.mark.parametrize("changes",[{"userID":"another"},{"name":"伪造"},{"source":"server"},{"message":"secret"},{"url":"https://evil.test/?token=secret"},{"code":"secret-error-text"},{"appVersion":"a"*33},{"osVersion":"26.0\nsecret"},{"roomID":"arbitrary"},{"eventID":"not-uuid"},{"attemptID":None},{"requestID":"secret"},{"occurredAt":True},{"httpStatus":200},{"elapsedMs":-1},{"platform":"server"}])
+@pytest.mark.parametrize("changes",[{"userID":"another"},{"userDisplayID":"kiki_123456"},{"name":"伪造"},{"source":"server"},{"message":"secret"},{"url":"https://evil.test/?token=secret"},{"code":"secret-error-text"},{"appVersion":"a"*33},{"osVersion":"26.0\nsecret"},{"roomID":"arbitrary"},{"eventID":"not-uuid"},{"attemptID":None},{"requestID":"secret"},{"occurredAt":True},{"httpStatus":200},{"elapsedMs":-1},{"platform":"server"}])
 def test_strict_bounded_schema(lab,changes):
     assert report(lab,login(lab),event(**changes)).status_code==422
     assert lab.app.state.incidents.dashboard()["totalEvents"]==0
@@ -164,6 +171,115 @@ def test_ops_query_permission_pagination_filter_and_like_literal(ops):
     assert ops.client.post(INCIDENT_QUERY_PATH,content=body,headers=ops_signed(body=body,path=INCIDENT_QUERY_PATH)).json()["events"]==[]
     body=json.dumps({"cursor":str(uuid.uuid4())}).encode()
     assert ops.client.post(INCIDENT_QUERY_PATH,content=body,headers=ops_signed(body=body,path=INCIDENT_QUERY_PATH)).status_code==422
+
+
+def test_public_number_maps_retained_events_without_rewriting_identity_or_payload(ops):
+    ops.consent={**ops.app.state.legal,"accepted":True,"adultConfirmed":True}
+    user=login(ops,"旧问题用户");uid=user["user"]["id"];data=event()
+    assert report(ops,user,data).status_code==202
+    before=ops.app.state.db.execute("SELECT payload,payload_hash FROM room_incidents WHERE event_id=?",(data["eventID"],)).fetchone()
+    assert query_incidents(ops,userQuery="kiki_123456")["events"]==[]
+    with ops.app.state.db:
+        ops.app.state.db.execute("UPDATE users SET display_id=? WHERE id=?",("kiki_123456",uid))
+    for query in ("kiki_123456","123456",uid,"旧问题用户"):
+        result=query_incidents(ops,userQuery=query)
+        assert len(result["events"])==1
+        item=result["events"][0]
+        assert item["eventID"]==data["eventID"] and item["userID"]==uid
+        assert item["userDisplayID"]=="kiki_123456" and item["userName"]=="旧问题用户"
+    dashboard=ops.app.state.incidents.dashboard()
+    assert dashboard["events"][0]["userDisplayID"]=="kiki_123456"
+    after=ops.app.state.db.execute("SELECT payload,payload_hash FROM room_incidents WHERE event_id=?",(data["eventID"],)).fetchone()
+    assert tuple(after)==tuple(before)
+    assert "userDisplayID" not in json.loads(after["payload"])
+    assert report(ops,user,data).json()["duplicate"]
+
+
+def test_public_number_filter_paginates_same_timestamp_events_without_duplicates_or_omissions(ops):
+    ops.consent={**ops.app.state.legal,"accepted":True,"adultConfirmed":True}
+    user,other=login(ops,"同名用户"),login(ops,"同名用户")
+    with ops.app.state.db:
+        ops.app.state.db.execute("UPDATE users SET display_id=? WHERE id=?",("kiki_123456",user["user"]["id"]))
+        ops.app.state.db.execute("UPDATE users SET display_id=? WHERE id=?",("kiki_654321",other["user"]["id"]))
+    expected=[]
+    for index in range(7):
+        value=event(eventID=str(uuid.UUID(int=index+1)))
+        assert report(ops,user,value).status_code==202
+        expected.append(value["eventID"])
+    assert report(ops,other,event()).status_code==202
+    assert report(ops,user,event(severity="warning")).status_code==202
+    assert report(ops,user,event(operation="create_room")).status_code==202
+    with ops.app.state.db:
+        ops.app.state.db.execute("UPDATE room_incidents SET received_at=?",(int(time.time()),))
+    actual=[];cursor=None
+    for _ in range(5):
+        page=query_incidents(ops,userQuery="kiki_123456",severity="error",operation="join_room",limit=2,**({"cursor":cursor} if cursor else {}))
+        actual.extend(item["eventID"] for item in page["events"])
+        assert all(item["userID"]==user["user"]["id"] and item["userDisplayID"]=="kiki_123456" for item in page["events"])
+        cursor=page["nextCursor"]
+        if cursor is None:break
+    assert cursor is None
+    assert actual==sorted(expected,reverse=True)
+
+
+@pytest.mark.parametrize("query,expected_name",[("kiki_123456","编号用户"),("123%456","123%456"),("%_","百分%_号"),("反\\斜","反\\斜")])
+def test_public_number_search_preserves_literal_percent_underscore_and_backslash(ops,query,expected_name):
+    ops.consent={**ops.app.state.legal,"accepted":True,"adultConfirmed":True}
+    for name in ("编号用户","kikiX123456","123%456","百分%_号","反\\斜"):
+        user=login(ops,name)
+        if name=="编号用户":
+            with ops.app.state.db:
+                ops.app.state.db.execute("UPDATE users SET display_id=? WHERE id=?",("kiki_123456",user["user"]["id"]))
+        assert report(ops,user,event()).status_code==202
+    result=query_incidents(ops,userQuery=query)
+    assert [item["userName"] for item in result["events"]]==[expected_name]
+
+
+def test_uncached_fallback_keeps_internal_identity_then_gains_current_public_alias(account_service):
+    from test_account_bridge import exchange,profile
+    service=account_service;data=internal_event()
+    assert signed(service,"incident",data).status_code==202
+    assert not service.app.state.db.execute("SELECT 1 FROM users").fetchone()
+    for query in (data["accountID"],data["name"]):
+        page=service.app.state.incidents.query(incidents.IncidentQuery(userQuery=query))
+        assert len(page["events"])==1
+        assert page["events"][0]["userID"]==data["accountID"]
+        assert page["events"][0]["userDisplayID"] is None
+    assert service.app.state.incidents.query(incidents.IncidentQuery(userQuery="kiki_123456"))["events"]==[]
+    assert not service.app.state.db.execute("SELECT 1 FROM users").fetchone()
+    assert exchange(service,user={**profile(),"displayID":"kiki_123456"}).status_code==200
+    page=service.app.state.incidents.query(incidents.IncidentQuery(userQuery="kiki_123456"))
+    assert len(page["events"])==1 and page["events"][0]["eventID"]==data["event"]["eventID"]
+    assert page["events"][0]["userID"]==data["accountID"] and page["events"][0]["userDisplayID"]=="kiki_123456"
+
+
+def test_deleted_profile_cannot_map_retained_incidents_to_a_reused_public_number(ops):
+    ops.consent={**ops.app.state.legal,"accepted":True,"adultConfirmed":True}
+    old,new=login(ops,"旧账号"),login(ops,"新账号")
+    for user in (old,new):
+        assert report(ops,user,event()).status_code==202
+    with ops.app.state.db:
+        ops.app.state.db.execute("UPDATE users SET display_id=? WHERE id IN (?,?)",("kiki_123456",old["user"]["id"],new["user"]["id"]))
+        ops.app.state.db.execute("UPDATE users SET deleted=1 WHERE id=?",(old["user"]["id"],))
+    page=query_incidents(ops,userQuery="kiki_123456")
+    assert [item["userID"] for item in page["events"]]==[new["user"]["id"]]
+    old_page=query_incidents(ops,userQuery=old["user"]["id"])
+    assert len(old_page["events"])==1 and old_page["events"][0]["userDisplayID"] is None
+
+
+@pytest.mark.parametrize("cached_number",[None,"","kiki_000000","kiki_12345","kiki_1234567","kiki_abcdef"])
+def test_missing_or_invalid_public_cache_falls_back_to_internal_identity(ops,cached_number):
+    ops.consent={**ops.app.state.legal,"accepted":True,"adultConfirmed":True}
+    user=login(ops,"旧缓存用户");uid=user["user"]["id"]
+    assert report(ops,user,event()).status_code==202
+    with ops.app.state.db:
+        ops.app.state.db.execute("UPDATE users SET display_id=? WHERE id=?",(cached_number,uid))
+    page=query_incidents(ops,userQuery=uid)
+    assert len(page["events"])==1
+    assert page["events"][0]["userID"]==uid and page["events"][0]["userDisplayID"] is None
+    assert ops.app.state.incidents.dashboard()["events"][0]["userDisplayID"] is None
+    if cached_number and cached_number not in uid:
+        assert query_incidents(ops,userQuery=cached_number)["events"]==[]
 
 
 def test_day_allowance_and_trusted_lane_are_independent(lab):

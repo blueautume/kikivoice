@@ -88,7 +88,7 @@ xcodebuild test \
 
 2026-10-19 离线签名回归执行 24 项：23 通过、1 个公开测试显式跳过、0 失败；结果为 `/tmp/kiki-ops-passkey-offline.xcresult`。随后 generic iOS device build 使用 `-allowProvisioningUpdates` 成功，签名产物的 App ID 为 `A82X46N3WS.com.kikitalk.voiceops`，Associated Domains 为 `webcredentials:kiki.group`；未运行任何真机。
 
-单个公开测试 `VoiceOpsIntegrationTests/testRealPasskeyIdentityPendingACLAndBothAuthorizedDashboards` 默认跳过。显式启用时由 runner 私密注入 `TEST_RUNNER_KIKI_OPS_PASSKEY_SESSIONS_JSON`，内容为 `{pending:完整sessionResponse, authorized:完整sessionResponse}`；两者均须由服务器真实软件 ES256/WebAuthn 验签产生的临时身份，授权身份只能由管理员显式授予两个 scope。测试核对未授权双锁、403、两个真实来源的运营/运维截图及退出后 401；测试后撤权并清理精确临时身份。
+单个公开测试 `VoiceOpsIntegrationTests/testRealPasskeyIdentityPendingACLAndBothAuthorizedDashboards` 默认跳过。显式启用时由 runner 私密注入 `TEST_RUNNER_KIKI_OPS_PASSKEY_SESSIONS_JSON`，内容为 `{pending:完整sessionResponse, authorized:完整sessionResponse}`；两者均须由服务器真实软件 ES256/WebAuthn 验签产生的临时身份，授权临时验收身份需单独授予 `account`、`voice`、`community` 三项权限，不使用真人账号。测试核对未授权页面、两个看板及两类举报/问题记录的 403、授权后的原生读取、两个真实来源的运营/运维截图及退出后 401；线上不提交处罚。测试后撤权并清理精确临时身份。
 
 该公开测试只证明服务器验签会话、ACL 和原生看板链路，**不代表已经验证系统通行密钥 UI、iCloud 同步或真实 Face ID**。会话不得写入源码、scheme、附件或终端输出，原始运行日志和 xcresult 应保存在本机受限目录。
 
@@ -99,3 +99,5 @@ xcodebuild test \
 2026-10-23 管理端范围统一为语聊、账号、社区三项服务；服务枚举和编码权限均只包含 `voice`、`account`、`community`。完整离线回归 66 项：65 通过、1 项既有公网测试跳过、0 失败（`/tmp/kiki-ops-removal-tests.xcresult`）。签名 Release generic iOS device build 成功，实际版本仍为 `1.0 (1)`，保留 `webcredentials:kiki.group`；需安装本轮新版管理 App 才能更新导航。
 
 2026-10-23 动态模块下线：账号看板不再展示动态、评论及私有图片统计；社交举报仅处理个人资料与私聊文字，动态素材读取接口、图片证据界面和缓存均已清理。关注关系、私聊举报、社交禁言及独立语聊治理保留。完整签名模拟器回归 65 项：64 通过、1 项既有公网测试跳过、0 失败（`/tmp/kiki-remove-moments-ops-final-tests.xcresult`）。签名 Release 已打包为 `output/remove-moments-2026-10-23/kiki-ops-1.0-1.ipa`，实际版本仍为 `1.0 (1)`。
+
+2026-11-13 管理端更新为 **1.0（2）**，实际包版本改为读取工程配置，避免 Info.plist 固定旧构建号。修复社交举报页前后台恢复，并保持后台/撤权隔离与待确认处置回执；问题记录支持公开账号编号搜索，列表优先显示公开号码，详情区分公开与内部编号，旧服务器缺少新字段时仍可读取。具体测试、安装与服务器发布结果见 [本轮更新记录](../../docs/OPS_REFRESH_2026-11-13.zh-CN.md)。

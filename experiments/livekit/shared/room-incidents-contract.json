@@ -474,7 +474,8 @@
       "failedAttemptsLast24Hours",
       "events"
     ],
-    "events": "最近50条Event加userID/userName/source/receivedAt/message",
+    "events": "最近50条Event加userID/userDisplayID/userName/source/receivedAt/message",
+    "identity": "userID始终是事件绑定的内部稳定账号ID；userDisplayID为查询时当前未注销语聊用户缓存的公开号码，可缺省或为null。未缓存的fallback事件仍可查询且不创建业务用户；旧客户端忽略新增字段。既有事件不改写payload、hash或身份，公开号码不是历史身份或处置目标。",
     "counts": "按occurredAt近24h，failedAttempts为(userID,attemptID)去重create/join失败尝试，不是失败率"
   },
   "query": {
@@ -550,7 +551,7 @@
       "nextCursor": "末条eventID或null",
       "retentionDays": 7
     },
-    "ordering": "receivedAt DESC,eventID DESC；过期cursor422刷新。userQuery按公开userID/name参数化包含搜索，%_按字面匹配"
+    "ordering": "receivedAt DESC,eventID DESC；过期cursor422刷新。userQuery按事件内部userID、记录时userName及当前未注销用户缓存的userDisplayID参数化包含搜索，%_及反斜线按字面匹配；当前号码映射可随缓存更新，分页筛选应保持不变。"
   },
   "messages": {
     "request_timeout": "请求超时，未及时取得响应",

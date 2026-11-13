@@ -25,6 +25,7 @@ import Combine
     @Published private(set) var error: String?
     @Published private(set) var sessionExpiresAt: Date?
     @Published private(set) var socialContextRevision = UUID()
+    private(set) var foregroundRevision = UUID()
 
     private let api: any OpsAPI
     private let vault: any SessionVault
@@ -48,6 +49,10 @@ import Combine
     var needsName: Bool { account?.needsName == true }
     var canAccessSelectedService: Bool { authenticated && !needsName && account?.permissions.permits(service) == true }
     var hasSavedSession: Bool { session != nil }
+    var canReadCommunity: Bool {
+        active && !backgrounded && authenticated && !needsName && service == .community
+            && account?.permissions.community == true && session?.isValid() == true
+    }
 
     init(api: any OpsAPI = OpsIdentityAPI(), vault: any SessionVault = KeychainSessionVault(),
          authorizer: (any OpsPasskeyAuthorizing)? = nil) {
@@ -86,6 +91,7 @@ import Combine
             return
         }
         backgrounded = false
+        foregroundRevision = UUID()
         guard let session else { isRestoring = false; return }
         guard session.isValid() else { endSession(message: OpsError.expired.localizedDescription); return }
         // Existing ACL snapshots cannot authorize a foreground request. GET me runs first.

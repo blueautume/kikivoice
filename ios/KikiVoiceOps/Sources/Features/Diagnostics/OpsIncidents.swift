@@ -49,7 +49,9 @@ struct OpsIncident: Decodable, Identifiable, Equatable {
     let httpStatus: Int?
     let platform, appVersion, osVersion: String
     let userID, userName, source: String
+    let userDisplayID: String?
     var id: String { eventID }
+    var accountLabel: String { userDisplayID ?? userID }
     var safeMessage: String { Self.messages[code] ?? "未分类的房间错误" }
     var sourceTitle: String {
         switch source { case "client": "客户端观测"; case "server": "语聊服务器观测"; case "account": "账号服务器观测"; default: "未知来源" }
@@ -67,6 +69,7 @@ struct OpsIncident: Decodable, Identifiable, Equatable {
               httpStatus == nil || (400...599).contains(httpStatus!),
               roomID == nil || roomID!.range(of: "^lk_[a-f0-9]{32}$", options: .regularExpression) != nil,
               ["ios", "ipados", "server"].contains(platform), ["client", "server", "account"].contains(source),
+              OpsPublicAccountNumber.isValid(userDisplayID),
               userID.range(of: "^kiki_[A-Za-z0-9_]{8,64}$", options: .regularExpression) != nil,
               (1...16).contains(userName.count), !userName.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
               [appVersion, osVersion].allSatisfy({ !$0.isEmpty && $0.count <= 32 && $0.range(of: "^[A-Za-z0-9 .()_-]+$", options: .regularExpression) != nil }) else {
